@@ -84,6 +84,27 @@ def rotate_xz(x: int, z: int, quarter_turns: int) -> tuple[int, int]:
     return x, z
 
 
+_CW = {"north": "east", "east": "south", "south": "west", "west": "north"}
+
+
+def rotate_state(state: str, quarter_turns: int) -> str:
+    """Rotate a block state's `facing` (stairs) by k CW quarter turns; other states pass through. Objects
+    only carry full blocks, slabs (no facing) and straight stairs, so this is all the remapping they need."""
+    k = int(quarter_turns) % 4
+    if not k or "facing=" not in state:
+        return state
+    head, _, props = state.partition("[")
+    props = props.rstrip("]")
+    out = []
+    for kv in props.split(","):
+        key, _, val = kv.partition("=")
+        if key == "facing" and val in _CW:
+            for _ in range(k):
+                val = _CW[val]
+        out.append(f"{key}={val}")
+    return f"{head}[{','.join(out)}]"
+
+
 def grid_blocks(grid: SemanticGrid) -> list[tuple[int, int, int, str]]:
     """Grid -> scene-space blocks (centred on x/z, y from 0), already turned so the presented side faces +z."""
     xs, ys, zs = np.nonzero(grid.block >= 0)
@@ -92,6 +113,7 @@ def grid_blocks(grid: SemanticGrid) -> list[tuple[int, int, int, str]]:
     cx = (int(xs.min()) + int(xs.max()) + 1) // 2
     cz = (int(zs.min()) + int(zs.max()) + 1) // 2
     states = [f"{ref.block_id}" + ("[" + ",".join(f"{k}={v}" for k, v in ref.props) + "]" if ref.props else "") for ref in grid.palette]
+    states = [rotate_state(st, PRESENTATION_TURNS) for st in states]
     out = []
     for x, y, z in zip(xs.tolist(), ys.tolist(), zs.tolist()):
         rx, rz = rotate_xz(x - cx, z - cz, PRESENTATION_TURNS)
@@ -123,10 +145,14 @@ def plan_anchor(player: dict, blocks: list[tuple[int, int, int, str]], gap: int 
 
 def to_world(blocks: list[tuple[int, int, int, str]], anchor: tuple[int, int, int], k: int) -> list[tuple[int, int, int, str]]:
     ax, ay, az = anchor
+    cache: dict[str, str] = {}
     out = []
     for x, y, z, s in blocks:
         rx, rz = rotate_xz(x, z, k)
-        out.append((rx + ax, y + ay, rz + az, s))
+        st = cache.get(s)
+        if st is None:
+            st = cache[s] = rotate_state(s, k)
+        out.append((rx + ax, y + ay, rz + az, st))
     return out
 
 

@@ -31,9 +31,14 @@ def image_deployment() -> str:
     return os.environ.get("CRAFTPILOT_IMAGE_DEPLOYMENT", DEFAULT_IMAGE_DEPLOYMENT)
 
 
+# Appended to every prompt: what survives being built from 1 m blocks (bold masses) and what does not (fine
+# texture). Stated separately from the LLM's style so a "weathered granite" style still comes out chunky.
+BLOCK_FRIENDLY = "Stylized sculpture with bold, chunky, simplified forms and smooth surfaces; no fine texture or thin details."
+
+
 def compose_prompt(subject: str, plinth: bool, style: str = "", camera: int = 0) -> str:
     base = "Standing on a plain rectangular stone plinth. " if plinth else "Standing on the ground, nothing under it. "
-    style_clause = style.strip() if style else "Clear readable silhouette, moderate detail, solid opaque surfaces."
+    style_clause = (style.strip().rstrip(".") + ". " if style else "") + BLOCK_FRIENDLY
     cam = CAMERAS[camera % len(CAMERAS)]
     return PROMPT_TEMPLATE.format(camera=cam, subject=subject.strip().rstrip("."), base_clause=base, style_clause=style_clause)
 

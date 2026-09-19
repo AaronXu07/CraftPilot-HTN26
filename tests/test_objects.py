@@ -45,7 +45,8 @@ def test_colors_map_to_nearest_block_in_palette_family():
     assert names & {"red_concrete", "red_wool", "red_terracotta"}, names
     # a stone-only allowed list keeps a red box grey
     grid2 = to_grid(obj, allowed=["stone", "andesite", "deepslate"])
-    assert {r.block_id.split(":")[1] for r in grid2.palette} <= {"stone", "andesite", "deepslate"}
+    bases = {r.block_id.split(":")[1].replace("_slab", "").replace("_stairs", "") for r in grid2.palette}
+    assert bases <= {"stone", "andesite", "deepslate"}
 
 
 def test_match_blocks_grey_stays_grey_and_red_stays_red():
@@ -83,7 +84,7 @@ def test_fallback_brief_reads_height_and_plinth():
     b = fallback_brief("build a dragon statue 40 blocks tall")
     assert b.height == 40 and b.plinth and b.palette == "stone" and b.label == "dragon_statue" and b.source == "fallback"
     c = fallback_brief("a red sports car")
-    assert not c.plinth and c.height == 24 and c.palette == "auto" and c.subject == "red sports car"
+    assert not c.plinth and c.height == 32 and c.palette == "auto" and c.subject == "red sports car"
     brief, meta = compose_brief("a wooden rowing boat", use_llm=False, height=10)
     assert brief.height == 10 and brief.palette == "wood" and meta["seconds"] == 0.0
 
@@ -114,7 +115,8 @@ def test_placement_geometry_faces_the_player():
     xs = [b[0] for b in blocks]; zs = [b[2] for b in blocks]
     # after the presentation turn the foot (mesh +x) points to +z (south, toward the player)
     foot = [b for b in blocks if b[1] == 0]
-    assert max(z for _, _, z, _ in foot) > max(zs) - 2 and min(xs) < 0 < max(xs)
+    assert max(z for _, _, z, _ in foot) > max(zs) - 2  # the foot is the southernmost part
+    assert min(xs) <= 0 <= max(xs) and abs(min(xs) + max(xs)) <= 2  # centred on x
     # player standing north of the origin looking south: the object goes south of them, foot pointing back at them
     anchor, k = P.plan_anchor({"pos": [10.5, 64.0, 10.5], "yaw": 0.0}, blocks, gap=2)
     assert k == P.FACING_TURNS["south"]
@@ -125,3 +127,44 @@ def test_placement_geometry_faces_the_player():
     assert ws[0][1] == 0 + 64 and any(b[1] == 64 for b in ws[:4])  # the foot is the nearest part
     chunks = P.layer_chunks(world, 5)
     assert all(c[0][1] <= c[-1][1] for c in chunks) and chunks[0][0][1] == 64
+
+
+def test_stair_fitting_on_a_ramp_and_shaped_refs():
+    from craftpilot.objects.voxelize import (
+        FULL,
+        SLAB_BOTTOM,
+        STAIR,
+        STAIR_UPSIDE,
+        shaped_ref,
+    )
+
+    # a 45-degree ramp rising toward +x: 8 long, 8 tall, 4 deep (y-up)
+    v = np.array([[0, 0, 0], [8, 0, 0], [8, 8, 0], [0, 0, 4], [8, 0, 4], [8, 8, 4]], float)
+    f = np.array([[0, 2, 1], [3, 4, 5], [0, 1, 4], [0, 4, 3], [1, 2, 5], [1, 5, 4], [0, 3, 5], [0, 5, 2]])
+    ramp = trimesh.Trimesh(vertices=v, faces=f, process=True)
+    ramp.fix_normals()
+    ramp.visual.vertex_colors = np.tile(np.array([120, 120, 120, 255], dtype=np.uint8), (len(ramp.vertices), 1))
+    obj = voxelize_mesh(ramp, height=8, up="y")
+    assert obj.size == (8, 8, 4) and obj.shapes is not None
+    diag = [int(obj.shapes[x, x, 1]) for x in range(8)]
+    assert all(c == STAIR for c in diag), diag  # the slope is one stair per block
+    assert all(obj.facings[x, x, 1] == 1 for x in range(8))  # facing east: the full side is uphill (+x)
+    assert int(obj.shapes[7, 0, 1]) == FULL
+    grid = to_grid(obj)
+    states = {(r.block_id.split(":")[1], dict(r.props).get("facing"), dict(r.props).get("half")) for r in grid.palette}
+    assert any(n.endswith("_stairs") and fc == "east" and hf == "bottom" for n, fc, hf in states), states
+    # materials without stair/slab variants stay full cubes; slabs need no facing
+    assert shaped_ref("red_concrete", STAIR, 1) is None and shaped_ref("stone", FULL, -1) is None
+    assert shaped_ref("stone", SLAB_BOTTOM, -1).block_id == "minecraft:stone_slab"
+    up = shaped_ref("oak_planks", STAIR_UPSIDE, 2)
+    assert up.block_id == "minecraft:oak_stairs" and dict(up.props) == {"facing": "south", "half": "top", "shape": "straight", "waterlogged": "false"}
+
+
+def test_stair_facing_rotates_with_placement():
+    from craftpilot.objects import place as P
+
+    st = "minecraft:stone_stairs[facing=east,half=bottom,shape=straight,waterlogged=false]"
+    assert P.rotate_state(st, 1) == "minecraft:stone_stairs[facing=south,half=bottom,shape=straight,waterlogged=false]"
+    assert P.rotate_state(st, 4) == st and P.rotate_state("minecraft:stone_slab[type=top]", 3) == "minecraft:stone_slab[type=top]"
+    world = P.to_world([(0, 0, 0, st)], (10, 64, 10), 2)
+    assert world[0][3].startswith("minecraft:stone_stairs[facing=west")

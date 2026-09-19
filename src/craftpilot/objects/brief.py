@@ -14,7 +14,7 @@ from craftpilot.config import SETTINGS
 from craftpilot.llm.azure import endpoint_root
 
 PALETTES = ("auto", "stone", "wood", "metal", "colorful")
-MIN_HEIGHT, MAX_HEIGHT, DEFAULT_HEIGHT = 6, 96, 32
+MIN_HEIGHT, MAX_HEIGHT, DEFAULT_HEIGHT = 6, 96, 40
 
 # Families of full blocks per palette hint (names from objects.voxelize.PALETTE). "auto" = everything.
 PALETTE_FAMILIES: dict[str, list[str]] = {
@@ -35,10 +35,12 @@ into a brief for an image model and a voxeliser. Reply with JSON only.
 - subject: one vivid sentence describing exactly what to draw, in the style of an image prompt: the subject,
   its pose, its material/finish and colour, and 2-3 distinctive features. Keep every feature the player named.
   Prefer a static, compact, self-supporting pose (no thin outstretched limbs) and a solid, opaque material.
+  The result is built from 1-metre blocks, so ask for BOLD, CHUNKY, simplified forms with smooth surfaces —
+  never fine textures (feathers, scales, fur strands, filigree): they turn into noise.
 - plinth: true for statues/monuments/busts (a plain rectangular plinth under the figure), false for vehicles,
   weapons, props, animals meant to stand on the ground.
-- height: total height in blocks (6-96). Default 32 for a statue, 24 for a creature/character, 12-16 for a
-  vehicle, 20-30 for a weapon planted in the ground. Respect any number the player gives.
+- height: total height in blocks (6-96). Bigger reads better: default 40 for a statue, 32 for a
+  creature/character, 20 for a vehicle, 30 for a weapon planted in the ground. Respect any number the player gives.
 - palette: "stone" (grey statue), "wood", "metal", "colorful" (painted/coloured subject) or "auto".
 - style: 3-8 words of rendering style for the image model, e.g. "carved granite, weathered", "glossy red paint,
   chrome trim", "smooth marble". Match the player's intent.
@@ -112,7 +114,7 @@ def fallback_brief(text: str) -> ObjectBrief:
         palette = "wood"
     if any(w in t for w in ("iron", "steel", "metal", "chrome", "robot", "mech")):
         palette = "metal"
-    height = _height_from_text(text) or (32 if plinth else 24)
+    height = _height_from_text(text) or (40 if plinth else 32)
     subject = re.sub(r"^\s*(please\s+)?((build|make|create|spawn)\s+(me\s+)?)?(a|an|the)\s+", "", text, flags=re.IGNORECASE).strip()
     return ObjectBrief(subject=subject or text, plinth=plinth, height=_clamp(height), palette=palette,
                        style="carved stone, matte" if palette == "stone" else "clear readable silhouette",

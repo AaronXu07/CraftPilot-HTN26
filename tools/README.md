@@ -31,6 +31,14 @@ python recon_worker.py triposr/examples/chair.png out_smoke/chair.ply
 
 Timings on an M4 Pro: model load ~5 s (per call for now), inference 3–11 s, meshing ~4 s.
 
+## The persistent worker (what actually runs)
+
+`recon_server.py` loads TripoSR once, warms the GPU kernels and the u2net matting model, and serves
+`POST /reconstruct` on `127.0.0.1:7790`. `craftpilot.objects.recon` starts it automatically on the first
+object and falls back to `recon_worker.py` (one-shot subprocess) if it cannot. Per object on an M4 Pro:
+matte 0.2 s, inference 0.6 s, meshing 1.4 s. Log: `tools/recon_server.log`. Stop it with
+`pkill -f recon_server.py`; set `CRAFTPILOT_RECON_SERVER=0` to force the subprocess path.
+
 ## Configuration
 
 | Env | Default | Meaning |
