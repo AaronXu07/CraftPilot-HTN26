@@ -225,3 +225,34 @@ Previews place diffs so blocking+detailing previews cost one extra `/setblocks` 
   `lantern_*`/`merlon_*` get the nicest text; otherwise `carved 5 openings` / `added 3 details`.
 - Live preview is on by default (`LIVE_PREVIEW=false` or `/cp preview off` to disable). The preview shows the
   build in the blocking stage's single material — expected; the palette lands with the final placement.
+
+## T4 — Build quality via the bench [in progress]
+
+**Bench**: `agent/bench/prompts.json` expanded 10 → 20 (added windmill, viking_longhouse, aqueduct,
+wall_watchtower, round_library, market_hall, ship, chapel_bell_tower, hexagonal_keep, ruined_tower; the
+first 5 are still the `--quick` set). `bench/run.py --jobs N` builds N prompts concurrently (per-prompt
+session/bridge/registry; the Azure client is shared, as under `/chat`). 4 jobs hit 429s on every prompt
+(scoring failed, stages cut short) — restarted at 2 jobs, which sees ~1 short 429 retry per prompt.
+One broken prompt no longer kills the run (`run_one` catches). A full run at 2 jobs ≈ 30 min.
+
+**Levers (all in this commit; A/B'd as one full run vs the baseline — see "Numbers")**
+1. Interpret (`pipeline/interpret.py: validate_brief`): the silhouette plan is parsed for towers/turrets/
+   spires wider than tall (`r=4 h=24`, `6x6 h=20`, `… 8 tall`), roofs with no stated overhang (or "flat
+   roof"/parapet), and no stated entrance. A failing brief is sent back once with the reasons (only when
+   ≥ 20 s of plan remain); if still failing, the rules ride along as `design rule: …` constraints. Prompt
+   examples/checklist updated so they pass the validator (tested).
+2. Detailing prompt: checklist rewritten — façades > 8 get depth (pilasters/reveals) + rhythm, quoins on
+   every corner (worked example with `mirror` on both axes), roofs get overhang ≥ 1 + ridge line + eave
+   trim ring, framed entrance. Trimmed elsewhere to stay under the prompt size cap.
+3. Materials: lint rule **R9** (`engine/lint.py`, active once the scene defines a material): ≥ 3 distinct
+   materials on solids, and a `gradient` on the main wall material (largest grounded volume, so a big roof
+   does not count as "the wall"). Ten presets added and checked on a rendered test wall
+   (`limestone_pale`, `tudor_plaster`, `dark_slate_wall`, `red_brick_victorian`, `weathered_wood`,
+   `turf_roof`, `spruce_shingle_roof`, `stone_trim_light`, `quartz_trim`, `sandstone_trim`); every preset
+   validates against the registry. `/cp lint` meta command added (also in help).
+4. Fitting: cone/dome/wedge/arch goldens re-run (green); the arch golden is a *subtracted* cylinder, so
+   fit on carved surfaces is covered (facing/half asserted). Torus golden left for T6.
+5. Critic (`critic.vet_fixes`): a fix must carry a concrete op call and name ids that exist in the scene
+   (or `add`/`run_script` something new); prose fixes and invented ids are dropped; cap 3. Second final
+   critic/fix round only when the first final score < 7 (`SECOND_ROUND_BELOW`). Critic prompt states the
+   contract. Chat lines show an op gist (`fixing: add hall_win on hall`) — the raw op leaked braces.

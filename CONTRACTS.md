@@ -198,6 +198,19 @@ one line per event. A model-originated `say()` gets the same tag. `/cp verbose o
 adds one line per tool call. Lines that start with `[cp` are printed by the mod without the `[copilot]`
 prefix (tag in gold; `[cp·build` green, `[cp·critic` yellow); the final reply (2–4 untagged lines: what was
 built, dimensions/objects/blocks/time, next-step hint) keeps the prefix.
+
+Build quality (T4): the interpret stage validates the brief (`interpret.validate_brief`) — every
+tower/turret/spire in `silhouette_plan` must be taller than wide, every roof must state an overhang
+(or "flat roof" + parapet) and the plan must state the entrance; a failing brief is sent back to the
+model once (one extra call, only when the plan budget has ≥ 20 s), otherwise the rule travels with
+the brief as a `design rule: …` constraint. Lint rule R9 (materials stage, active once the scene
+defines a material): ≥ 3 distinct materials on solids and a ground `gradient` on the main
+(grounded) wall material. Critic fixes are vetted (`critic.vet_fixes`): a fix must carry a concrete
+op call and name object ids that exist (or `add`/`run_script` something new), at most 3; a second
+final critic/fix round runs only when the first final score is < 7. Critic chat lines show an op gist
+(`fixing: add hall_win on hall`), never the raw op. `bench/run.py --jobs N` builds N prompts
+concurrently (2 is safe on the shared Azure deployment; 4 hits 429s); `bench/prompts.json` has 20
+prompts, the first 5 are `--quick`. Baseline and after runs live in `agent/bench/results/`.
 Live preview: `LIVE_PREVIEW` (default true; `/cp preview on|off` overrides per session) places the scene
 in the world with diff placement after the blocking and detailing stages; materials and decoration land
 with the final placement. The final placement is animated bottom-up in 400-block layer chunks (60 ms

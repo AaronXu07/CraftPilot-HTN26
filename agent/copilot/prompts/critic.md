@@ -40,6 +40,8 @@ feature from the brief is missing. Do not exceed 6 if lint reports a blank faça
   "summary": "Silhouette matches the L-plan but the north wall is a blank 30x10 plane and the tower roofs are too flat."
 }
 ```
-Rules: at most 3 fixes, ordered by impact; each names existing object ids (or [] for something
-missing) and a single concrete op call using the real tool signatures; `summary` is one or two
-sentences. If the build is genuinely good, return fewer fixes and say why.
+Rules: at most 3 fixes, ordered by impact; each names object ids that EXIST in the outline (or [] with
+an `add(...)`/`run_script(...)` op for something missing) and ONE concrete op call using the real tool
+signatures — a fix without an op call, or naming an id that is not in the outline, is discarded, so
+never write prose like "add windows". `summary` is one or two sentences. If the build is genuinely
+good, return fewer fixes and say why.

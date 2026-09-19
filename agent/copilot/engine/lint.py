@@ -1,7 +1,8 @@
 """Design-rule linter (plan.md §8.2). Mechanical checks the critic can cite by rule number.
 
 R1 blank façade · R2 roof overhang/slope · R3 entrance · R4 material variety · R5 floating/isolated
-blocks · R6 props resting on air · R7 scale (dimension > 120) · R8 unknown material names.
+blocks · R6 props resting on air · R7 scale (dimension > 120) · R8 unknown material names ·
+R9 materials stage: ≥ 3 distinct materials on solids and a ground gradient on the main wall material.
 """
 from __future__ import annotations
 
@@ -52,7 +53,7 @@ def lint_scene_only(scene: Any) -> List[LintFinding]:
 def lint(scene: Any, raster: Optional[RasterResult], fit: Optional[FitResult], block_map: Optional[BlockMap],
          registry: Optional[Registry] = None) -> List[LintFinding]:
     """Run every design rule. `raster`, `fit` and `block_map` may be None (then only scene rules run)."""
-    findings = lint_scene_only(scene)
+    findings = lint_scene_only(scene) + _r9_materials(scene)
     if raster is None or fit is None:
         return findings
     kind = np.asarray(fit.kind)
@@ -281,6 +282,55 @@ def _r3_entrance(scene: Any, raster: RasterResult, kind: np.ndarray) -> List[Lin
     if cand.any():
         return []
     return [LintFinding("R3", "warn", "no entrance at ground level: carve a 2-tall doorway (subtract a box) or place a door", [])]
+
+
+MIN_MATERIALS = 3
+
+
+def _r9_materials(scene: Any) -> List[LintFinding]:
+    """Materials-stage rules (T4, P4/P5). Runs once the scene defines at least one material — i.e. the
+    materials stage has begun — so blocking's placeholders do not trigger it."""
+    mats = getattr(scene, "materials", {}) or {}
+    if not mats:
+        return []
+    try:
+        from .materials import PRESETS
+    except Exception:  # noqa: BLE001
+        PRESETS = {}
+    volumes: dict = {}
+    grounded: dict = {}  # material → volume of objects standing on the ground (the walls, not the roofs)
+    solids = []
+    for o in getattr(scene, "objects", []):
+        if o.op != "add" or o.shape.get("type") == "block":
+            continue
+        name = o.material_name()
+        if not name or name == "default":
+            continue
+        try:
+            bb = scene.object_bbox(o)
+            size = bb.size
+            vol, lo_y = float(size[0] * size[1] * size[2]), float(bb.lo[1])
+        except Exception:  # noqa: BLE001
+            vol, lo_y = 1.0, 0.0
+        solids.append((name, vol, lo_y))
+        volumes[name] = volumes.get(name, 0.0) + vol
+    if not volumes:
+        return []
+    floor = min(lo for _, _, lo in solids)
+    for name, vol, lo_y in solids:
+        if lo_y <= floor + 1.0:
+            grounded[name] = grounded.get(name, 0.0) + vol
+    out: List[LintFinding] = []
+    if len(volumes) < MIN_MATERIALS:
+        out.append(LintFinding("R9", "warn", f"only {len(volumes)} distinct material(s) on solids ({', '.join(sorted(volumes))}): wall, roof and trim must be three contrasting materials (P5)", []))
+    main = max(grounded or volumes, key=(grounded or volumes).get)  # the wall material: biggest grounded volume
+    spec = mats.get(main) or PRESETS.get(main) or {}
+    if isinstance(spec, dict) and "preset" in spec and not spec.get("gradient"):
+        spec = {**PRESETS.get(str(spec.get("preset")), {}), **spec}
+    if isinstance(spec, dict) and not spec.get("gradient"):
+        ids = [o.id for o in scene.objects if o.op == "add" and o.material_name() == main][:6]
+        out.append(LintFinding("R9", "warn", f"main wall material {main!r} has no ground gradient (P4): define it with \"gradient\": {{\"axis\": \"y\", \"from\": 0, \"to\": 3, \"palette\": [[darker/rougher block, 1]]}}", ids))
+    return out
 
 
 def _r4_variety(block_map: BlockMap) -> List[LintFinding]:

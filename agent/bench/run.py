@@ -1,6 +1,6 @@
 """Bench harness (plan §8.3): build every prompt headless, render, score with the vision model.
 
-    cd agent && ../.venv/bin/python -m bench.run [--only NAME] [--quick] [--profile] [--fast] [--mock] [--out DIR]
+    cd agent && ../.venv/bin/python -m bench.run [--only NAME] [--quick] [--profile] [--jobs N] [--fast] [--mock] [--out DIR]
     cd agent && ../.venv/bin/python -m bench.run --profile --from bench/out/<dir>   # latency table of an old run
 
 Writes bench/out/<timestamp>/<name>.png, report.md and report.json. `--quick` runs the first
@@ -116,7 +116,57 @@ def score_build(llm: Any, image: Any, item: Dict[str, Any], outline_text: str) -
     return out
 
 
-def run(items: List[Dict[str, Any]], out_dir: str, fast: bool, mock: bool, profile_mode: bool = False) -> Dict[str, Any]:
+def run_one(item: Dict[str, Any], out_dir: str, llm: Any, fast: bool, mock: bool, profile_mode: bool = False) -> Dict[str, Any]:
+    """Build, render and score one prompt; returns the report row."""
+    name = item["name"]
+    print(f"== {name}: {item['prompt'][:70]}…", flush=True)
+    bridge = make_bridge()
+    registry = make_registry(bridge)
+    ctx = make_ctx(name, bridge, registry, out_dir, mock)
+    t0 = time.time()
+    try:
+        res = handle_chat(ctx, item["prompt"], llm=llm, fast=fast)
+    except Exception as e:  # noqa: BLE001 — one broken prompt must not kill the run
+        res = SimpleNamespace(reply=f"ERROR: {type(e).__name__}: {e}", data={"error": str(e)})
+    secs = time.time() - t0
+    png = os.path.join(out_dir, f"{name}.png")
+    image = render_sheet(ctx, png)
+    outline_text = ctx.session.scene.describe()
+    if mock:
+        crit = (res.data or {}).get("final_score")
+        scores = {k: crit for k in SCORE_KEYS}
+        scores.update({"notes": "mock run (scripted critic)", "mean": crit})
+    else:
+        scores = score_build(llm, image, item, outline_text)
+    log_records = getattr(getattr(ctx, "log", None), "records", []) or []
+    tool_calls = sum(1 for r in log_records if not str(r.get("name", "")).startswith("__"))
+    profile = (res.data or {}).get("profile") or profile_from_records(log_records, secs)
+    row = {
+        "name": name,
+        "prompt": item["prompt"],
+        "seconds": round(secs, 1),
+        "tool_calls": tool_calls or (res.data or {}).get("tool_calls", 0),
+        "objects": len(ctx.session.scene.objects),
+        "blocks": (res.data or {}).get("blocks"),
+        "final_critic": (res.data or {}).get("final_score"),
+        "scores": scores,
+        "reply": res.reply[:300],
+        "png": png if image is not None else None,
+        "profile": profile,
+        "skipped": (res.data or {}).get("skipped", []),
+    }
+    print(f"   {name}: {secs:.0f}s, {row['tool_calls']} tool calls, {row['objects']} objects, scores={scores}", flush=True)
+    if profile_mode:
+        print("   " + profile_line(profile), flush=True)
+    try:
+        with open(os.path.join(out_dir, f"{name}.scene.json"), "w") as f:
+            f.write(ctx.session.scene.to_json(indent=1))
+    except Exception:  # noqa: BLE001
+        pass
+    return row
+
+
+def run(items: List[Dict[str, Any]], out_dir: str, fast: bool, mock: bool, profile_mode: bool = False, jobs: int = 1) -> Dict[str, Any]:
     os.makedirs(out_dir, exist_ok=True)
     if mock:
         from bench.mock_builder import ScriptedBuilderLLM
@@ -127,54 +177,17 @@ def run(items: List[Dict[str, Any]], out_dir: str, fast: bool, mock: bool, profi
 
         shared = AzureLLM()
         llm_factory = lambda: shared  # noqa: E731
-    results = []
-    for item in items:
-        name = item["name"]
-        print(f"== {name}: {item['prompt'][:70]}…", flush=True)
-        bridge = make_bridge()
-        registry = make_registry(bridge)
-        ctx = make_ctx(name, bridge, registry, out_dir, mock)
-        llm = llm_factory()
-        t0 = time.time()
-        res = handle_chat(ctx, item["prompt"], llm=llm, fast=fast)
-        secs = time.time() - t0
-        png = os.path.join(out_dir, f"{name}.png")
-        image = render_sheet(ctx, png)
-        outline_text = ctx.session.scene.describe()
-        if mock:
-            crit = (res.data or {}).get("final_score")
-            scores = {k: crit for k in SCORE_KEYS}
-            scores.update({"notes": "mock run (scripted critic)", "mean": crit})
-        else:
-            scores = score_build(llm, image, item, outline_text)
-        log_records = getattr(getattr(ctx, "log", None), "records", []) or []
-        tool_calls = sum(1 for r in log_records if not str(r.get("name", "")).startswith("__"))
-        profile = (res.data or {}).get("profile") or profile_from_records(log_records, secs)
-        row = {
-            "name": name,
-            "prompt": item["prompt"],
-            "seconds": round(secs, 1),
-            "tool_calls": tool_calls or (res.data or {}).get("tool_calls", 0),
-            "objects": len(ctx.session.scene.objects),
-            "blocks": (res.data or {}).get("blocks"),
-            "final_critic": (res.data or {}).get("final_score"),
-            "scores": scores,
-            "reply": res.reply[:300],
-            "png": png if image is not None else None,
-            "profile": profile,
-            "skipped": (res.data or {}).get("skipped", []),
-        }
-        results.append(row)
-        print(f"   {secs:.0f}s, {row['tool_calls']} tool calls, {row['objects']} objects, scores={scores}", flush=True)
-        if profile_mode:
-            print("   " + profile_line(profile), flush=True)
-        try:
-            with open(os.path.join(out_dir, f"{name}.scene.json"), "w") as f:
-                f.write(ctx.session.scene.to_json(indent=1))
-        except Exception:  # noqa: BLE001
-            pass
+    if jobs > 1 and len(items) > 1:
+        # prompts are independent (own session/bridge/registry); the Azure client is thread-safe and
+        # the pipeline already runs on a thread pool under /chat — a full 20-prompt run in ~4 slots
+        from concurrent.futures import ThreadPoolExecutor
+
+        with ThreadPoolExecutor(max_workers=jobs) as pool:
+            results = list(pool.map(lambda it: run_one(it, out_dir, llm_factory(), fast, mock, profile_mode), items))
+    else:
+        results = [run_one(item, out_dir, llm_factory(), fast, mock, profile_mode) for item in items]
     means = [r["scores"].get("mean") for r in results if r["scores"].get("mean") is not None]
-    report = {"timestamp": time.strftime("%Y-%m-%d %H:%M:%S"), "fast": fast, "mock": mock, "mean": round(sum(means) / len(means), 2) if means else None, "results": results}
+    report = {"timestamp": time.strftime("%Y-%m-%d %H:%M:%S"), "fast": fast, "mock": mock, "jobs": jobs, "mean": round(sum(means) / len(means), 2) if means else None, "results": results}
     with open(os.path.join(out_dir, "report.json"), "w") as f:
         json.dump(report, f, indent=1)
     with open(os.path.join(out_dir, "report.md"), "w") as f:
@@ -326,6 +339,7 @@ def main(argv: Optional[List[str]] = None) -> int:
     ap.add_argument("--out", help="output directory (default bench/out/<timestamp>)")
     ap.add_argument("--prompts", default=os.path.join(HERE, "prompts.json"))
     ap.add_argument("--every", type=float, default=0.0, help="repeat the run every N hours (plan §8.3: 4); 0 = once")
+    ap.add_argument("--jobs", type=int, default=1, help="build N prompts concurrently (T4: a full run in ~4 slots)")
     args = ap.parse_args(argv)
     if args.from_dir:
         print(profile_existing(args.from_dir))
@@ -341,7 +355,7 @@ def main(argv: Optional[List[str]] = None) -> int:
             return 2
     while True:
         out_dir = args.out or os.path.join(HERE, "out", time.strftime("%Y%m%d_%H%M%S"))
-        run(items, out_dir, fast=args.fast, mock=args.mock, profile_mode=args.profile)
+        run(items, out_dir, fast=args.fast, mock=args.mock, profile_mode=args.profile, jobs=max(1, args.jobs))
         if args.every <= 0:
             return 0
         print(f"next bench run in {args.every:g} h (ctrl-c to stop)")

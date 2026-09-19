@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import re
 import time
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional
 
 from ..jobs import check_cancel
 from ..llm import extract_json, single_call
@@ -95,6 +95,48 @@ def _guess_type(request: str) -> str:
     return ""
 
 
+_NUM = r"(\d+(?:\.\d+)?)"
+
+
+def _tower_problems(plan: str) -> List[str]:
+    """Towers/turrets/spires described wider than tall (P1), read from the silhouette plan's numbers.
+
+    Understands `r=4 h=24`, `radius 4 … height 24`, `6x6 h=5`, `6x6x5`, `… 20 tall` within the clause
+    that names the tower (up to the next `;` or `.`)."""
+    out: List[str] = []
+    for m in re.finditer(r"\b(towers?|turrets?|spires?|minarets?|pillars?)\b([^;.]*)", plan, flags=re.I):
+        clause = m.group(2)
+        width: Optional[float] = None
+        height: Optional[float] = None
+        r = re.search(r"\b(?:r|radius)\s*=?\s*" + _NUM, clause, flags=re.I)
+        if r:
+            width = 2 * float(r.group(1))
+        box = re.search(r"\b" + _NUM + r"\s*[x×]\s*" + _NUM + r"(?:\s*[x×]\s*" + _NUM + r")?", clause, flags=re.I)
+        if box:
+            width = max(float(box.group(1)), float(box.group(2))) if width is None else width
+            if box.group(3):
+                height = float(box.group(3))
+        h = re.search(r"\b(?:h|height)\s*=?\s*" + _NUM, clause, flags=re.I) or re.search(_NUM + r"\s*(?:tall|high)\b", clause, flags=re.I)
+        if h:
+            height = float(h.group(1))
+        if width is not None and height is not None and width > height:
+            out.append(f"{m.group(1).lower()} described {width:g} wide but only {height:g} tall — towers must be taller than wide (P1)")
+    return out
+
+
+def validate_brief(brief: Dict[str, Any]) -> List[str]:
+    """Design-rule problems in a brief that the interpret stage must fix before building (T4 lever 1):
+    towers wider than tall, a roof with no stated overhang, and no stated entrance."""
+    plan = str(brief.get("silhouette_plan") or "")
+    text = " ".join([plan] + [str(x) for x in brief.get("key_features", [])] + [str(x) for x in brief.get("constraints", [])])
+    problems = _tower_problems(plan)
+    if re.search(r"\broofs?\b", plan, flags=re.I) and not re.search(r"\b(overhang|eaves?|flat roofs?|parapet)", text, flags=re.I):
+        problems.append("the plan has roofs but states no overhang — give every pitched/hip/cone roof an overhang ≥ 1 (P1), or say 'flat roof' with a parapet")
+    if not re.search(r"\b(entrance|entry|door(way)?|gate(house|way)?|portal|portico|porch|archway|opening)\b", text, flags=re.I):
+        problems.append(f"no entrance is stated — say where the door/gate is on the {brief.get('facing', 'south')} side and its size (P6)")
+    return problems
+
+
 def brief_to_text(brief: Dict[str, Any]) -> str:
     """One line for the player, e.g. 'castle (medieval stone), 40x32, 26 tall: L-shaped keep, four towers…'."""
     feats = ", ".join(brief.get("key_features", [])[:4])
@@ -108,6 +150,15 @@ def brief_to_text(brief: Dict[str, Any]) -> str:
     return s
 
 
+def _retry_allowed(ctx: Any) -> bool:
+    """Only spend a second interpret call when the plan schedule has room for it (≥ 20 s of the turn's plan)."""
+    budget = getattr(ctx, "budget", None)
+    try:
+        return budget is None or float(budget.remaining) > 20.0
+    except Exception:  # noqa: BLE001
+        return True
+
+
 def interpret(llm: Any, ctx: Any, request: str, temperature: float = 0.6) -> Dict[str, Any]:
     """Ask the model for a brief (via the set_brief tool, with JSON-in-text fallback); store it on the session."""
     tools = get_tools(ctx, names=["set_brief"]) or [SET_BRIEF_SCHEMA]
@@ -117,21 +168,37 @@ def interpret(llm: Any, ctx: Any, request: str, temperature: float = 0.6) -> Dic
     brief: Optional[Dict[str, Any]] = None
     check_cancel(ctx)
     t0 = time.time()
-    try:
-        resp = single_call(llm, sys_prompt, user, temperature, tools, tool_choice={"type": "function", "function": {"name": "set_brief"}}, ctx=ctx)
-        for tc in resp.tool_calls:
-            if tc.name == "set_brief":
-                brief = tc.args.get("brief", tc.args) if isinstance(tc.args, dict) else None
-                break
-        if brief is None and resp.text:
-            j = extract_json(resp.text)
-            if isinstance(j, dict):
-                brief = j
-    except Exception as e:  # noqa: BLE001
-        brief = {"error": str(e)}
+    calls = 0
+    problems: List[str] = []
+    for attempt in range(2):  # one retry when the brief breaks a design rule (towers wider than tall, no overhang, no entrance)
+        calls += 1
+        try:
+            resp = single_call(llm, sys_prompt, user, temperature, tools, tool_choice={"type": "function", "function": {"name": "set_brief"}}, ctx=ctx)
+            for tc in resp.tool_calls:
+                if tc.name == "set_brief":
+                    brief = tc.args.get("brief", tc.args) if isinstance(tc.args, dict) else None
+                    break
+            if brief is None and resp.text:
+                j = extract_json(resp.text)
+                if isinstance(j, dict):
+                    brief = j
+        except Exception as e:  # noqa: BLE001
+            brief = {"error": str(e)}
+            break
+        problems = validate_brief(normalize_brief(brief, request)) if isinstance(brief, dict) and "error" not in brief else []
+        if not problems or attempt or not _retry_allowed(ctx):
+            break
+        check_cancel(ctx)
+        user = (
+            f"Player request: {request.strip()}\n\nYour previous brief was rejected:\n- " + "\n- ".join(problems)
+            + f"\n\nPrevious silhouette_plan: {normalize_brief(brief, request)['silhouette_plan'][:800]}\n\nRewrite the brief so the plan fixes every point above and call set_brief again."
+        )
     ms = int((time.time() - t0) * 1000)
-    profile_row(ctx, "interpret", wall_ms=ms, llm_ms=ms, llm_calls=1)
+    profile_row(ctx, "interpret", wall_ms=ms, llm_ms=ms, llm_calls=calls, note="; ".join(problems)[:120] if problems else "")
     b = normalize_brief(brief, request)
+    if problems:
+        # still failing after the retry (or no time for one): the builder gets the rule as a constraint
+        b["constraints"] = list(b.get("constraints", [])) + [f"design rule: {p}" for p in problems]
     session = getattr(ctx, "session", None)
     if session is not None:
         session.brief = b

@@ -171,8 +171,8 @@ def test_scripted_build_say_sequence_and_placements(tmp_path, monkeypatch):
     b = MockBridge()
     ctx = real_ctx(tmp_path, b)
     critic = [
-        {"score": 5, "top_3_fixes": [{"rule": "P1", "objects": ["hall"], "op_suggestion": "raise the hall to 10"}], "summary": "squat"},  # blocking → fix
-        {"score": 9, "top_3_fixes": [{"rule": "P8", "objects": ["hall"], "op_suggestion": "one more window"}], "summary": "fine"},  # detailing: noted only
+        {"score": 5, "top_3_fixes": [{"rule": "P1", "objects": ["hall"], "op_suggestion": "set_shape(id='hall', height=10)"}], "summary": "squat"},  # blocking → fix
+        {"score": 9, "top_3_fixes": [{"rule": "P8", "objects": ["hall"], "op_suggestion": "add(id='hall_win2', shape={'type':'box','size':[2,2,3]}, pos=[4,3,4], op='subtract')"}], "summary": "fine"},  # detailing: noted only
         {"score": 9, "top_3_fixes": [], "summary": "ok"},  # materials
         {"score": 9, "top_3_fixes": [], "summary": "ok"},  # decoration
         {"score": 8, "top_3_fixes": [], "summary": "good"},  # final
@@ -184,9 +184,9 @@ def test_scripted_build_say_sequence_and_placements(tmp_path, monkeypatch):
     assert tags(lines) == ["plan", "block", "critic", "fix", "detail", "critic", "materials", "critic", "decor", "critic", "critic", "build", "build"]
     assert lines[0].startswith("[cp·plan 0:0") and "hip roof" in lines[0]
     assert lines[1].endswith("] added 2 solids")
-    assert lines[2].endswith("] 5/10 — fixing: raise the hall to 10 on hall (rule P1)")
+    assert lines[2].endswith("] 5/10 — fixing: set_shape hall (rule P1)")
     assert lines[4].endswith("] carved 3 windows, 1 door")
-    assert lines[5].endswith("] 9/10 — noted: one more window")
+    assert lines[5].endswith("] 9/10 — noted: add hall_win2")
     assert lines[6].endswith("] castle_wall/roof_dark; 2 objects repainted")
     assert lines[8].endswith("] added 2 lanterns")
     assert lines[10].endswith("] 8/10 — good") and lines[-1] == "[cp·build 100%]"

@@ -47,6 +47,7 @@ COPILOT_LLM=mock ../.venv/bin/python -m copilot.server --port 8000 --bridge mock
 curl -X POST localhost:8000/chat -H 'content-type: application/json' -d '{"player":"me","text":"build a hall"}'   # → {"job_id":1,...}; reply via /say, or curl localhost:8000/jobs/1
 ../.venv/bin/python -m bench.run --mock --fast     # bench smoke run → bench/out/<ts>/report.md
 ../.venv/bin/python -m bench.run --quick --profile  # 5 prompts against Azure + per-stage latency table
+../.venv/bin/python -m bench.run --jobs 2 --profile # all 20 prompts, two at a time (~25 min; 4 jobs hits 429s)
 ```
 
 ## Running the real thing

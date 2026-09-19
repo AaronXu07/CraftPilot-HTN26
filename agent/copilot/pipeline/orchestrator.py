@@ -23,6 +23,7 @@ from .stages import FIX_STAGE, STAGE_BY_NAME, StageResult, run_stage, stage_for_
 
 CRITIC_PASS = 8
 MAX_FINAL_FIX_ROUNDS = 2
+SECOND_ROUND_BELOW = 7  # a second final critic/fix round only if the first scored below this
 FIX_ROUND_CALLS = 15
 
 HELP_TEXT = (
@@ -30,7 +31,7 @@ HELP_TEXT = (
     "• `/cp build a castle with four round towers and a gatehouse facing me`\n"
     "• `/cp make the northeast tower 8 blocks taller and give it a copper roof`\n"
     "• `/cp swap the walls to deepslate with a mossy base`\n"
-    "• `/cp undo` · `/cp redo` · `/cp status` · `/cp cancel` (stop the running job) · `/cp render` · `/cp place`\n"
+    "• `/cp undo` · `/cp redo` · `/cp status` · `/cp cancel` (stop the running job) · `/cp render` · `/cp lint` · `/cp place`\n"
     "• `/cp export [name]` (.litematic) · `/cp materials` (block counts)\n"
     "• `/cp preview on|off` (place the build live after blocking and detailing) · `/cp verbose on|off` (one line per op)\n"
     "• `/cp reset` (forget the current build)"
@@ -114,16 +115,27 @@ def _stage_line(ctx: Any, stage_name: str, before: Dict[str, Any], res: Any, fix
     return _progress(ctx).say("fix" if fix else stage_name, text)
 
 
+_OP_HEAD = re.compile(r"\s*(?:scene\.)?([a-z_]+)\s*\(\s*(?:id\s*=\s*['\"]([^'\"]+)['\"])?", re.I)
+
+
+def op_gist(op: str, fallback: str = "") -> str:
+    """`add(id='hall_win', shape={…})` → `add hall_win`; prose passes through. Chat lines never carry JSON."""
+    m = _OP_HEAD.match(op or "")
+    if m:
+        return m.group(1) + (f" {m.group(2)}" if m.group(2) else "")
+    return one_line(op or fallback, 90).replace("{", "").replace("}", "")
+
+
 def _critic_line(ctx: Any, crit: Any, fixing: bool) -> str:
     score = f"{crit.score}/10" if crit.score is not None else "no score"
     if crit.fixes and fixing:
         f = crit.fixes[0]
-        what = one_line(f.get("op_suggestion") or f.get("issue") or crit.summary, 90)
+        what = op_gist(f.get("op_suggestion") or "", f.get("issue") or crit.summary)
         objs = ", ".join(str(o) for o in (f.get("objects") or [])[:2])
         rule = f" (rule {f['rule']})" if f.get("rule") else ""
-        return _progress(ctx).say("critic", f"{score} — fixing: {what}" + (f" on {objs}" if objs else "") + rule)
+        return _progress(ctx).say("critic", f"{score} — fixing: {what}" + (f" on {objs}" if objs and objs not in what else "") + rule)
     if crit.fixes:
-        return _progress(ctx).say("critic", f"{score} — noted: {one_line(crit.fixes[0].get('op_suggestion') or crit.summary, 90)}")
+        return _progress(ctx).say("critic", f"{score} — noted: {op_gist(crit.fixes[0].get('op_suggestion') or '', crit.summary)}")
     return _progress(ctx).say("critic", f"{score} — {one_line(crit.summary, 90) or 'looks good'}")
 
 
@@ -185,7 +197,7 @@ def _block_count(place_result: Any) -> Optional[int]:
 # meta commands
 # ----------------------------------------------------------------------------------------------
 _META_RE = re.compile(
-    r"^\s*/?(?:cp\s+)?(?P<cmd>undo|redo|export|materials?(?:\s+list)?|reset|clear|preview|verbose|help|status|describe|outline|render|place|snapshot|restore)\b\s*(?P<arg>.*)$",
+    r"^\s*/?(?:cp\s+)?(?P<cmd>undo|redo|export|materials?(?:\s+list)?|reset|clear|preview|verbose|help|status|describe|outline|render|lint|place|snapshot|restore)\b\s*(?P<arg>.*)$",
     re.IGNORECASE,
 )
 
@@ -239,6 +251,9 @@ def handle_meta(ctx: Any, text: str) -> Optional[ChatResult]:
         if session.brief:
             head = "Brief: " + brief_to_text(session.brief) + "\n"
         return ChatResult(reply=head + outline(ctx, detail="full" if arg == "full" else "outline"))
+    if cmd == "lint":
+        r = call_tool(ctx, "lint", {})
+        return ChatResult(reply=getattr(r, "text", "") or "lint: no findings")
     if cmd == "render":
         views = [v for v in re.split(r"[,\s]+", arg) if v] or ["iso", "front"]
         r = call_tool(ctx, "render", {"views": views})
@@ -345,13 +360,18 @@ def run_build(ctx: Any, llm: Any, request: str, fast: bool = False, place: bool 
             # live preview: viewers watch the massing appear, then the openings; materials/decoration land at the end
             _place(ctx, "diff", animate=True)
     if not fast:
-        for _ in range(MAX_FINAL_FIX_ROUNDS):
+        first_final: Optional[int] = None
+        for round_no in range(MAX_FINAL_FIX_ROUNDS):
             if not budget.allow_critic():
                 break
+            if round_no > 0 and (first_final is None or first_final >= SECOND_ROUND_BELOW):
+                break  # T4: a second final round only when the first one scored < 7
             budget.start_critic()
             crit = critique(llm, ctx, "final", brief)
             report.critiques.append(crit)
             report.final_score = crit.score
+            if first_final is None:
+                first_final = crit.score
             fixing = not crit.passed(CRITIC_PASS) and bool(crit.fixes) and budget.allow_fix()
             _critic_line(ctx, crit, fixing)
             if not fixing:

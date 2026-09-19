@@ -2,9 +2,10 @@
 from __future__ import annotations
 
 import json
+import re
 import time
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Sequence
 
 from ..jobs import check_cancel
 from ..llm import IMAGES_PER_CALL, extract_json, image_parts, single_call, text_content
@@ -46,8 +47,23 @@ def _mid_y(ctx: Any) -> int:
         return 1
 
 
-def parse_critique(text: Any, stage: str = "") -> Critique:
-    """Parse the critic's JSON; tolerate prose, fences and partial output."""
+_OP_CALL = re.compile(r"\b(add|set_shape|set_material|paint|move|remove|delete|reorder|define_material|run_script|scene\.\w+|mirror_copy|array|extrude|fit|shell|round|group|ungroup|place|block)\s*\(", re.I)
+
+
+def _scene_ids(ctx: Any) -> Optional[List[str]]:
+    try:
+        return [o.id for o in ctx.session.scene.objects]
+    except Exception:  # noqa: BLE001
+        return None
+
+
+def parse_critique(text: Any, stage: str = "", known_ids: Optional[Sequence[str]] = None) -> Critique:
+    """Parse the critic's JSON; tolerate prose, fences and partial output.
+
+    T4: at most 3 fixes; each must carry a concrete op call (`add(…)`, `set_shape(…)`, …) or it is
+    dropped — prose alone gives the fix round nothing to execute. When `known_ids` is given, ids the
+    critic invented are stripped from `objects`; a fix that then names nothing and does not `add`/`run_script`
+    something new is dropped too (it would send the fix round hunting for a non-existent object)."""
     raw = "" if text is None else str(text)
     j = extract_json(raw)
     if not isinstance(j, dict):
@@ -70,7 +86,25 @@ def parse_critique(text: Any, stage: str = "") -> Critique:
             objs = [objs]
         fixes.append({"rule": str(f.get("rule", "")).upper(), "objects": [str(o) for o in objs], "op_suggestion": str(f.get("op_suggestion") or f.get("op") or f.get("fix") or "")})
     summary = str(j.get("summary") or "")
-    return Critique(score=score, fixes=fixes, summary=summary, raw=raw, stage=stage)
+    return Critique(score=score, fixes=vet_fixes(fixes, known_ids), summary=summary, raw=raw, stage=stage)
+
+
+def vet_fixes(fixes: List[Dict[str, Any]], known_ids: Optional[Sequence[str]] = None) -> List[Dict[str, Any]]:
+    """Keep only actionable fixes: a concrete op call, and object ids that exist (see parse_critique)."""
+    known = set(known_ids) if known_ids is not None else None
+    out: List[Dict[str, Any]] = []
+    for f in fixes:
+        op = str(f.get("op_suggestion") or "").strip()
+        if not _OP_CALL.search(op):
+            continue
+        objs = list(f.get("objects") or [])
+        if known is not None:
+            objs = [o for o in objs if o in known or any(o == k.split("/")[-1] for k in known)]
+            creates = bool(re.match(r"\s*(add|run_script|scene\.add|define_material|paint|place)\s*\(", op, re.I))
+            if not objs and not creates:
+                continue
+        out.append({**f, "objects": objs})
+    return out[:3]
 
 
 def fixes_text(c: Critique) -> str:
@@ -129,7 +163,7 @@ def critique(llm: Any, ctx: Any, stage: str, brief: Optional[Dict[str, Any]], li
     except Exception as e:  # noqa: BLE001
         text = f"critic error: {e}"
     llm_ms = int((time.time() - t_llm) * 1000)
-    c = parse_critique(text, stage)
+    c = parse_critique(text, stage, known_ids=_scene_ids(ctx))
     c.used_vision = bool(images)
     c.lint_text = lint_text
     wall_ms = int((time.time() - t0) * 1000)

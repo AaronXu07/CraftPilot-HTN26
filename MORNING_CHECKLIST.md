@@ -56,3 +56,20 @@ Start the agent first: `cd agent && ../.venv/bin/python -m copilot.server --port
 - In-game: type `/cp place full`; expect the whole build to re-animate bottom-up with the `[cp·build N%]` lines.
 - Agent log: `runs/<player>_<stamp>/turn_NNN.jsonl` shows one `say` record per progress line (`name: "say"`), and
   `place` rows in the `__summary__` profile: two previews (`note: diff`) plus the final one (`note: diff final`).
+
+## T4 — build quality (bench levers)
+- In-game: type `/cp build a squat watchtower 10 wide and 6 tall with a flat roof`; expect the `[cp·plan 0:0N]` line
+  to describe a tower taller than wide with a stated entrance and parapet (the interpret stage rejects
+  towers wider than tall / roofs without overhang / no entrance and asks the model once for a corrected brief;
+  the run log's `interpret` profile row shows `llm_calls: 2` and a `note` naming the rule when that happened).
+- In-game: after any build, type `/cp lint`; expect no `R9` finding (≥ 3 materials on solids, gradient on the main
+  wall material). If the materials stage was cut short by the budget you may see `R9 … no ground gradient` —
+  say `add a cobblestone gradient to the walls` and expect it to clear.
+- In-game: watch the `[cp·critic …]` lines; expect `fixing: <op> <id> on <id> (rule Pn)` gists such as
+  `6/10 — fixing: add wall_n_win on wall_n (rule P8)` — never a raw `add(id=…, shape={…})` string, never `{`.
+- In-game: type `/cp define material limestone_pale` … (or in chat: `use the limestone_pale preset on the walls and
+  quartz_trim on the trim`); expect the walls to re-paint pale sandstone/calcite with a darker cut-sandstone base
+  band. New presets: `limestone_pale`, `tudor_plaster`, `dark_slate_wall`, `red_brick_victorian`, `weathered_wood`,
+  `turf_roof`, `spruce_shingle_roof`, `stone_trim_light`, `quartz_trim`, `sandstone_trim`.
+- Bench: `cd agent && ../.venv/bin/python -m bench.run --quick --profile --jobs 2`; expect 5 prompts in ~8 min,
+  mean score in `bench/out/<ts>/report.md`; compare with `agent/bench/results/t4_baseline/report.md`.

@@ -126,3 +126,23 @@ def test_floating_and_isolated_r5_and_props_r6():
 def test_lint_without_raster_only_scene_rules():
     sc = scene_box()
     assert lint(sc, None, None, None) == lint_scene_only(sc)
+
+
+def test_materials_stage_r9():
+    # blocking: no materials defined yet → R9 is silent even with one placeholder everywhere
+    sc = scene_box(material="stone_wall")
+    sc, _ = apply_op(sc, "add", id="roof", shape={"type": "pyramid", "size": [14, 5, 14]}, pos=[0, 6, 0], material="stone_wall")
+    assert "R9" not in rules(lint(sc, None, None, None))
+    # materials stage: one wall material without a gradient on everything → both R9 findings
+    sc, _ = apply_op(sc, "define_material", name="wall", spec={"base": "stone_bricks", "palette": [["stone_bricks", 0.8], ["cracked_stone_bricks", 0.2]]})
+    sc, _ = apply_op(sc, "set_material", ids=["hall", "roof"], material="wall")
+    fs = [f for f in lint(sc, None, None, None) if f.rule == "R9"]
+    assert len(fs) == 2 and "only 1 distinct" in fs[0].message and "no ground gradient" in fs[1].message and fs[1].objects == ["hall", "roof"]
+    # three materials and a gradient on the wall → clean
+    sc, _ = apply_op(sc, "define_material", name="wall", spec={"base": "stone_bricks", "gradient": {"axis": "y", "from": 0, "to": 3, "palette": [["cobblestone", 1]]}})
+    sc, _ = apply_op(sc, "set_material", ids=["roof"], material="slate_roof")
+    sc, _ = apply_op(sc, "add", id="trim", shape={"type": "box", "size": [14, 1, 14]}, pos=[0, 5, 0], material="andesite_grey")
+    assert "R9" not in rules(lint(sc, None, None, None))
+    # a preset with a built-in gradient counts
+    sc, _ = apply_op(sc, "set_material", ids=["hall"], material="medieval_stone")
+    assert "R9" not in rules(lint(sc, None, None, None))

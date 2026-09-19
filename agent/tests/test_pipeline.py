@@ -56,7 +56,7 @@ def test_critic_parser_handles_malformed_and_fenced_json():
     assert c.score is None and c.fixes == [] and c.summary.startswith("I think")
     c2 = parse_critique('```json\n{"score": "6.4", "top_3_fixes": [{"rule": "p8", "objects": "wall_n", "op_suggestion": "add(...)"}, "just a string"], "summary": "flat",}\n```', "detailing")
     assert c2.score == 6 and c2.fixes[0] == {"rule": "P8", "objects": ["wall_n"], "op_suggestion": "add(...)"}
-    assert c2.fixes[1]["op_suggestion"] == "just a string" and c2.summary == "flat"
+    assert len(c2.fixes) == 1 and c2.summary == "flat"  # "just a string" carries no op call → dropped (T4)
     assert "[P8]" in fixes_text(c2) and "score 6/10" in fixes_text(c2)
     assert parse_critique('{"score": 42}').score == 10
 
@@ -64,9 +64,10 @@ def test_critic_parser_handles_malformed_and_fenced_json():
 def test_critique_uses_contact_sheet_when_vision(tmp_path):
     ctx = _ctx(tmp_path)
     ctx.session.apply("add", id="keep", shape={"type": "box", "size": [8, 6, 8]}, material="stone_wall")
-    m = L.MockLLM([{"text": '{"score": 5, "top_3_fixes": [{"rule": "P8", "objects": ["keep"], "op_suggestion": "add windows"}], "summary": "blank"}'}], supports_vision=True)
+    m = L.MockLLM([{"text": '{"score": 5, "top_3_fixes": [{"rule": "P8", "objects": ["keep"], "op_suggestion": "add(id=\'keep_win\', shape={\'type\':\'box\',\'size\':[1,2,3]}, pos=[0,2,4], op=\'subtract\')"}, {"rule": "P2", "objects": ["ghost"], "op_suggestion": "set_shape(id=\'ghost\', height=9)"}], "summary": "blank"}'}], supports_vision=True)
     c = critique(m, ctx, "blocking", {"name": "x"})
     assert c.score == 5 and c.used_vision and c.fixes[0]["objects"] == ["keep"]
+    assert len(c.fixes) == 1  # the fix naming a non-existent object was dropped (T4)
     assert m.requests[0]["has_images"] is True
     parts = m.requests[0]["messages"][1]["content"]
     assert "keep" in parts[0]["text"] and "Lint findings" in parts[0]["text"]
@@ -166,7 +167,7 @@ def test_build_with_critic_fix_rounds(tmp_path):
         {"score": 9, "top_3_fixes": [], "summary": "ok"},  # detailing
         {"score": 9, "top_3_fixes": [], "summary": "ok"},  # materials
         {"score": 9, "top_3_fixes": [], "summary": "ok"},  # decoration
-        {"score": 6, "top_3_fixes": [{"rule": "P7", "objects": [], "op_suggestion": "add lanterns"}], "summary": "dark"},  # final 1 → fix
+        {"score": 6, "top_3_fixes": [{"rule": "P7", "objects": [], "op_suggestion": "add(id='lantern_door', shape={'type':'block','block':'lantern'}, pos=[0,3,7])"}], "summary": "dark"},  # final 1 → fix
         {"score": 8, "top_3_fixes": [], "summary": "good"},  # final 2
     ]
     llm = ScriptedBuilderLLM(critic_responses=critic)
@@ -187,6 +188,7 @@ def test_meta_commands(tmp_path):
     assert handle_meta(ctx, "build a house") is None
     ctx.session.apply("add", id="a", shape={"type": "box", "size": [2, 2, 2]})
     assert "box 2x2x2" in handle_meta(ctx, "/cp status").reply
+    assert isinstance(handle_meta(ctx, "/cp lint").reply, str) and handle_meta(ctx, "/cp lint").reply
     assert handle_meta(ctx, "preview on").reply.startswith("Live preview on") and ctx.session.live_preview
     r = handle_meta(ctx, "place")
     assert r.placed and ctx.session.world.is_placed()

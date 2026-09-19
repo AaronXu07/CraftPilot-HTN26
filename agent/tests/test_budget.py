@@ -223,7 +223,7 @@ def test_router_and_fix_rounds_use_fast_model(tmp_path):
     assert r.intent == "edit" and llm.fast_llm.roles == ["router"] and llm.roles == []
     ctx2 = _ctx(tmp_path)
     llm2 = _FastAware()
-    llm2.critic_responses = [{"score": 4, "top_3_fixes": [{"rule": "P8", "objects": ["hall"], "op_suggestion": "add windows"}], "summary": "flat"}]
+    llm2.critic_responses = [{"score": 4, "top_3_fixes": [{"rule": "P8", "objects": ["hall"], "op_suggestion": "add(id='hall_win', shape={'type':'box','size':[2,2,3]}, pos=[0,3,4], op='subtract')"}], "summary": "flat"}]
     run_build(ctx2, llm2, "build a small stone hall", fast=False)
     assert "blocking" in llm2.fast_llm.roles  # the fix round after the failing critic ran on the fast model
     assert "critic" in llm2.roles and "blocking" in llm2.roles  # the stage itself and the critic stayed on the main model
