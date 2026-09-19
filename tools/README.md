@@ -31,6 +31,21 @@ python recon_worker.py triposr/examples/chair.png out_smoke/chair.ply
 
 Timings on an M4 Pro: model load ~5 s (per call for now), inference 3–11 s, meshing ~4 s.
 
+## Engines
+
+| engine | model | time / object (M4 Pro) | frame | notes |
+|---|---|---|---|---|
+| `hunyuan` (default) | Hunyuan3D-2 mini-turbo, fp16, FlashVDM | ~10–13 s | y up, camera on +z | a real 3D body; shape only, so the reference image is projected onto the mesh for colours |
+| `triposr` | TripoSR | ~2 s | z up, camera on +x | shallow, relief-like depth; kept as the fast fallback |
+
+Select with `CRAFTPILOT_RECON_ENGINE` or `craftpilot object --engine`. Hunyuan3D setup, in the same venv:
+
+```sh
+cd tools && git clone --depth 1 https://github.com/Tencent-Hunyuan/Hunyuan3D-2.git hunyuan3d
+source .venv-3d/bin/activate && uv pip install diffusers accelerate opencv-python pygltflib pymeshlab
+# weights (tencent/Hunyuan3D-2mini, fp16 safetensors, ~1.2 GB for the turbo DiT) download on first start
+```
+
 ## The persistent worker (what actually runs)
 
 `recon_server.py` loads TripoSR once, warms the GPU kernels and the u2net matting model, and serves

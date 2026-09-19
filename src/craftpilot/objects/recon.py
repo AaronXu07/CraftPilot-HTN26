@@ -61,17 +61,19 @@ def ensure_server(wait: bool = True) -> bool:
                              stdin=subprocess.DEVNULL, start_new_session=True)
     if not wait:
         return True
+    want = os.environ.get("CRAFTPILOT_RECON_ENGINE", "hunyuan")
     deadline = time.time() + SERVER_START_TIMEOUT_S
     while time.time() < deadline:
         h = _health()
-        if h and h.get("ok") and h.get("warm"):
+        if h and h.get("ok") and h.get("warm") and (want != "hunyuan" or "hunyuan" in h.get("engines", []) or time.time() > deadline - 30):
             return True
         time.sleep(0.5)
     return bool(h and h.get("ok"))
 
 
-def _via_server(image_path: Path, out_ply: Path, resolution: int, timeout: float) -> dict:
-    body = json.dumps({"image": str(image_path), "out": str(out_ply), "resolution": resolution}).encode()
+def _via_server(image_path: Path, out_ply: Path, resolution: int, timeout: float, engine: str | None = None) -> dict:
+    body = json.dumps({"image": str(image_path), "out": str(out_ply), "resolution": resolution,
+                       "engine": engine or os.environ.get("CRAFTPILOT_RECON_ENGINE", "hunyuan")}).encode()
     req = urllib.request.Request(server_url() + "/reconstruct", data=body, headers={"Content-Type": "application/json"})
     with urllib.request.urlopen(req, timeout=timeout) as r:
         report = json.loads(r.read().decode())
@@ -103,8 +105,11 @@ def _via_subprocess(image_path: Path, out_ply: Path, resolution: int, timeout: f
     return report
 
 
-def reconstruct(image_path: Path, out_ply: Path, resolution: int = 256, timeout: float = 300.0) -> dict:
-    """Run the reconstruction; returns the worker's report ({ok, vertices, faces, seconds, infer_s, mesh_s, …})."""
+def reconstruct(image_path: Path, out_ply: Path, resolution: int = 256, timeout: float = 300.0,
+                engine: str | None = None) -> dict:
+    """Run the reconstruction; returns the worker's report ({ok, engine, up_axis, front_axis, vertices, faces,
+    seconds, infer_s, mesh_s, …}). `engine`: "hunyuan" (default; real 3D, ~13 s) or "triposr" (~2 s, relief-like).
+    The subprocess fallback is TripoSR only (z up, camera on +x)."""
     if not available():
         raise ReconUnavailable(
             f"3D worker not installed: expected {worker_python()} and {WORKER}. See tools/README.md."
@@ -114,10 +119,13 @@ def reconstruct(image_path: Path, out_ply: Path, resolution: int = 256, timeout:
     report: dict
     if ensure_server():
         try:
-            report = _via_server(image_path, out_ply, resolution, timeout)
+            report = _via_server(image_path, out_ply, resolution, timeout, engine)
         except (urllib.error.URLError, OSError, json.JSONDecodeError):
             report = _via_subprocess(image_path, out_ply, resolution, timeout)
     else:
         report = _via_subprocess(image_path, out_ply, resolution, timeout)
+    report.setdefault("engine", "triposr")
+    report.setdefault("up_axis", "z")
+    report.setdefault("front_axis", "+x")
     report["wall_seconds"] = round(time.time() - t0, 1)
     return report

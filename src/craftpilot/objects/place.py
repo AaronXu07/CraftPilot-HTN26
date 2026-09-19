@@ -22,10 +22,11 @@ from craftpilot.grid.semantic import SemanticGrid
 DEFAULT_MOD_URL = "http://127.0.0.1:7777"
 FACING_TURNS = {"north": 0, "east": 1, "south": 2, "west": 3}
 FACING_VEC = {"north": (0, -1), "east": (1, 0), "south": (0, 1), "west": (-1, 0)}
-# TripoSR: "x back, y right, z up" with the input camera on +x, so the side seen in the reference image
-# faces +x after the z-up -> y-up rotation. Three CW quarter turns take +x to +z, the agent's convention
-# for "the front faces the player standing south of the build".
-PRESENTATION_TURNS = 3
+# Which side of the reconstruction faced the camera, per engine, and the CW quarter turns that bring it to
+# +z — the agent's "front faces the player standing south of the build" convention. TripoSR: camera on +x
+# ("x back, y right, z up"); Hunyuan3D: camera on +z already. The grid carries it as report["object_front"].
+PRESENTATION_TURNS = {"+x": 3, "+z": 0, "-x": 1, "-z": 2}
+DEFAULT_FRONT = "+x"
 
 
 class ModUnavailable(RuntimeError):
@@ -113,10 +114,12 @@ def grid_blocks(grid: SemanticGrid) -> list[tuple[int, int, int, str]]:
     cx = (int(xs.min()) + int(xs.max()) + 1) // 2
     cz = (int(zs.min()) + int(zs.max()) + 1) // 2
     states = [f"{ref.block_id}" + ("[" + ",".join(f"{k}={v}" for k, v in ref.props) + "]" if ref.props else "") for ref in grid.palette]
-    states = [rotate_state(st, PRESENTATION_TURNS) for st in states]
+    front = str((getattr(grid, "report", None) or {}).get("object_front", DEFAULT_FRONT))
+    turns = PRESENTATION_TURNS.get(front, PRESENTATION_TURNS[DEFAULT_FRONT])
+    states = [rotate_state(st, turns) for st in states]
     out = []
     for x, y, z in zip(xs.tolist(), ys.tolist(), zs.tolist()):
-        rx, rz = rotate_xz(x - cx, z - cz, PRESENTATION_TURNS)
+        rx, rz = rotate_xz(x - cx, z - cz, turns)
         out.append((rx, int(y), rz, states[int(grid.block[x, y, z])]))
     return out
 

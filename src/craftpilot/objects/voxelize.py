@@ -324,7 +324,7 @@ def _surface_mask(occ: np.ndarray) -> np.ndarray:
     return occ & ~inner
 
 
-def clamp_chroma(lab: np.ndarray, factor: float = 1.2, floor: float = 6.0, percentile: float = 90.0) -> np.ndarray:
+def clamp_chroma(lab: np.ndarray, factor: float = 1.5, floor: float = 6.0, percentile: float = 95.0) -> np.ndarray:
     """Pull outlier chroma back to the object's own level: single-image reconstruction hallucinates
     magenta/cyan on the unseen side, and a grey statue must stay grey. The limit is a high percentile of
     the object's own chroma, so a red car whose tyres/windows/underside are black (the *median* voxel)

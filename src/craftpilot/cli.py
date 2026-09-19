@@ -157,6 +157,7 @@ def object_(
     types: int = typer.Option(None, "--types", help="Max distinct block types on the surface (default: 6 for grey subjects, 10 for colourful)"),
     resolution: int = typer.Option(256, "--resolution", help="Reconstruction marching-cubes resolution"),
     place_now: bool = typer.Option(False, "--place", help="Also place it in the running game, in front of the player (needs the Fabric mod)"),
+    engine: str = typer.Option(None, "--engine", help="Reconstructor: hunyuan (default; real 3D, ~13 s) or triposr (~2 s, shallow)"),
 ) -> None:
     """Text -> reference image (FLUX) -> mesh (TripoSR, local) -> coloured voxels -> .litematic (+ preview)."""
     from craftpilot.objects.imagegen import ImageRejected
@@ -165,7 +166,7 @@ def object_(
 
     try:
         r = build_object(text, out_dir=out_dir, height=height, use_llm=not no_llm, preview=not no_preview, yaw_deg=yaw,
-                         max_types=types, resolution=resolution)
+                         max_types=types, resolution=resolution, engine=engine)
     except (ReconUnavailable, ImageRejected) as exc:
         typer.echo(f"error: {exc}", err=True)
         raise typer.Exit(2) from exc

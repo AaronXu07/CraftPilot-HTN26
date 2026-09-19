@@ -188,3 +188,24 @@ def test_stair_facing_rotates_with_placement():
     assert P.rotate_state(st, 4) == st and P.rotate_state("minecraft:stone_slab[type=top]", 3) == "minecraft:stone_slab[type=top]"
     world = P.to_world([(0, 0, 0, st)], (10, 64, 10), 2)
     assert world[0][3].startswith("minecraft:stone_stairs[facing=west")
+
+
+def test_presentation_turns_follow_the_engine_front_axis():
+    from craftpilot.objects import place as P
+    from craftpilot.objects.voxelize import to_grid
+
+    # an L: column plus a foot sticking out toward +x in a y-up frame (Hunyuan's), i.e. the foot is on the
+    # object's right as seen from the camera on +z; the front (+z) must end up facing +z untouched
+    m = trimesh.util.concatenate([
+        _colored_box(size=(2, 8, 2)).apply_translation([0, 4, 0]),
+        _colored_box(size=(4, 2, 2)).apply_translation([3, 1, 0]),
+    ])
+    grid = to_grid(voxelize_mesh(m, height=8, up="y"))
+    grid.report["object_front"] = "+z"
+    blocks = P.grid_blocks(grid)
+    foot = [b for b in blocks if b[1] == 0]
+    assert max(x for x, _, _, _ in foot) > max(b[0] for b in blocks) - 2  # foot still on +x: no turn applied
+    # TripoSR meshes (front on +x) get three CW turns so the presented side faces +z
+    grid.report["object_front"] = "+x"
+    foot = [b for b in P.grid_blocks(grid) if b[1] == 0]
+    assert max(z for _, _, z, _ in foot) > max(b[2] for b in P.grid_blocks(grid)) - 2

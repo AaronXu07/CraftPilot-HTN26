@@ -72,6 +72,11 @@ def _color(block_id: str) -> tuple[int, int, int]:
         if name.endswith(suffix):
             base = name[: -len(suffix)]
             break
+    if base in PALETTE:  # e.g. polished_tuff_stairs, deepslate_tile_slab
+        return PALETTE[base]
+    for alt in (base + "s", base.replace("brick", "bricks"), base.replace("tile", "tiles")):
+        if alt in PALETTE:
+            return PALETTE[alt]
     for candidate in (base, base + "_planks", base + "_block", base + "s", base.replace("brick", "bricks")):
         if candidate in _COLORS:
             return _COLORS[candidate]

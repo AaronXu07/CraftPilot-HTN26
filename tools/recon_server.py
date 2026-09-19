@@ -1,13 +1,20 @@
-"""Persistent TripoSR worker: loads the model once and serves reconstructions over localhost HTTP.
+"""Persistent reconstruction worker: loads the models once and serves image -> mesh over localhost HTTP.
 
     python tools/recon_server.py [--port 7790] [--device mps]
 
-    POST /reconstruct {"image": "/abs/in.png", "out": "/abs/out.ply", "resolution": 256, "keep_bg": false}
-        -> {"ok": true, "vertices": N, "faces": M, "seconds": s, "infer_s": …, "mesh_s": …}
-    GET  /health -> {"ok": true, "device": "mps", "warm": true}
+    POST /reconstruct {"image": "/abs/in.png", "out": "/abs/out.ply", "engine": "hunyuan"|"triposr",
+                       "resolution": 256, "keep_bg": false}
+        -> {"ok": true, "engine": …, "up_axis": "y"|"z", "front_axis": "+z"|"+x", "vertices": N, "faces": M,
+            "seconds": s, "prep_s": …, "infer_s": …, "mesh_s": …, "matte": "u2net"|"flood"}
+    GET  /health -> {"ok": true, "device": "mps", "warm": true, "engines": [...]}
 
-Runs in tools/.venv-3d (torch + MPS). craftpilot.objects.recon starts it on first use and talks to it; a
-cold subprocess call costs 5-18 s of model load per object, the warm server ~1 s inference + ~3 s meshing.
+Engines (both in tools/.venv-3d, torch + MPS):
+- hunyuan  — Hunyuan3D-2 mini-turbo (0.6B flow-matching shape model, fp16, FlashVDM decoder): a real 3D
+             body from one image, ~13 s on an M4 Pro at octree 256. Shape only, so the reference image is
+             projected onto the mesh for vertex colours. Frame: y up, image-left = -x, camera on +z.
+- triposr  — TripoSR: ~2 s, but a shallow relief-like guess of depth. Frame: z up, camera on +x.
+craftpilot.objects.recon starts this server on first use; a cold subprocess (recon_worker.py, TripoSR only)
+is the fallback when it cannot.
 """
 from __future__ import annotations
 
@@ -23,13 +30,16 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 warnings.filterwarnings("ignore")
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.join(HERE, "triposr"))
+sys.path.insert(0, os.path.join(HERE, "hunyuan3d"))
 
 import numpy as np  # noqa: E402
 import torch  # noqa: E402
 from PIL import Image  # noqa: E402
 
 CHUNK = 32768  # triplane query chunk: 8192 (TripoSR default) meshes in ~8 s on an M4 Pro, 32768 in ~3 s
-STATE: dict = {"model": None, "device": "cpu", "rembg": None, "warm": False, "lock": threading.Lock()}
+HUNYUAN_REPO, HUNYUAN_SUBFOLDER = "tencent/Hunyuan3D-2mini", "hunyuan3d-dit-v2-mini-turbo"
+HUNYUAN_STEPS = 5  # the turbo model is step-distilled; 5 is its intended budget
+STATE: dict = {"model": None, "hunyuan": None, "device": "cpu", "rembg": None, "warm": False, "lock": threading.Lock()}
 
 
 def load(device: str) -> None:
@@ -61,6 +71,26 @@ def load(device: str) -> None:
         print(json.dumps({"event": "rembg_failed", "error": str(e)[:200]}), flush=True)
     STATE["warm"] = True
     print(json.dumps({"event": "warm", "seconds": round(time.time() - t, 1)}), flush=True)
+    # Hunyuan3D-2 mini-turbo after TripoSR, so the fast engine is available while this one loads (~20 s)
+    if os.environ.get("CRAFTPILOT_HUNYUAN", "1").lower() not in ("0", "false", "off", "no"):
+        t = time.time()
+        try:
+            from hy3dgen.shapegen import Hunyuan3DDiTFlowMatchingPipeline
+
+            dtype = torch.float16 if device == "mps" else torch.float32
+            pipe = Hunyuan3DDiTFlowMatchingPipeline.from_pretrained(
+                HUNYUAN_REPO, subfolder=HUNYUAN_SUBFOLDER, device=device, dtype=dtype, use_safetensors=True, variant="fp16")
+            pipe.enable_flashvdm(mc_algo="mc")  # 134 s -> 13 s per object on MPS
+            from PIL import ImageDraw
+
+            blob = Image.new("RGBA", (256, 256), (0, 0, 0, 0))  # warm-up subject: an opaque grey disc
+            ImageDraw.Draw(blob).ellipse((48, 48, 208, 208), fill=(140, 140, 140, 255))
+            with torch.no_grad():  # first MPS call compiles kernels
+                pipe(image=blob, num_inference_steps=1, octree_resolution=64, generator=torch.Generator().manual_seed(0))
+            STATE["hunyuan"] = pipe
+            print(json.dumps({"event": "hunyuan", "seconds": round(time.time() - t, 1)}), flush=True)
+        except Exception as e:  # noqa: BLE001 — TripoSR still serves
+            print(json.dumps({"event": "hunyuan_failed", "error": str(e)[:300]}), flush=True)
 
 
 def flood_matte(img: Image.Image, tol: int = 28, min_fg: float = 0.02, max_fg: float = 0.90) -> Image.Image | None:
@@ -123,33 +153,90 @@ def prepare(image_path: str, keep_bg: bool, foreground_ratio: float = 0.85) -> t
             matte = "flood" if cut is not None else "none"
         if cut is not None:
             img = cut
-    img = resize_foreground(img.convert("RGBA"), foreground_ratio)
-    arr = np.array(img).astype(np.float32) / 255.0
+    rgba = resize_foreground(img.convert("RGBA"), foreground_ratio)
+    arr = np.array(rgba).astype(np.float32) / 255.0
     arr = arr[:, :, :3] * arr[:, :, 3:4] + (1 - arr[:, :, 3:4]) * 0.5
-    return Image.fromarray((arr * 255.0).astype(np.uint8)), matte
+    return Image.fromarray((arr * 255.0).astype(np.uint8)), matte, rgba
+
+
+def project_colors(mesh, rgba: Image.Image, flip_x: bool = False):
+    """Vertex colours for a shape-only mesh: orthographic projection of the reference image along the
+    camera axis (z), mapping the mesh's x/y extent onto the subject's alpha bounding box (image-left = -x,
+    image-up = +y). Vertices whose projection lands on transparent pixels (silhouette edges, and the far
+    side, which shares the front's colours) take the nearest opaque pixel."""
+    from scipy.spatial import cKDTree
+
+    a = np.asarray(rgba)
+    alpha = a[:, :, 3] > 127
+    ys, xs = np.nonzero(alpha)
+    if xs.size == 0:
+        return np.full((len(mesh.vertices), 4), 160, dtype=np.uint8)
+    x0, x1, y0, y1 = xs.min(), xs.max(), ys.min(), ys.max()
+    v = np.asarray(mesh.vertices)
+    lo, hi = v.min(axis=0), v.max(axis=0)
+    u = (v[:, 0] - lo[0]) / max(hi[0] - lo[0], 1e-6)
+    if flip_x:
+        u = 1.0 - u
+    w = (v[:, 1] - lo[1]) / max(hi[1] - lo[1], 1e-6)
+    col = np.clip(np.round(x0 + u * (x1 - x0)), 0, a.shape[1] - 1).astype(int)
+    row = np.clip(np.round(y1 - w * (y1 - y0)), 0, a.shape[0] - 1).astype(int)
+    hit = alpha[row, col]
+    rgb = a[row, col, :3].copy()
+    if hit.any() and not hit.all():
+        # a vertex whose projection misses the silhouette (the far side, a foreshortened limb) takes the
+        # colour of the nearest vertex that hit, in 3D — surface-coherent, unlike the nearest edge pixel,
+        # which is the darkest outline of the drawing
+        tree = cKDTree(v[hit])
+        _, idx = tree.query(v[~hit], k=1)
+        rgb[~hit] = rgb[hit][idx]
+    return np.concatenate([rgb, np.full((len(rgb), 1), 255, dtype=np.uint8)], axis=1)
 
 
 def reconstruct(req: dict) -> dict:
     t0 = time.time()
-    img, matte = prepare(req["image"], bool(req.get("keep_bg", False)))
+    engine = str(req.get("engine") or os.environ.get("CRAFTPILOT_RECON_ENGINE", "hunyuan")).lower()
+    if engine == "hunyuan" and STATE["hunyuan"] is None:
+        engine = "triposr"  # not loaded (yet, or disabled): the fast engine answers
+    img, matte, rgba = prepare(req["image"], bool(req.get("keep_bg", False)))
     prep_s = time.time() - t0
     out = req["out"]
     img.save(os.path.splitext(out)[0] + "_input.png")
-    model, device = STATE["model"], STATE["device"]
+    device = STATE["device"]
+    resolution = int(req.get("resolution", 256))
     with STATE["lock"]:
-        t = time.time()
-        with torch.no_grad():
-            codes = model([img], device=device)
-        if device == "mps":
-            torch.mps.synchronize()
-        infer_s = time.time() - t
-        t = time.time()
-        mesh = model.extract_mesh(codes, has_vertex_color=True, resolution=int(req.get("resolution", 256)))[0]
-        mesh_s = time.time() - t
+        if engine == "hunyuan":
+            pipe = STATE["hunyuan"]
+            t = time.time()
+            with torch.no_grad():
+                mesh = pipe(image=rgba, num_inference_steps=HUNYUAN_STEPS, octree_resolution=resolution,
+                            generator=torch.Generator().manual_seed(int(req.get("seed", 1))))[0]
+            if device == "mps":
+                torch.mps.synchronize()
+            infer_s = time.time() - t
+            t = time.time()
+            import trimesh
+
+            mesh = trimesh.Trimesh(vertices=np.asarray(mesh.vertices), faces=np.asarray(mesh.faces), process=False)
+            mesh.visual.vertex_colors = project_colors(mesh, rgba)
+            mesh_s = time.time() - t
+            up_axis, front_axis = "y", "+z"
+        else:
+            model = STATE["model"]
+            t = time.time()
+            with torch.no_grad():
+                codes = model([img], device=device)
+            if device == "mps":
+                torch.mps.synchronize()
+            infer_s = time.time() - t
+            t = time.time()
+            mesh = model.extract_mesh(codes, has_vertex_color=True, resolution=resolution)[0]
+            mesh_s = time.time() - t
+            up_axis, front_axis = "z", "+x"
     t = time.time()
     mesh.export(out)
     export_s = time.time() - t
-    return {"ok": True, "out": out, "vertices": int(len(mesh.vertices)), "faces": int(len(mesh.faces)),
+    return {"ok": True, "out": out, "engine": engine, "up_axis": up_axis, "front_axis": front_axis,
+            "vertices": int(len(mesh.vertices)), "faces": int(len(mesh.faces)),
             "seconds": round(time.time() - t0, 1), "prep_s": round(prep_s, 1), "infer_s": round(infer_s, 1),
             "mesh_s": round(mesh_s, 1), "export_s": round(export_s, 1), "matte": matte}
 
@@ -168,7 +255,8 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_GET(self):
         if self.path == "/health":
-            self._send(200, {"ok": STATE["model"] is not None, "device": STATE["device"], "warm": STATE["warm"]})
+            engines = [e for e, m in (("triposr", STATE["model"]), ("hunyuan", STATE["hunyuan"])) if m is not None]
+            self._send(200, {"ok": STATE["model"] is not None, "device": STATE["device"], "warm": STATE["warm"], "engines": engines})
         else:
             self._send(404, {"ok": False, "error": "not found"})
 

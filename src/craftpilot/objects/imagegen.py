@@ -37,9 +37,12 @@ BLOCK_FRIENDLY = ("Stylized as a chunky, simplified toy-like model: bold masses,
                   "no fine texture, no thin poles, ropes, wires or rigging.")
 
 
-def compose_prompt(subject: str, plinth: bool, style: str = "", camera: int = 0) -> str:
+VIVID = " Vivid, saturated colours with strong contrast between parts."
+
+
+def compose_prompt(subject: str, plinth: bool, style: str = "", camera: int = 0, vivid: bool = False) -> str:
     base = "Standing on a plain rectangular stone plinth. " if plinth else "Standing on the ground, nothing under it. "
-    style_clause = (style.strip().rstrip(".") + ". " if style else "") + BLOCK_FRIENDLY
+    style_clause = (style.strip().rstrip(".") + ". " if style else "") + BLOCK_FRIENDLY + (VIVID if vivid else "")
     cam = CAMERAS[camera % len(CAMERAS)]
     return PROMPT_TEMPLATE.format(camera=cam, subject=subject.strip().rstrip("."), base_clause=base, style_clause=style_clause)
 
@@ -60,17 +63,18 @@ def _is_content_filter(exc: Exception) -> bool:
     return "content" in msg and ("reject" in msg or "filter" in msg or "safety" in msg or "violence" in msg)
 
 
-def prompt_attempts(subject: str, plinth: bool, style: str, request: str | None = None, camera: int = 0) -> list[str]:
+def prompt_attempts(subject: str, plinth: bool, style: str, request: str | None = None, camera: int = 0,
+                    vivid: bool = False) -> list[str]:
     """Prompts to try in order. Azure's image gateway has a keyword blocklist that fires on innocuous
     phrase combinations (a style tail like "glossy red paint, sleek curves" got a sports car rejected) and
     a violence filter that fires on weapons and monsters, so each retry removes the most likely trigger:
     the LLM's style clause, then the LLM's embellished subject (back to the player's own words), then a
     museum-sculpture framing for the violence filter."""
-    out = [compose_prompt(subject, plinth, style, camera)]
+    out = [compose_prompt(subject, plinth, style, camera, vivid)]
     if style:
-        out.append(compose_prompt(subject, plinth, "", camera))
+        out.append(compose_prompt(subject, plinth, "", camera, vivid))
     if request and request.strip().lower() != subject.strip().lower():
-        out.append(compose_prompt(request, plinth, "", camera))
+        out.append(compose_prompt(request, plinth, "", camera, vivid))
     out.append(compose_prompt(SAFE_REWRITE.format(subject_lc=(request or subject).strip().rstrip(".").lower()), plinth=True,
                               style="carved stone, matte, museum lighting", camera=camera))
     seen: set[str] = set()
