@@ -9,19 +9,25 @@ from pydantic import BaseModel
 
 from craftpilot.config import SETTINGS
 from craftpilot.program.model import Bounds, BuildProgram
+from craftpilot.terrain import PlacementRequest, TerrainSample, facing_from_yaw
 
 app = FastAPI(title="craftpilot", version="0.1.0")
 
 _last_program: dict[str, BuildProgram] = {}
 _last_text: dict[str, str] = {}
-_last_yaw: dict[str, float] = {}
+_last_placement: dict[str, PlacementRequest] = {}
 
 
 class BuildRequest(BaseModel):
+    """`origin` is the player's position (feet). With `terrain` (a surface heightmap sampled around
+    the player) the response carries `placement`: the schematic origin seated on the terrain plus
+    the world edits (foundation, cut, graded apron, steps) the mod applies before pasting."""
+
     text: str
     player: str = "player"
-    origin: tuple[int, int, int] = (0, 0, 0)
+    origin: tuple[float, float, float] = (0, 0, 0)
     yaw: float = 0.0
+    terrain: TerrainSample | None = None
     bounds: Bounds | None = None
     seed: int | None = None
     preview: bool = False
@@ -51,19 +57,14 @@ def health() -> dict:
     return {"ok": True, "llm": SETTINGS.llm_configured, "schematics_dir": str(SETTINGS.schematics_dir)}
 
 
-def facing_from_yaw(yaw: float) -> str:
-    """The building faces the player: opposite of where the player looks. Yaw 0 = south, 90 = west."""
-    look = ["south", "west", "north", "east"][int(((yaw % 360) + 45) // 90) % 4]
-    return {"south": "north", "west": "east", "north": "south", "east": "west"}[look]
-
-
 def _run(player: str, program: BuildProgram, bounds: Bounds | None, seed: int | None, preview: bool,
-         text: str, notes: list[str], source: str, yaw: float = 0.0) -> dict:
+         text: str, notes: list[str], source: str, placement: PlacementRequest | None = None) -> dict:
     from craftpilot.cli import run_build
 
     seed = seed if seed is not None else int(time.time()) % 1_000_000
+    yaw = placement.yaw if placement is not None else 0.0
     try:
-        result = run_build(program, bounds, seed, None, preview, player, text, notes, facing_from_yaw(yaw))
+        result = run_build(program, bounds, seed, None, preview, player, text, notes, facing_from_yaw(yaw), placement)
     except Exception as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     result["source"] = source
@@ -77,8 +78,9 @@ def build(req: BuildRequest) -> dict:
     from craftpilot.llm.compose import compose
 
     program, source, notes = compose(req.text, use_llm=req.use_llm, bounds_hint=req.bounds)
-    _last_yaw[req.player] = req.yaw
-    return _run(req.player, program, req.bounds, req.seed, req.preview, req.text, notes, source, req.yaw)
+    placement = PlacementRequest(pos=req.origin, yaw=req.yaw, terrain=req.terrain)
+    _last_placement[req.player] = placement
+    return _run(req.player, program, req.bounds, req.seed, req.preview, req.text, notes, source, placement)
 
 
 @app.post("/edit")
@@ -90,7 +92,7 @@ def edit(req: EditRequest) -> dict:
         raise HTTPException(status_code=404, detail="No previous build for this player")
     program, source, notes = llm_edit(prev, req.text)
     return _run(req.player, program, None, req.seed, False, f"{_last_text.get(req.player, '')} / {req.text}", notes,
-                source, _last_yaw.get(req.player, 0.0))
+                source, _last_placement.get(req.player))
 
 
 @app.post("/regenerate")
@@ -99,7 +101,7 @@ def regenerate(req: RegenerateRequest) -> dict:
     if prev is None:
         raise HTTPException(status_code=404, detail="No previous build for this player")
     return _run(req.player, prev, None, req.seed, False, _last_text.get(req.player, ""), [], "previous",
-                _last_yaw.get(req.player, 0.0))
+                _last_placement.get(req.player))
 
 
 @app.post("/exemplars")

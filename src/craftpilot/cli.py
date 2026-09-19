@@ -6,11 +6,15 @@ import json
 import re
 import time
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import typer
 
 from craftpilot.config import SETTINGS
 from craftpilot.program.model import Bounds, BuildProgram
+
+if TYPE_CHECKING:
+    from craftpilot.terrain import PlacementRequest
 
 app = typer.Typer(add_completion=False, help="Procedural Minecraft buildings from natural language.")
 
@@ -29,7 +33,10 @@ def _slug(text: str) -> str:
 
 
 def run_build(program: BuildProgram, bounds: Bounds | None, seed: int, out: Path | None, preview: bool,
-              author: str, source_text: str, extra_notes: list[str], facing: str = "south") -> dict:
+              author: str, source_text: str, extra_notes: list[str], facing: str = "south",
+              placement: PlacementRequest | None = None) -> dict:
+    """Compose nothing; render `program`, write the schematic, and (with `placement`) site it on the
+    player's terrain: the result then carries `placement` = {origin, facing, footprint, site, edits}."""
     from craftpilot.engine.pipeline import generate
     from craftpilot.export.litematic import save
     from craftpilot.grid.ops import quarter_turns_for_facing, rotate_cw
@@ -74,6 +81,17 @@ def run_build(program: BuildProgram, bounds: Bounds | None, seed: int, out: Path
         png = out.with_suffix(".png")
         render(grid, png)
         result["preview"] = str(png)
+    if placement is not None:
+        from craftpilot.blocks.catalog import known_blocks
+        from craftpilot.terrain import place
+
+        try:
+            result["placement"] = place(grid, placement, facing=facing, known=known_blocks())
+        except ValueError as exc:
+            raise typer.BadParameter(f"cannot place here: {exc}") from exc
+        site = result["placement"].get("site")
+        if site:
+            result["notes"].append("Site: " + site["summary"])
     return result
 
 
@@ -89,10 +107,20 @@ def build(
     author: str = typer.Option("craftpilot", "--author"),
     facing: str = typer.Option("south", "--facing", "-f", help="Which way the front door faces: north, east, south, west"),
     show_program: bool = typer.Option(False, "--show-program", help="Print the composed program"),
+    placement: Path = typer.Option(None, "--placement", help="JSON {pos:[x,y,z], yaw, terrain:{x0,z0,heights,tops?}} "
+                                   "describing the player and the ground: sites the build on it and adds "
+                                   "'placement' (origin + terrain edits) to the output; the facing then follows the yaw"),
 ) -> None:
     """Compose a build program from TEXT, generate it, and write a Litematica schematic."""
     from craftpilot.llm.compose import compose
     from craftpilot.program.exemplars import load_one
+
+    place_req = None
+    if placement is not None:
+        from craftpilot.terrain import PlacementRequest, facing_from_yaw
+
+        place_req = PlacementRequest.model_validate_json(placement.read_text())
+        facing = facing_from_yaw(place_req.yaw)
 
     if seed is None:
         seed = int(time.time()) % 1_000_000
@@ -112,7 +140,7 @@ def build(
     if facing not in ("north", "east", "south", "west"):
         raise typer.BadParameter("facing must be north, east, south, or west")
     compose_s = time.time() - t_start
-    result = run_build(program, b, seed, out, preview, author, text, notes, facing)
+    result = run_build(program, b, seed, out, preview, author, text, notes, facing, place_req)
     result["source"] = source
     result["compose_seconds"] = round(compose_s, 3)
     result["total_seconds"] = round(time.time() - t_start, 3)

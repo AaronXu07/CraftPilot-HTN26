@@ -27,7 +27,8 @@ service, an LLM composes a structured **build program** from the text, a
 deterministic engine renders the program as a voxel grid inside a bounding box,
 litemapy writes a `.litematic`, and the mod places it in the world.
 
-Scope for now: buildings of any kind. No terrain, roads, or settlements.
+Scope for now: buildings of any kind. No terrain generation, roads, or settlements
+(buildings are seated on existing terrain, §8.4).
 
 ---
 
@@ -466,10 +467,20 @@ sessions in the mod's config.
 
 ### 8.4 Placement
 
+- Before calling `/build`, sample the surface around the player and send it as
+  `terrain` (see §9): for every column in a square of radius ~48 around the
+  player, `level.getHeight(Heightmap.Types.MOTION_BLOCKING_NO_LEAVES, x, z) - 1`
+  (the y of the top solid block; water surfaces count, leaves do not) and that
+  block's state. Send `origin` = the player's position and `yaw`.
+- The response's `placement` says where the schematic goes and what the ground
+  needs: apply `placement.edits` (world `[x, y, z, state]`, already bottom-up:
+  the hill cut out of the base, a foundation down to the terrain, the apron
+  graded and re-topped, steps from the door), then paste the schematic's
+  non-air blocks with its corner at `placement.origin`. The two never overlap.
 - Parse `.litematic` NBT: region palette and packed `BlockStates` long array.
 - Place in batches of a few thousand per tick with the no-neighbor-update
   flag, then a final pass for doors, attachables, and waterloggable blocks.
-- Record prior states for undo, one entry per build per player.
+- Record prior states for undo (edits included), one entry per build per player.
 
 ---
 
@@ -477,7 +488,16 @@ sessions in the mod's config.
 
 `craftpilot serve` on `127.0.0.1:7777`:
 
-- `POST /build` -> `BuildRequest` in, `{schematic_path, summary, notes, seed, bounds}` out.
+- `POST /build` -> `BuildRequest` in (`text, player, origin = player pos, yaw,
+  terrain?, bounds?, seed?`), `{schematic, program, blocks, bounds, seed, facing,
+  notes, placement}` out. `placement = {origin, facing, footprint, schematic_size,
+  site, edits}`: `origin` is the world position of the schematic's (0, 0, 0)
+  corner, 2 blocks in front of the player with the door facing them and its
+  ground row seated on the terrain (`src/craftpilot/terrain.py`: a little below
+  the median surface height under the base, sunk further if the build would pass
+  y=319); `edits` are the world blocks the mod sets besides pasting (cut, fill,
+  graded apron, door steps); `site` summarises the survey. Without `terrain` the
+  origin is at the player's feet and `edits` is empty.
 - `POST /edit` -> `{player, text}` patches the last program.
 - `POST /regenerate` -> `{player, seed?}`.
 - `POST /exemplars` -> saves the last program under a name.

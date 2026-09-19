@@ -301,6 +301,11 @@ def _known_blocks() -> set[str] | None:
         return None
 
 
+def known_blocks() -> set[str] | None:
+    """Public alias of `_known_blocks` for callers that validate block ids (terrain edits)."""
+    return _known_blocks()
+
+
 def _filter(fams: dict[str, Family], known: set[str] | None) -> dict[str, Family]:
     """Drop shapes, variants, and whole families whose blocks the target version does not have,
     and attach appearance data to every family."""

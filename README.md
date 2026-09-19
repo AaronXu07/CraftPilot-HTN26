@@ -33,6 +33,7 @@ Useful flags:
 | `--exemplar castle`    | Render an exemplar program directly (see `exemplars/`).                                        |
 | `--facing east`        | Which way the front door faces (default south).                                                |
 | `--show-program`       | Print the composed program JSON.                                                               |
+| `--placement site.json`| Site the build on real terrain: `{pos, yaw, terrain}` as the mod sends it (see below); adds `placement` (origin + terrain edits) to the output. |
 | `--out path.litematic` | Write somewhere else.                                                                          |
 
 Render every exemplar to `out/exemplars/` for a quick gallery:
@@ -49,6 +50,20 @@ uv run craftpilot render
    (or the Litematica paste hotkey). The building faces south unless you passed `--facing`.
 
 The Fabric mod that does this automatically from a `/build` command is milestone 4 in `PLAN.md`.
+
+### Non-flat terrain
+
+A build is rendered on a flat grid; on a hill it would sit half buried, half floating. The service
+fixes that when the request carries a surface heightmap (`terrain`: `{x0, z0, heights[row][col],
+tops?}` — the y of the top solid block per column around the player, water counting as ground,
+leaves not). The response's `placement` then has the schematic `origin` seated on the terrain (ground
+row a little below the median surface height under the building, sunk if needed to stay under
+y=319) and `edits`: the hill cut out of the base, a foundation down to the terrain in the building's
+own foundation block (a solid plinth on gentle sites, perimeter wall + pillars over a big drop), the
+surrounding ground ramped one block per column and re-topped with its own surface block, and steps
+from the door down to it. The mod applies `edits` and pastes the schematic's non-air blocks at
+`origin`; the two never overlap. Everything is `src/craftpilot/terrain.py`, tested on synthetic
+slopes and cliffs in `tests/test_terrain.py`.
 
 ## Development
 
@@ -70,5 +85,6 @@ lighthouse, pagoda, watchtower, townhouse.
 - `src/craftpilot/blocks/` block family catalog (filtered by `data/blocks_<version>.json`); each family carries its colour, texture noise, material and style tags from `palette_data.py`, which also holds the curated palette library
 - `src/craftpilot/llm/` Azure OpenAI compose/edit, strict schema, offline fallback
 - `src/craftpilot/export/` litemapy export
+- `src/craftpilot/terrain.py` siting on real terrain: origin from the player's position and yaw, ground level from the heightmap, cut / fill / grading / steps as world edits for the mod
 - `src/craftpilot/preview/` isometric PNG renderer
 - `exemplars/` complete programs used as few-shot examples, fallback, and goldens
