@@ -17,6 +17,7 @@ from .budget import Budget, get_budget, new_budget, profile_row
 from .common import call_tool, env_flag, fast_llm, outline
 from .critic import Critique, critique, fixes_text
 from .interpret import DEFAULT_STAGES, brief_to_text, interpret
+from .progress import Progress, fmt_elapsed, get_progress, live_preview_enabled, new_progress, one_line, scene_snapshot, summarize_delta
 from .router import Route, route
 from .stages import FIX_STAGE, STAGE_BY_NAME, StageResult, run_stage, stage_for_rule
 
@@ -31,7 +32,8 @@ HELP_TEXT = (
     "• `/cp swap the walls to deepslate with a mossy base`\n"
     "• `/cp undo` · `/cp redo` · `/cp status` · `/cp cancel` (stop the running job) · `/cp render` · `/cp place`\n"
     "• `/cp export [name]` (.litematic) · `/cp materials` (block counts)\n"
-    "• `/cp preview on|off` (place each stage live) · `/cp reset` (forget the current build)"
+    "• `/cp preview on|off` (place the build live after blocking and detailing) · `/cp verbose on|off` (one line per op)\n"
+    "• `/cp reset` (forget the current build)"
 )
 
 
@@ -88,12 +90,52 @@ def _say(ctx: Any, text: str) -> None:
     call_tool(ctx, "say", {"text": text[:240]})
 
 
-def _place(ctx: Any, mode: str = "diff") -> Any:
+def _progress(ctx: Any) -> Progress:
+    return get_progress(ctx) or new_progress(ctx, t0=getattr(get_budget(ctx), "t0", None))
+
+
+def _place(ctx: Any, mode: str = "diff", report: bool = False, animate: bool = True) -> Any:
+    """Place the scene. `report=True` (the final build) animates bottom-up and says `[cp·build N%]` per 25 %."""
     t0 = time.time()
-    r = call_tool(ctx, "place", {"mode": mode, "animate": True})
+    r = call_tool(ctx, "place", {"mode": mode, "animate": animate, "report": bool(report)})
     ms = int((time.time() - t0) * 1000)
-    profile_row(ctx, "place", wall_ms=ms, engine_ms=ms, tool_calls=1, note=mode)
+    profile_row(ctx, "place", wall_ms=ms, engine_ms=ms, tool_calls=1, note=mode + (" final" if report else ""))
     return r
+
+
+def _stage_line(ctx: Any, stage_name: str, before: Dict[str, Any], res: Any, fix: bool = False) -> str:
+    """`[cp·detail 1:02] carved 14 windows, 2 arches` — scene delta first, the model's summary as fallback."""
+    after = scene_snapshot(ctx.session.scene)
+    text = summarize_delta(stage_name, before, after)
+    if not text:
+        text = one_line(getattr(res, "text", "") or "", 120) or "no change"
+    if getattr(res, "stopped_reason", "") == "budget":
+        text += " (time)"
+    return _progress(ctx).say("fix" if fix else stage_name, text)
+
+
+def _critic_line(ctx: Any, crit: Any, fixing: bool) -> str:
+    score = f"{crit.score}/10" if crit.score is not None else "no score"
+    if crit.fixes and fixing:
+        f = crit.fixes[0]
+        what = one_line(f.get("op_suggestion") or f.get("issue") or crit.summary, 90)
+        objs = ", ".join(str(o) for o in (f.get("objects") or [])[:2])
+        rule = f" (rule {f['rule']})" if f.get("rule") else ""
+        return _progress(ctx).say("critic", f"{score} — fixing: {what}" + (f" on {objs}" if objs else "") + rule)
+    if crit.fixes:
+        return _progress(ctx).say("critic", f"{score} — noted: {one_line(crit.fixes[0].get('op_suggestion') or crit.summary, 90)}")
+    return _progress(ctx).say("critic", f"{score} — {one_line(crit.summary, 90) or 'looks good'}")
+
+
+def _dims_text(scene: Any) -> str:
+    try:
+        bb = scene.bbox()
+        if bb.is_empty():
+            return ""
+        w, h, d = (int(round(float(bb.hi[i] - bb.lo[i]))) for i in range(3))
+        return f"{w}×{d} footprint, {h} tall"
+    except Exception:  # noqa: BLE001
+        return ""
 
 
 def _budget(ctx: Any) -> Budget:
@@ -143,7 +185,7 @@ def _block_count(place_result: Any) -> Optional[int]:
 # meta commands
 # ----------------------------------------------------------------------------------------------
 _META_RE = re.compile(
-    r"^\s*/?(?:cp\s+)?(?P<cmd>undo|redo|export|materials?(?:\s+list)?|reset|clear|preview|help|status|describe|outline|render|place|snapshot|restore)\b\s*(?P<arg>.*)$",
+    r"^\s*/?(?:cp\s+)?(?P<cmd>undo|redo|export|materials?(?:\s+list)?|reset|clear|preview|verbose|help|status|describe|outline|render|place|snapshot|restore)\b\s*(?P<arg>.*)$",
     re.IGNORECASE,
 )
 
@@ -187,7 +229,11 @@ def handle_meta(ctx: Any, text: str) -> Optional[ChatResult]:
     if cmd == "preview":
         on = arg.lower() in ("on", "true", "1", "yes")
         session.live_preview = on
-        return ChatResult(reply=f"Live preview {'on' if on else 'off'}: intermediate stages will {'now' if on else 'no longer'} be placed in the world.")
+        return ChatResult(reply=f"Live preview {'on' if on else 'off'}: the build will {'now' if on else 'no longer'} be placed after blocking and detailing.")
+    if cmd == "verbose":
+        on = arg.lower() in ("on", "true", "1", "yes")
+        session.verbose = on
+        return ChatResult(reply=f"Verbose {'on' if on else 'off'}: {'one chat line per tool call' if on else 'stage summaries only'}.")
     if cmd in ("status", "describe", "outline"):
         head = ""
         if session.brief:
@@ -199,7 +245,7 @@ def handle_meta(ctx: Any, text: str) -> Optional[ChatResult]:
         return ChatResult(reply=getattr(r, "text", "rendered"), images=list(getattr(r, "images", None) or []))
     if cmd == "place":
         mode = "full" if arg.lower() in ("full", "all") else "diff"
-        r = _place(ctx, mode)
+        r = _place(ctx, mode, report=(mode == "full"))
         return ChatResult(reply=getattr(r, "text", "placed"), placed=True)
     if cmd == "snapshot":
         return ChatResult(reply=session.snapshot(arg or f"snap_{len(session.snapshots) + 1}"))
@@ -251,44 +297,53 @@ def run_build(ctx: Any, llm: Any, request: str, fast: bool = False, place: bool 
     """
     session = ctx.session
     budget = _budget(ctx)
+    progress = _progress(ctx)
     t0 = time.time()
     budget.start_stage("interpret")
     brief = interpret(llm, ctx, request)
     budget.end_stage()
     report = BuildReport(brief=brief)
-    _say(ctx, "Plan: " + brief_to_text(brief) + ". Building…")
+    progress.say("interpret", one_line(brief.get("silhouette_plan") or "", 150) or brief_to_text(brief))
     stage_names = [s for s in brief.get("stages", DEFAULT_STAGES) if s in STAGE_BY_NAME] or list(DEFAULT_STAGES)
     carry: Optional[str] = None
     images: List[Any] = []
     skipped: List[str] = []
+    preview = place and live_preview_enabled(session)
     for name in stage_names:
         check_cancel(ctx)
         stage = STAGE_BY_NAME[name]
         if not budget.can_start(name):
             skipped.append(name)
             profile_row(ctx, name, stopped="skipped", note=f"{budget.remaining:.0f}s left")
+            progress.say(name, "skipped: out of time")
             continue
         budget.start_stage(name)
+        before = scene_snapshot(session.scene)
         res = run_stage(llm, ctx, stage, request, brief, extra=carry)
         budget.end_stage()
         report.stages.append(res)
         carry = None
         images = res.images or images
+        _stage_line(ctx, stage.name, before, res)
         if not fast and budget.allow_critic():
             budget.start_critic()
             crit = critique(llm, ctx, stage.name, brief, lint_text=res.lint_text)
             report.critiques.append(crit)
-            if crit.fixes and not crit.passed(CRITIC_PASS) and budget.allow_fix():
+            fixing = bool(crit.fixes) and not crit.passed(CRITIC_PASS) and budget.allow_fix()
+            _critic_line(ctx, crit, fixing)
+            if fixing:
                 budget.fix_deadline()
+                before = scene_snapshot(session.scene)
                 fix = run_stage(fast_llm(llm), ctx, stage, request, brief, extra=fixes_text(crit), max_calls=FIX_ROUND_CALLS, fix_round=True)
                 budget.end_stage()
                 report.stages.append(fix)
                 images = fix.images or images
+                _stage_line(ctx, stage.name, before, fix, fix=True)
             elif crit.fixes:
                 carry = fixes_text(crit)  # minor notes for the next stage
-        _say(ctx, f"{stage.name}: {_one_line(res.text, 120)}")
-        if getattr(session, "live_preview", False):
-            _place(ctx, "diff")
+        if preview and stage.name in ("blocking", "detailing"):
+            # live preview: viewers watch the massing appear, then the openings; materials/decoration land at the end
+            _place(ctx, "diff", animate=True)
     if not fast:
         for _ in range(MAX_FINAL_FIX_ROUNDS):
             if not budget.allow_critic():
@@ -297,34 +352,38 @@ def run_build(ctx: Any, llm: Any, request: str, fast: bool = False, place: bool 
             crit = critique(llm, ctx, "final", brief)
             report.critiques.append(crit)
             report.final_score = crit.score
-            if crit.passed(CRITIC_PASS) or not crit.fixes or not budget.allow_fix():
+            fixing = not crit.passed(CRITIC_PASS) and bool(crit.fixes) and budget.allow_fix()
+            _critic_line(ctx, crit, fixing)
+            if not fixing:
                 break
             stage = stage_for_rule(crit.fixes[0].get("rule", "")) if crit.fixes else FIX_STAGE
             budget.fix_deadline()
+            before = scene_snapshot(session.scene)
             fix = run_stage(fast_llm(llm), ctx, stage, request, brief, extra=fixes_text(crit), max_calls=FIX_ROUND_CALLS, fix_round=True)
             budget.end_stage()
             report.stages.append(fix)
             images = fix.images or images
+            _stage_line(ctx, stage.name, before, fix, fix=True)
     placed = False
     if place:
-        r = _place(ctx, "diff")
+        r = _place(ctx, "diff", report=True)
         report.place_text = getattr(r, "text", "") or ""
         report.blocks = _block_count(r)
         placed = getattr(r, "ok", True) and not report.place_text.startswith("ERROR")
     report.tool_calls = sum(s.tool_calls for s in report.stages)
     report.seconds = time.time() - t0
     n_obj = len(session.scene.objects)
-    reply = f"Built {brief.get('name', 'the build')}: " + brief_to_text(brief) + f". {n_obj} objects"
-    if report.blocks:
-        reply += f", {report.blocks:,} blocks"
+    # final reply: 2–4 lines (the job runner says each line separately)
+    line1 = f"Built {brief.get('name', 'the build')}: " + brief_to_text(brief)
+    facts = [d for d in (_dims_text(session.scene), f"{n_obj} objects", f"{report.blocks:,} blocks" if report.blocks else "", f"in {fmt_elapsed(report.seconds)}") if d]
+    line2 = ", ".join(facts)
     if report.final_score is not None:
-        reply += f"; critic {report.final_score}/10"
-    last = next((s.text for s in reversed(report.stages) if s.text), "")
-    if last:
-        reply += ". " + _one_line(last, 140)
+        line2 += f"; critic {report.final_score}/10"
+    lines = [line1, line2]
     if skipped:
-        reply += f" (skipped {', '.join(skipped)}: out of time — say \"add decoration\" to continue)"
-    reply += " Say what to change (e.g. \"make the towers taller\", \"copper roofs\") or `undo`."
+        lines.append(f"Skipped {', '.join(skipped)}: out of time — say \"add decoration\" to continue.")
+    lines.append("Say `undo`, `export`, or an edit (e.g. \"make the towers taller\", \"copper roofs\").")
+    reply = "\n".join(lines)
     data = report.to_dict()
     data["skipped"] = skipped
     return ChatResult(reply=reply, images=images, brief=brief, placed=placed, data=data), report
@@ -355,19 +414,25 @@ def run_edit(ctx: Any, llm: Any, request: str, r: Route, fast: bool = False) -> 
         if errors:
             extra = "Some direct ops failed; achieve the request another way:\n" + "\n".join(errors)
         budget.start_stage(name)
+        before = scene_snapshot(session.scene)
         res = run_stage(llm, ctx, stage, request, session.brief, selection=r.selection, extra=extra)
         budget.end_stage()
         images = res.images or images
         if res.text:
             changes.append(_one_line(res.text, 140))
+        _stage_line(ctx, stage.name, before, res)
         if not fast and stage.name in ("blocking", "detailing") and budget.allow_critic():
             budget.start_critic()
             crit = critique(llm, ctx, stage.name, session.brief, lint_text=res.lint_text)
-            if crit.fixes and not crit.passed(CRITIC_PASS) and budget.allow_fix():
+            fixing = bool(crit.fixes) and not crit.passed(CRITIC_PASS) and budget.allow_fix()
+            _critic_line(ctx, crit, fixing)
+            if fixing:
                 budget.fix_deadline()
+                before = scene_snapshot(session.scene)
                 fix = run_stage(fast_llm(llm), ctx, stage, request, session.brief, selection=r.selection, extra=fixes_text(crit), max_calls=FIX_ROUND_CALLS, fix_round=True)
                 budget.end_stage()
                 images = fix.images or images
+                _stage_line(ctx, stage.name, before, fix, fix=True)
     if not images:
         rr = call_tool(ctx, "render", {"views": ["iso", "front"]})
         images = list(getattr(rr, "images", None) or [])
@@ -436,6 +501,7 @@ def handle_chat(ctx: Any, text: str, llm: Any = None, fast: Optional[bool] = Non
     fast_mode = _fast(ctx, fast)
     t0 = time.time()
     budget = new_budget(ctx)
+    new_progress(ctx, t0=budget.t0)
     try:
         meta = handle_meta(ctx, text)
         if meta is not None:

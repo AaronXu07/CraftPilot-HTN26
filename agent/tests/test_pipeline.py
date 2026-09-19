@@ -127,10 +127,12 @@ def test_end_to_end_build_edit_diff_place_undo(tmp_path):
     ids = [o.id for o in ctx.session.scene.objects]
     assert ids == ["hall", "hall_roof", "hall_door_cut", "hall_win_cut", "door_lantern"]
     assert ctx.session.scene.materials["castle_wall"]["fit"] == "stairs+slab"
-    assert ctx.bridge.said[0].startswith("Plan:") and any(s.startswith("blocking:") for s in ctx.bridge.said)
+    assert ctx.bridge.said[0].startswith("[cp·plan 0:0") and any(s.startswith("[cp·block ") for s in ctx.bridge.said)
     assert llm.roles.count("critic") == 0 and llm.roles[0] == "interpret"
-    full_blocks = len(ctx.bridge.setblock_calls[0])
-    assert full_blocks > 100 and len(ctx.bridge.world) == full_blocks
+    # live preview (default on): placed after blocking and after detailing, then the final placement
+    assert len(ctx.bridge.setblock_calls) == 3
+    full_blocks = len(ctx.bridge.world)
+    assert full_blocks > 100 and len(ctx.bridge.setblock_calls[0]) >= full_blocks
     assert len(r.images) >= 1
     # 2. edit via direct ops → diff placement sends only the delta
     r2 = handle_chat(ctx, "make the hall 4 blocks taller", llm=llm, fast=True)

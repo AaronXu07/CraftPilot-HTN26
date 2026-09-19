@@ -67,7 +67,7 @@ public final class AgentChatClient {
                 if (reply != null && !reply.isBlank()) {
                     chatLines(reply);
                 } else if (jobId >= 0) {
-                    CopilotClientMod.chat("§7[cp] working (job " + jobId + ")… §8/cp status · /cp cancel");
+                    CopilotClientMod.chat("[cp] working (job " + jobId + ")… §8/cp status · /cp cancel");
                 } else {
                     CopilotClientMod.chat("§c[cp] unexpected agent reply: " + trim(json.toString()));
                 }
@@ -89,7 +89,7 @@ public final class AgentChatClient {
                 if (json == null) {
                     return;
                 }
-                CopilotClientMod.chat("§7[cp] " + stringOr(json, "line", "job " + jobId + ": " + stringOr(json, "status", "?")));
+                CopilotClientMod.chat("[cp] " + stringOr(json, "line", "job " + jobId + ": " + stringOr(json, "status", "?")));
             } catch (Exception e) {
                 report(e);
             }
@@ -109,7 +109,7 @@ public final class AgentChatClient {
                 if (json == null) {
                     return;
                 }
-                CopilotClientMod.chat("§7[cp] " + stringOr(json, "line", "job " + jobId + ": " + stringOr(json, "status", "?")));
+                CopilotClientMod.chat("[cp] " + stringOr(json, "line", "job " + jobId + ": " + stringOr(json, "status", "?")));
             } catch (Exception e) {
                 report(e);
             }

@@ -63,11 +63,14 @@ curl -X POST localhost:8000/chat -H 'content-type: application/json' -d '{"playe
    * `/cp cut an arched bridge between the two north towers`
    * `/cp swap the walls to deepslate with a mossy base`
    * `/cp add lanterns along the walls and a banner over the gate`, then `/cp export for survival`
-   * `/cp undo`, `/cp preview on` (place every stage live), `/cp help`
+   * `/cp undo`, `/cp preview off` (live preview after blocking/detailing is on by default), `/cp verbose on` (one line per op), `/cp help`
 
 ## How a build happens
 
-1. **Interpret** turns the request into a brief (type, style, footprint, height, silhouette plan) and says it in chat.
+1. **Interpret** turns the request into a brief (type, style, footprint, height, silhouette plan) and says it in chat
+   (`[cp·plan 0:04] L-shaped keep 20×14, four round towers…`; every later stage, critic round and the final
+   placement print one tagged line like that — `[cp·block 0:31] added 7 solids`, `[cp·critic 1:41] 7/10 — fixing: …`,
+   `[cp·build 50%]`).
 2. **Blocking** places primary solids (`add`, `extrude`, `stack`, `mirror_copy`, `array`) and the critic checks silhouette on iso + front renders.
 3. **Detailing** carves windows/doors/arches (`subtract`), adds battlements, buttresses, roofs (`wedge`/`pyramid`/`cone`).
 4. **Materials** defines palettes/gradients/per-face rules and sets `fit` so roofs and curves come out as stairs and slabs.

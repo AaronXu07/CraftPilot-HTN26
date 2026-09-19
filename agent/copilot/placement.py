@@ -17,7 +17,8 @@ Conventions
 from __future__ import annotations
 
 import math
-from typing import Any, Dict, List, Optional, Sequence, Tuple
+import time
+from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple
 
 from .engine.coretypes import BlockMap, IVec3, format_state, parse_state
 
@@ -206,12 +207,54 @@ def _touched(session) -> set:
     return t
 
 
-def place_scene(session, bridge, block_map: BlockMap, mode: str = "diff", animate: bool = True, chunk_size: int = 1500, delay_ms: int = 60) -> str:
+ANIMATE_CHUNK = 400  # blocks per tick when animating (bottom-up layers); 1500 for a silent placement
+ANIMATE_DELAY_MS = 60
+PROGRESS_STEPS = (25, 50, 75, 100)
+WAIT_POLL_S = 0.1
+WAIT_MAX_S = 20.0
+
+
+def wait_for_placement(bridge: Any, expected_s: float, max_s: float = WAIT_MAX_S) -> float:
+    """Block until the mod's placement queue drains (polls `bridge.setblocks_status()` when the bridge
+    has one, else sleeps `expected_s`). Returns the seconds waited. Capped at `max_s`."""
+    t0 = time.time()
+    status = getattr(bridge, "setblocks_status", None)
+    if not callable(status):
+        if expected_s > 0:
+            time.sleep(min(expected_s, max_s))
+        return time.time() - t0
+    limit = min(max_s, max(expected_s * 3 + 2.0, 2.0))  # server lag margin; the estimate assumes 60 ms chunks
+    while time.time() - t0 < limit:
+        try:
+            st = status()
+        except Exception:  # noqa: BLE001
+            break
+        if int(st.get("pending_blocks", 0) or 0) <= 0 and int(st.get("pending_chunks", 0) or 0) <= 0:
+            break
+        time.sleep(WAIT_POLL_S)
+    return time.time() - t0
+
+
+def place_scene(
+    session,
+    bridge,
+    block_map: BlockMap,
+    mode: str = "diff",
+    animate: bool = True,
+    chunk_size: Optional[int] = None,
+    delay_ms: int = ANIMATE_DELAY_MS,
+    on_progress: Optional[Callable[[int], None]] = None,
+) -> str:
     """Place a scene-space BlockMap into the world through `bridge`, recording state on `session`.
 
     mode="diff": send only blocks that differ from the last placement (removed -> air).
     mode="full": resend every block (plus air for removed ones).
+    animate: bottom-up layer chunks spaced by `delay_ms` (the mod places one chunk per server tick).
+    on_progress(pct): called at 25/50/75/100 % — the chunks are sent in four batches and each batch
+    is awaited (`wait_for_placement`) before the next one, so the callback tracks the world.
     """
+    if chunk_size is None:
+        chunk_size = ANIMATE_CHUNK if animate else 1500
     if not block_map:
         return "nothing to place: the scene rasterises to 0 blocks"
     world = session.world
@@ -249,7 +292,21 @@ def place_scene(session, bridge, block_map: BlockMap, mode: str = "diff", animat
         return f"world already up to date ({len(new_map)} blocks placed, anchor {world.anchor}, {world.quarter_turns * 90}° rotation)"
     chunks = _layer_chunks(blocks, chunk_size)
     delay = int(delay_ms) if animate else 0
-    queued = bridge.setblocks([(c, delay) for c in chunks], flags=3)
+    if on_progress is None or len(chunks) < 2:
+        queued = bridge.setblocks([(c, delay) for c in chunks], flags=3)
+        if on_progress is not None:
+            on_progress(100)
+    else:
+        queued = 0
+        per = max(1, math.ceil(len(chunks) / len(PROGRESS_STEPS)))
+        batches = [chunks[i : i + per] for i in range(0, len(chunks), per)]
+        sent = 0
+        for batch in batches:
+            n_batch = sum(len(c) for c in batch)
+            queued += bridge.setblocks([(c, delay) for c in batch], flags=3)
+            sent += n_batch
+            wait_for_placement(bridge, estimate_seconds(n_batch, chunk_size, delay) if animate else 0.0)
+            on_progress(int(round(100.0 * sent / len(blocks))))
     world.placed = dict(new_map)
     world.placements += 1
     secs = estimate_seconds(len(blocks), chunk_size, delay) if animate else 0.0

@@ -154,3 +154,74 @@ its blocking critic ran (the turn was on schedule): one critic vision call took 
 - `MORNING_CHECKLIST.md` "T2" is unchanged except the expected LLM call count (16–18 per build measured).
 - T2 spans two commits on this branch: `b3de611` (iteration 2 auto safety commit, the code) and this
   iteration's commit (results, notes, gitignore). History was not rewritten.
+
+## T3 — Chat visibility, live preview, animated final build [done]
+
+**What changed**
+- `agent/copilot/pipeline/progress.py` (new): `Progress` (one per turn on `ctx.progress`, clock = the budget's
+  `t0`) prints `[cp·<tag> m:ss] <text>` through the `say` tool; tags `plan/block/detail/materials/decor/fix/
+  critic/edit`, `[cp·build N%]` for placement. `scene_snapshot` + `summarize_delta` derive stage lines from the
+  scene delta instead of the model's prose: `added 7 solids`, `carved 14 windows, 1 arch; added 12 battlements`
+  (array/mirror multiplicity counted, kind words from object ids), `stone_wall/slate_roof; 9 objects repainted`,
+  `added 6 lanterns`; fallback = the model's finish summary; `(time)` appended when the stage was cut by budget.
+  Critic lines: `7/10 — fixing: <op_suggestion> on <ids> (rule P8)` / `— noted: …` / `— <summary>`. Lines are
+  whitespace-collapsed and capped at 200 chars, so never JSON or multi-line. `Progress.op` = verbose per-op line.
+- `pipeline/orchestrator.py`: `run_build`/`run_edit` emit the lines above (also `skipped: out of time` for a
+  skipped stage); live preview places diff after **blocking and detailing only** (was: after every stage when
+  on); the final placement is `_place(report=True)`; the reply is now 2–4 lines: `Built <name>: <brief>`,
+  `<W×D footprint, H tall>, N objects, B blocks, in m:ss; critic S/10`, optional `Skipped …`, and
+  ``Say `undo`, `export`, or an edit (…)`` (the job runner already says one `/say` per line). New meta
+  command `/cp verbose on|off`; `/cp preview on|off` now overrides the `LIVE_PREVIEW` env default (true);
+  `/cp place full` re-animates with the % lines. `handle_chat` creates the `Progress` per turn.
+- `pipeline/stages.py`: passes `progress.op` as the tool loop's `on_tool` when verbose.
+- `tools/dispatch.py`: `place` accepts `report` (progress callback → `[cp·build N%]`); a model-originated
+  `say()` is tagged with the running stage so all chat lines look alike.
+- `placement.py`: `place_scene(on_progress=)` sends the bottom-up layer chunks in four batches and, after
+  each, `wait_for_placement()` polls `bridge.setblocks_status()` until the mod's queue drains (bridges
+  without it sleep the estimate), then reports the cumulative percentage — the chat tracks the world.
+  Animated chunk size is now 400 blocks (was 1500: a 12k-block castle animated in 0.5 s, i.e. not at all);
+  silent placements keep 1500. `HttpBridge.setblocks_status()` (GET `/setblocks/status`, 5 s) added; the mock
+  HTTP server got the route.
+- `session.py`: `live_preview: Optional[bool] = None` (None → env), `verbose: bool = False`.
+- Prompts: `system_core.md` rule 10 and the `say` tool description now say the runtime prints progress and
+  `say()` is only for a decision the player must know (kept the core prompt under the size cap: +21 chars).
+- Mod: `CopilotClientMod.chat()` → `formatLine()`: lines starting with `[cp` are printed as-is with the tag
+  coloured (gold; `[cp·build` green, `[cp·critic` yellow) and **no** `[copilot]` prefix; everything else (the
+  final reply, errors) keeps `[copilot] `. `AgentChatClient` job lines (`[cp] working (job N)…`, status,
+  cancel) dropped their `§7` so they are tagged too. `BlockPlacer` was already tick-driven (one chunk per
+  `END_SERVER_TICK`, `delay_ms` → ticks, no `Thread.sleep`, nothing off the server thread) — verified, unchanged.
+- Docs: CONTRACTS.md §7 (line format, live preview, animation/status polling, `/setblocks/status` row),
+  README, mod/README, `.env.example` (`LIVE_PREVIEW`), MORNING_CHECKLIST "T3" (+ T1 lines updated for the
+  new prefixes).
+
+**Verification**
+- `cd agent && ../.venv/bin/pytest -q` → 248 passed (was 240), 8.6 s (the integration test loads the real
+  registry once). `../.venv/bin/ruff check .` clean. `cd mod && ./gradlew build --offline` → BUILD SUCCESSFUL,
+  `build/libs/copilot-0.1.0.jar` rebuilt 04:58.
+- New `tests/test_progress.py` (8): line format/elapsed/percent/truncation; `summarize_delta` per stage
+  (multiplicity, kind words, materials list); `LIVE_PREVIEW` default + `preview`/`verbose` meta toggles;
+  `place_scene` batches with a status-polling bridge — exact timeline `set:200, [cp·build 25%], set:200,
+  [cp·build 50%] …` and bottom-up chunk order; `wait_for_placement` sleeps the estimate without a status
+  endpoint; **mock-bridge integration** (real dispatch/engine/registry + `MockBridge` + scripted LLM with
+  scripted critics): asserts the exact `/say` tag sequence `plan, block, critic, fix, detail, critic,
+  materials, critic, decor, critic, critic, build, build`, the line texts, no JSON, three placement groups
+  (blocking preview > detailing preview, then the batched final), and the 2–4 line reply; preview-off →
+  one (batched) placement; verbose → per-op lines tagged with the stage; model `say()` tagging.
+  `tests/test_http_bridge.py` covers `setblocks_status()`. Updated `test_pipeline`/`test_budget` for the new
+  line format, the preview placements and the `Skipped …` reply line.
+- Smoke: FastAPI `TestClient` + `COPILOT_LLM=mock` + `MockBridge`: `/chat` returned `running` at once; the
+  bridge received the 12 tagged lines, `[cp·build 58%]`, `[cp·build 100%]`, then the 3 reply lines, and
+  `/jobs/1` → done. `python -m bench.run --mock --quick` → 5/5, mean 9.0 (scripted critic).
+
+**Numbers**: none latency-relevant — progress `say` calls are ~1 ms each on the mock bridge (5 ms HTTP on the
+real mod, ≈ 12 per build); the final animation adds ≈ 0.15 s per 400-block chunk (a 12k-block build ≈ 4–5 s
+of visible bottom-up placement, awaited by the agent, well inside the 300 s hard budget after a 150 s plan).
+Previews place diffs so blocking+detailing previews cost one extra `/setblocks` each, not a rebuild.
+
+**For the morning**
+- The `[cp·build N%]` lines rely on `GET /setblocks/status` draining; if the mod is lagging badly the wait
+  caps at `WAIT_MAX_S` (20 s) per batch and the percentage runs ahead of the world — cosmetic.
+- Stage lines are built from object ids: models that name cuts `win_*`/`door_*`/`arch_*` and props
+  `lantern_*`/`merlon_*` get the nicest text; otherwise `carved 5 openings` / `added 3 details`.
+- Live preview is on by default (`LIVE_PREVIEW=false` or `/cp preview off` to disable). The preview shows the
+  build in the blocking stage's single material — expected; the palette lands with the final placement.

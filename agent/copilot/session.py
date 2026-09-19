@@ -55,7 +55,8 @@ class Session:
         self.chat: List[Dict[str, Any]] = []
         self.world = WorldState()
         self.cache: Dict[str, Any] = {}  # engine outputs keyed by scene hash (raster/fit/block_map/renders)
-        self.live_preview: bool = False
+        self.live_preview: Optional[bool] = None  # None → env LIVE_PREVIEW (default on); `/cp preview on|off` sets it
+        self.verbose: bool = False  # `/cp verbose on|off`: one chat line per tool call
         self.build_lock = threading.Lock()  # serialises rasterize/fit/resolve when tools run concurrently
         self.turn: int = 0
         self.created = time.time()

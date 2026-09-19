@@ -79,13 +79,37 @@ public class CopilotClientMod implements ClientModInitializer {
                                 }))));
     }
 
-    /** Print a line in the player's chat, from any thread. */
+    /**
+     * Print a line in the player's chat, from any thread. Lines the agent already tagged
+     * ({@code [cp·plan 0:04] …}, {@code [cp] working…}) are shown with the tag in gold and no
+     * extra {@code [copilot]} prefix; anything else gets the prefix.
+     */
     public static void chat(String text) {
+        String line = formatLine(text);
         MinecraftClient client = MinecraftClient.getInstance();
         client.execute(() -> {
             if (client.inGameHud != null) {
-                client.inGameHud.getChatHud().addMessage(Text.literal("§6[copilot]§r " + text));
+                client.inGameHud.getChatHud().addMessage(Text.literal(line));
             }
         });
+    }
+
+    static String formatLine(String text) {
+        String t = text == null ? "" : text;
+        if (t.startsWith("[cp")) {
+            int close = t.indexOf(']');
+            if (close > 0) {
+                String tag = t.substring(0, close + 1);
+                String rest = t.substring(close + 1);
+                if (tag.startsWith("[cp·build")) {
+                    return "§a" + tag + "§r" + rest;
+                }
+                if (tag.startsWith("[cp·critic")) {
+                    return "§e" + tag + "§r" + rest;
+                }
+                return "§6" + tag + "§r" + rest;
+            }
+        }
+        return "§6[copilot]§r " + t;
     }
 }

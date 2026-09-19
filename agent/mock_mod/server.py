@@ -42,6 +42,12 @@ def create_app(bridge: Optional[MockBridge] = None, ground_y: int = 63) -> FastA
         n = b.setblocks(parsed, flags=int(body.get("flags", 3)))
         return {"queued": n, "chunks": len(parsed)}
 
+    @app.get("/setblocks/status")
+    async def setblocks_status() -> Dict[str, Any]:
+        # the mock places synchronously, so the queue is always drained
+        placed = sum(int(c.get("count", 0)) for c in getattr(b, "calls", []))
+        return {"pending_chunks": 0, "pending_blocks": 0, "placed_total": placed, "postprocessed": 0}
+
     @app.post("/say")
     async def say(req: Request) -> Dict[str, Any]:
         body = await req.json()

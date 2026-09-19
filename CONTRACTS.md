@@ -159,7 +159,8 @@ Family forms come from `registry.family(base)`: full, stairs, slab, wall, fence,
 | GET /player | – | `{"name":"Steve","pos":[x,y,z] (floats),"yaw":f,"pitch":f,"facing":"north|east|south|west","looking_at":{"pos":[x,y,z],"block":"minecraft:stone"}|null,"dimension":"minecraft:overworld"}` |
 | POST /scan | `{"min":[x,y,z],"max":[x,y,z]}` (inclusive) | `{"palette":["minecraft:air","minecraft:stone[...]"],"blocks":[[x,y,z,paletteIndex],...],"count":n}` air included via palette index 0 |
 | POST /setblocks | `{"chunks":[{"blocks":[[x,y,z,"minecraft:stone"],...],"delay_ms":60}],"flags":3}` or `{"blocks":[...]}` | `{"queued":n,"chunks":k}` (placement runs asynchronously on the server thread, chunks spaced by delay_ms) |
-| POST /say | `{"text":"..."}` | `{"ok":true}` (shows in the player's chat, prefixed `[copilot]`) |
+| GET /setblocks/status | – | `{"pending_chunks","pending_blocks","placed_total","postprocessed"}` (poll until `pending_chunks == 0`) |
+| POST /say | `{"text":"..."}` | `{"ok":true}` (shows in the player's chat, prefixed `[copilot]` unless the line starts with `[cp`) |
 | GET /blocks | – | `{"blocks":[{"id":"minecraft:oak_stairs","properties":{"facing":["north","south","west","east"],"half":["top","bottom"],"shape":[...],"waterlogged":["true","false"]},"default":"minecraft:oak_stairs[facing=north,half=bottom,shape=straight,waterlogged=false]"},...]}` |
 | POST /camera | `{"mode":"orbit","center":[x,y,z],"radius":r,"seconds":n}` or `{"mode":"return"}` | `{"ok":true}` |
 
@@ -188,10 +189,27 @@ answers and critic fix rounds (falls back to the main deployment; `MODEL` is an 
 contact sheet. Every turn's run log ends with a `__summary__` record (`profile`: wall/LLM/engine ms
 and calls per stage) and `bench/run.py --profile` prints the same as a table.
 
+Chat visibility (T3, `copilot/pipeline/progress.py`): every pipeline event is one `/say` line of the form
+`[cp·<tag> m:ss] <text>` — tags `plan`, `block`, `detail`, `materials`, `decor`, `fix`, `critic`, `edit` —
+with the elapsed turn time; the final placement reports `[cp·build 25%]` … `[cp·build 100%]`. Stage lines
+are derived from the scene delta (`added 7 solids`, `carved 14 windows, 2 arches`, `stone_wall/slate_roof`,
+`added 4 lanterns`); critic lines read `7/10 — fixing: <op> on <ids> (rule N)`. Never JSON, never more than
+one line per event. A model-originated `say()` gets the same tag. `/cp verbose on|off` (session flag)
+adds one line per tool call. Lines that start with `[cp` are printed by the mod without the `[copilot]`
+prefix (tag in gold; `[cp·build` green, `[cp·critic` yellow); the final reply (2–4 untagged lines: what was
+built, dimensions/objects/blocks/time, next-step hint) keeps the prefix.
+Live preview: `LIVE_PREVIEW` (default true; `/cp preview on|off` overrides per session) places the scene
+in the world with diff placement after the blocking and detailing stages; materials and decoration land
+with the final placement. The final placement is animated bottom-up in 400-block layer chunks (60 ms
+apart, one chunk per server tick in the mod) and is sent in four batches; the agent polls
+`GET /setblocks/status` until the mod's queue drains before sending the next batch and saying the
+percentage, so the chat tracks the world. Bridges without `setblocks_status` (mock) sleep the estimate.
+
 The python `Bridge` protocol (bridge.py) mirrors this 1:1:
 `health()`, `player()`, `scan(lo, hi) -> BlockMap (includes air as "minecraft:air")`,
 `setblocks(chunks: list[tuple[list[tuple[x,y,z,state]], delay_ms]], flags=3) -> int`,
-`say(text)`, `blocks() -> list[dict]`, `camera(**kw)`. `MockBridge` (mock_mod) keeps a dict world,
+`say(text)`, `blocks() -> list[dict]`, `camera(**kw)`; `HttpBridge` also has
+`setblocks_status() -> {pending_chunks, pending_blocks, placed_total}` (optional for other bridges). `MockBridge` (mock_mod) keeps a dict world,
 a fake player at (0, 64, 0) facing north, and returns a fallback block dump.
 
 ## 8. Tools (LLM-facing) — names are fixed

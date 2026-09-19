@@ -381,7 +381,11 @@ def _place(ctx: ToolContext, args: Dict[str, Any]) -> ToolResult:
     if mode not in ("diff", "full"):
         return ToolResult("ERROR: mode must be diff or full")
     animate = bool(args.get("animate", True))
-    msg = place_scene(ctx.session, ctx.bridge, build["block_map"], mode=mode, animate=animate)
+    on_progress = None
+    progress = getattr(ctx, "progress", None)
+    if args.get("report") and progress is not None and hasattr(progress, "say"):
+        on_progress = lambda pct: progress.say("build", pct=int(pct))  # noqa: E731
+    msg = place_scene(ctx.session, ctx.bridge, build["block_map"], mode=mode, animate=animate, on_progress=on_progress)
     return ToolResult(msg)
 
 
@@ -430,9 +434,13 @@ def _get_player(ctx: ToolContext, args: Dict[str, Any]) -> ToolResult:
 
 
 def _say(ctx: ToolContext, args: Dict[str, Any]) -> ToolResult:
-    text = str(args.get("text", "")).strip()
+    text = " ".join(str(args.get("text", "")).split())
     if not text:
         return ToolResult("ERROR: say needs text")
+    progress = getattr(ctx, "progress", None)
+    if not text.startswith("[cp") and progress is not None and hasattr(progress, "line"):
+        # a model-originated say(): give it the same `[cp·stage m:ss]` tag as the pipeline's lines
+        text = progress.line(getattr(ctx.session, "stage", None) or "edit", text)
     ctx.bridge.say(text[:400])
     ctx.session.add_chat("assistant", text[:400])
     return ToolResult("said: " + text[:400])

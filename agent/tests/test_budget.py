@@ -158,11 +158,13 @@ def test_run_build_records_profile_and_skips_decoration_when_short(tmp_path):
     llm = ScriptedBuilderLLM()
     res, report = run_build(ctx, llm, "build a small stone hall", fast=True)
     assert "decoration" not in llm.roles and res.data["skipped"] == ["decoration"]
-    assert "skipped decoration" in res.reply
+    assert "Skipped decoration" in res.reply
     stages = [r.stage for r in ctx.budget.rows]
+    assert stages.count("place") == 3  # live preview after blocking and detailing (T3) + the final placement
+    stages = [s for s in stages if s != "place"]
     assert stages[:4] == ["interpret", "blocking", "detailing", "materials"]
-    assert stages[4:] == ["decoration", "place"]
-    assert ctx.budget.rows[4].stopped == "skipped"
+    assert stages[4:] == ["decoration"]
+    assert next(r for r in ctx.budget.rows if r.stage == "decoration").stopped == "skipped"
     row = ctx.budget.rows[1]
     assert row.llm_calls >= 1 and row.tool_calls >= 1 and row.wall_ms >= 0 and row.stopped == "finish"
 

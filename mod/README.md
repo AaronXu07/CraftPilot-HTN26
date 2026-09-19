@@ -58,7 +58,9 @@ can be overridden with the JVM property `-Dcopilot.agent=http://host:port/chat`.
 The agent answers `/chat` within about a second with a job id. Short turns (`undo`, `help`, `status`
 with no job running) carry the reply inline and it is printed at once; long builds print
 `[cp] working (job 3)…` and the agent pushes progress and the final answer through the mod's `/say`
-endpoint. Every request the mod makes times out after 15 s, so the client never blocks on a long
+endpoint (one `[cp·stage m:ss] …` line per stage/critic round, `[cp·build N%]` while the final placement
+animates, then the 2–4 line reply). `/cp preview on|off` and `/cp verbose on|off` are agent-side toggles
+(live preview after blocking/detailing is on by default; verbose adds one line per tool call). Every request the mod makes times out after 15 s, so the client never blocks on a long
 turn; if the agent is not running you get a one-line hint with the command to start it. When no
 job is known, `status`/`cancel` are forwarded to the agent as ordinary chat.
 
@@ -74,7 +76,7 @@ with status 400 (bad request), 409 (no world/player loaded) or 500 (unexpected).
 | `POST /scan` | `{"min":[x,y,z],"max":[x,y,z]}` (inclusive, ≤ 2M blocks) | `{"palette":["minecraft:air", ...],"blocks":[[x,y,z,paletteIndex],...],"count":n}` — index 0 is always air |
 | `POST /setblocks` | `{"chunks":[{"blocks":[[x,y,z,"minecraft:stone"],...],"delay_ms":60}],"flags":3}` or `{"blocks":[...]}` | `{"queued":n,"chunks":k,"invalid":m,"invalid_samples":[...]}` — placement is asynchronous |
 | `GET /setblocks/status` | – | `{"pending_chunks","pending_blocks","placed_total","postprocessed"}` — poll until `pending_chunks == 0` |
-| `POST /say` | `{"text":"..."}` | `{"ok":true}` — printed as `[copilot] text` in the player's chat |
+| `POST /say` | `{"text":"..."}` | `{"ok":true}` — printed as `[copilot] text` in the player's chat; lines starting with `[cp` (the agent's tagged progress lines, e.g. `[cp·block 0:31] added 7 solids`) are printed as-is with the tag coloured |
 | `GET /blocks` | – | `{"blocks":[{"id":"minecraft:oak_stairs","properties":{"facing":["north",...],...},"default":"minecraft:oak_stairs[facing=north,...]"}],"count":n}` |
 | `POST /camera` | `{"mode":"orbit","center":[x,y,z],"radius":30,"seconds":10}` or `{"mode":"return"}` | `{"ok":true,"seconds":10}` |
 

@@ -106,6 +106,10 @@ class HttpBridge:
         data = self._post("/setblocks", body, timeout=BRIDGE_TIMEOUT_S)
         return int(data.get("queued", n))
 
+    def setblocks_status(self) -> Dict[str, Any]:
+        """GET /setblocks/status -> {pending_chunks, pending_blocks, placed_total} (placement animation progress)."""
+        return dict(self._get("/setblocks/status", timeout=5.0))
+
     def say(self, text: str) -> None:
         self._post("/say", {"text": str(text)}, timeout=5.0)
 

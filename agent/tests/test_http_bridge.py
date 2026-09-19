@@ -56,6 +56,8 @@ def test_all_endpoints_roundtrip(server):
     r = b.camera(mode="orbit", center=[0, 64, 0], radius=10, seconds=2)
     assert r["ok"] and mock.camera_calls[-1]["seconds"] == 2
     assert b.setblocks([]) == 0
+    st = b.setblocks_status()
+    assert st["pending_blocks"] == 0 and st["pending_chunks"] == 0 and st["placed_total"] >= 2
     b.close()
 
 

@@ -209,6 +209,8 @@ def run_stage(
         sys_prompt += "\n\nEncouraged tools in this stage: " + ", ".join(stage.encouraged_tools) + "."
     user = stage_user_message(stage, request, brief, outline(ctx), selection, extra, fix_round, budget_s)
     dispatch = get_dispatch(ctx)
+    progress = getattr(ctx, "progress", None)
+    on_tool = progress.op if progress is not None and getattr(progress, "verbose", False) and hasattr(progress, "op") else None
     loop = run_tool_loop(
         llm,
         ctx,
@@ -218,6 +220,7 @@ def run_stage(
         dispatch,
         max_calls=limit,
         temperature=stage.temperature if temperature is None else temperature,
+        on_tool=on_tool,
         log=getattr(ctx, "log", None),
         deadline=deadline,
         op_cap=op_cap,

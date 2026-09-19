@@ -152,4 +152,4 @@ block by colour.
 8. Every op returns a one-line result and warnings; read them. If an op errors, fix the call — do
    not repeat it unchanged.
 9. When done with a stage, call `finish(summary="one line of what you built/changed")`.
-10. Talk to the player only through `say(text)`; keep it to one short line per stage.
+10. `say(text)` only for a decision the player must know; the runtime prints stage progress.
