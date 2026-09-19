@@ -51,10 +51,12 @@ def run_build(program: BuildProgram, bounds: Bounds | None, seed: int, out: Path
     if out is None:
         out = SETTINGS.schematics_dir / f"{label}_{seed}_{int(time.time()) % 100000}.litematic"
     desc = json.dumps({"text": source_text, "seed": seed, "bounds": bounds.as_tuple(), "label": program.label})
+    t1 = time.time()
     save(grid, out, name=f"{program.label} #{seed}", author=author, description=desc,
          mc_version=SETTINGS.mc_data_version)
     program_path = out.with_suffix(".program.json")
     program_path.write_text(program.model_dump_json(indent=2))
+    export_s = time.time() - t1
     result = {
         "schematic": str(out),
         "program": str(program_path),
@@ -63,6 +65,7 @@ def run_build(program: BuildProgram, bounds: Bounds | None, seed: int, out: Path
         "seed": seed,
         "facing": facing,
         "generate_seconds": round(gen_s, 3),
+        "export_seconds": round(export_s, 3),
         "notes": notes + grid.report["notes"],
         "attachments": [s for s in grid.report["stages"] if s["stage"].startswith("attachments")],
     }
@@ -95,6 +98,7 @@ def build(
         seed = int(time.time()) % 1_000_000
     b = _parse_bounds(bounds)
     notes: list[str] = []
+    t_start = time.time()
     if exemplar:
         ex = load_one(SETTINGS.exemplars_dir, exemplar)
         if ex is None:
@@ -107,9 +111,14 @@ def build(
         typer.echo(program.model_dump_json(indent=2))
     if facing not in ("north", "east", "south", "west"):
         raise typer.BadParameter("facing must be north, east, south, or west")
+    compose_s = time.time() - t_start
     result = run_build(program, b, seed, out, preview, author, text, notes, facing)
     result["source"] = source
+    result["compose_seconds"] = round(compose_s, 3)
+    result["total_seconds"] = round(time.time() - t_start, 3)
     typer.echo(json.dumps(result, indent=2))
+    typer.echo(f"Built in {result['total_seconds']:.1f}s: compose {compose_s:.1f}s, generate {result['generate_seconds']:.2f}s, "
+               f"export {result['export_seconds']:.2f}s", err=True)
 
 
 @app.command()

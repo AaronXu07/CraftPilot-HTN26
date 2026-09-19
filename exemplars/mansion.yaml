@@ -6,14 +6,14 @@ description: >
 tags: [mansion, manor, estate, grand, victorian, georgian, brick, wings, symmetric, large, house]
 program:
   label: mansion
-  bounds: {width: 45, height: 30, depth: 25}
+  bounds: {width: 45, height: 34, depth: 25}
   parts:
     - name: center
       shape: rect
       size: {width: 0.5, depth: 1.0}
       floors: 3
       floor_height: 4
-      roof: {type: hip, pitch: 1.0, overhang: 1}
+      roof: {type: hip, pitch: 1.5, overhang: 1}
     - name: west_wing
       shape: rect
       size: {width: 0.5, depth: 0.75}
@@ -54,12 +54,13 @@ program:
   palette:
     primary:
       families: [{family: bricks, weight: 1.0}]
-      texture_rate: 0.0
+      texture_rate: 0.15
     framing:
       families: [{family: dark_oak, weight: 1.0}]
     roof:
-      families: [{family: deepslate_tiles, weight: 1.0}]
-      texture_rate: 0.1
+      families: [{family: deepslate_tiles, weight: 1.0}, {family: deepslate_bricks, weight: 0.2}]
+      texture_rate: 0.15
+      weathering: 0.3
     trim:
       families: [{family: stone_bricks, weight: 1.0}]
     foundation:

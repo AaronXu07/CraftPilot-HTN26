@@ -48,8 +48,9 @@ program:
     framing:
       families: [{family: spruce, weight: 1.0}]
     roof:
-      families: [{family: spruce, weight: 1.0}]
-      texture_rate: 0.0
+      families: [{family: spruce, weight: 1.0}, {family: dark_oak, weight: 0.15}]
+      texture_rate: 0.15
+      weathering: 0.4
     trim:
       families: [{family: spruce, weight: 1.0}]
     foundation:

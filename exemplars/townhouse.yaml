@@ -41,7 +41,7 @@ program:
   palette:
     primary:
       families: [{family: bricks, weight: 1.0}]
-      texture_rate: 0.0
+      texture_rate: 0.15
     framing:
       families: [{family: stone_bricks, weight: 1.0}]
     roof:

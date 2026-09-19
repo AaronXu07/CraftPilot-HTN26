@@ -133,6 +133,11 @@ class RoofSpec(BaseModel):
     tiers: int = Field(default=1, description="Stacked roof tiers, pagoda only")
     crenellated: bool = Field(default=False, description="Merlons on the parapet, parapet only")
     ridge_axis: Literal["auto", "x", "z"] = Field(default="auto", description="Ridge direction for gable/gambrel/shed")
+    profile: Literal["straight", "concave", "convex"] = Field(
+        default="straight", description="Slope shape: straight; concave = gentle at the eave and steep near the top "
+                                        "(East Asian, French); convex = steep at the eave and rounded at the top (bell, barrel)")
+    curl: float = Field(default=0.0, description="Blocks the eave corners sweep upward, 0 to 3 (East Asian roofs use 1.5 to 2.5)")
+    ridge_offset: float = Field(default=0.0, description="Gable only: shifts the ridge toward one eave, -0.4 to 0.4, giving two different slopes (saltbox)")
 
 
 class PartSpec(BaseModel):
@@ -143,7 +148,7 @@ class PartSpec(BaseModel):
     floors: int = 2
     floor_height: int = Field(default=4, description="Blocks per storey including the floor block")
     taper: float = Field(default=0.0, description="Fraction of width lost per floor (0 = straight walls)")
-    wall_thickness: int = Field(default=1, description="1 for houses, 2 for castles and fortifications")
+    wall_thickness: int = Field(default=1, description="Always 1 unless the player explicitly asks for thick walls; then 2")
     odd_dims: bool = Field(default=True, description="Force odd width/depth so there is a center block")
     roof: RoofSpec
     attach: Attach | None = Field(default=None, description="None marks the root part; exactly one root")
@@ -174,8 +179,11 @@ class DepthRules(BaseModel):
     foundation_outset: int = 1
     floor_lips: bool = Field(default=False, description="Slab lips at storey boundaries, modern look")
     corbels: bool = True
-    detail: float = Field(default=0.4, description="0..1 density of inline wall details (stairs and slabs set into the wall)")
+    detail: float = Field(default=0.4, description="0..1 density of wall texture: stairs and wall blocks set into the wall, buttons, flush trapdoors")
     foliage: float = Field(default=0.3, description="0..1 density of vines on walls and leaf bushes at the base")
+    string_courses: bool = Field(default=True, description="A notched band of stairs along each upper floor line")
+    quoins: bool = Field(default=True, description="Toothed stair pattern at unframed corners")
+    shading: float = Field(default=0.6, description="0..1 how strongly wall blocks darken under eaves, balconies and jetties")
 
 
 class AttachmentParams(BaseModel):
@@ -261,6 +269,9 @@ class BuildProgram(BaseModel):
     attachments: list[AttachmentRequest] = []
     budget: SilhouetteBudget = SilhouetteBudget()
     interior: InteriorRules = InteriorRules()
+    material_reasoning: str = Field(
+        default="", description="One or two sentences: what the real building is made of (walls, roof, base, trim) and "
+                                "which catalog family stands in for each, chosen by material, colour and texture")
     palette_name: str = Field(default="", description="A curated palette name to start from, or empty to compose freely")
     palette: PaletteSpec
     notes: str = Field(default="", description="Anything requested that could not be expressed")

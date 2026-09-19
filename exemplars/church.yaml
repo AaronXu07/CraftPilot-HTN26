@@ -6,14 +6,14 @@ description: >
 tags: [church, chapel, cathedral, nave, steeple, bell, tower, spire, religious, gothic, stone]
 program:
   label: church
-  bounds: {width: 41, height: 40, depth: 19}
+  bounds: {width: 41, height: 44, depth: 19}
   parts:
     - name: nave
       shape: rect
       size: {width: 0.62, depth: 0.75}
       floors: 2
       floor_height: 5
-      roof: {type: gable, pitch: 1.0, overhang: 1, ridge_axis: x}
+      roof: {type: gable, pitch: 2.0, overhang: 1, ridge_axis: x}
     - name: tower
       shape: rect
       size: {width: 0.24, depth: 0.5}
@@ -57,8 +57,9 @@ program:
     framing:
       families: [{family: stone_bricks, weight: 1.0}]
     roof:
-      families: [{family: spruce, weight: 1.0}]
-      texture_rate: 0.0
+      families: [{family: spruce, weight: 1.0}, {family: dark_oak, weight: 0.2}]
+      texture_rate: 0.15
+      weathering: 0.4
     trim:
       families: [{family: stone_bricks, weight: 1.0}]
     foundation:

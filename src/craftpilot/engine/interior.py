@@ -132,7 +132,6 @@ def _try_spiral(grid: SemanticGrid, part: LayoutPart, k: int, x0: int, z0: int, 
     last = cells[(fh - 1) % len(ring)]
     if len(ring) == 8:
         landing = cells[fh % 8]
-        exit_dir = None
     else:
         landing = None
         for d in HORIZONTAL:
@@ -143,17 +142,16 @@ def _try_spiral(grid: SemanticGrid, part: LayoutPart, k: int, x0: int, z0: int, 
             if grid.role[lx, fy_next, lz] in (Role.FLOOR, Role.INTERIOR) and \
                     all(int(grid.role[lx, yy, lz]) in (Role.INTERIOR, Role.EMPTY) for yy in (fy_next + 1, fy_next + 2)) \
                     and not grid.reserved[lx, fy_next:fy_next + 3, lz].any():
-                landing, exit_dir = (lx, lz), d
+                landing = (lx, lz)
                 break
         if landing is None:
             return False
-    # Build.
+    # Build. Each step faces the direction you arrive from (its low half toward the previous step),
+    # so a turn is still a half-block step and never a jump.
     for i in range(fh):
         x, z = cells[i % len(ring)]
-        nx, nz = cells[(i + 1) % len(ring)]
-        facing = Dir.EAST if nx > x else Dir.WEST if nx < x else Dir.SOUTH if nz > z else Dir.NORTH
-        if i == fh - 1 and exit_dir is not None:
-            facing = exit_dir
+        px, pz = (ax, az) if i == 0 else cells[(i - 1) % len(ring)]
+        facing = Dir.EAST if x > px else Dir.WEST if x < px else Dir.SOUTH if z > pz else Dir.NORTH
         y = fy + 1 + i
         grid.set(x, y, z, Role.STAIRCASE, BShape.STAIR, facing, part.index, 0.0)
     for (x, z) in cells:

@@ -80,10 +80,46 @@ def _role_palette(spec: PaletteSpec, chain: list[str], shape: str | None = None)
     return spec.primary
 
 
+_SHADE_CACHE: dict[str, str | None] = {}
+
+
+def shade_family(name: str) -> str | None:
+    """A darker relative of a family: same material, close hue, lightness 0.06 to 0.25 lower."""
+    if name in _SHADE_CACHE:
+        return _SHADE_CACHE[name]
+    import colorsys
+    src = catalog.family(name)
+    if src is None:
+        _SHADE_CACHE[name] = None
+        return None
+    h0, l0, s0 = colorsys.rgb_to_hls(*(c / 255.0 for c in src.rgb))
+    kin = {"plaster": "painted", "terracotta": "painted"}
+    best, best_d = None, 1e9
+    for fam in catalog.FAMILIES.values():
+        if fam.name == name or fam.loud or fam.tone == "glass" or fam.material == "organic":
+            continue
+        if kin.get(fam.material, fam.material) != kin.get(src.material, src.material):
+            continue
+        h, l, s_ = colorsys.rgb_to_hls(*(c / 255.0 for c in fam.rgb))
+        drop = l0 - l
+        if not (0.05 <= drop <= 0.22):
+            continue
+        dh = min(abs(h - h0), 1 - abs(h - h0))          # 0..0.5 of a turn
+        if s0 > 0.25 and dh > 30 / 360:
+            continue                                     # a coloured block must stay in its hue
+        # Prefer a small drop, the same hue and saturation, and the same texture character.
+        d = abs(drop - 0.12) * 3 + dh * 4 * max(s_, s0) + abs(s_ - s0) + abs(fam.noise - src.noise)
+        if d < best_d:
+            best, best_d = fam.name, d
+    _SHADE_CACHE[name] = best
+    return best
+
+
 class _Resolver:
     def __init__(self, grid: SemanticGrid, spec: PaletteSpec):
         self.grid = grid
         self.spec = spec
+        self.shading = 0.0
         rng = grid.rng
         shape = (grid.W, grid.H, grid.D)
         self.n_family = clustered(shape, 4.0, rng)
@@ -148,14 +184,16 @@ class _Resolver:
             return base
         hn = float(self.grid.h_norm[x, y, z])
         if not fam.variants:
-            # No cracked or mossy variant exists: weather with a kindred block, mostly near the ground.
-            comps = [c for c in WEATHERED_COMPANIONS.get(fam.name, []) if catalog.family(c)]
-            if not comps or rp.weathering <= 0:
-                return base
-            p = 0.5 * rp.texture_rate * rp.weathering * (1.5 - hn)
+            # No cracked or mossy variant exists. Two kinds of kin mix in: a darker relative at the
+            # texture rate (variation on an intact wall), and a weathering companion near the ground.
             u = 0.6 * float(self.n_tex[x, y, z]) + 0.4 * float(self.u_tex[x, y, z])
-            if u < p:
+            comps = [c for c in WEATHERED_COMPANIONS.get(fam.name, []) if catalog.family(c)]
+            p_weather = 0.5 * rp.texture_rate * rp.weathering * (1.5 - hn) if comps else 0.0
+            if u < p_weather:
                 return catalog.family(comps[0]).shapes["full"]
+            dark = shade_family(fam.name)
+            if dark and u < p_weather + 0.5 * rp.texture_rate:
+                return catalog.family(dark).shapes["full"]
             return base
         p = rp.texture_rate * (1.0 + rp.weathering * (1.0 - hn))
         # Mix clustered and per-block randomness so wear comes in patches with speckle.
@@ -174,6 +212,38 @@ class _Resolver:
         cdf = np.cumsum(w) / w.sum()
         i = int(np.searchsorted(cdf, float(self.u_var[x, y, z]), side="right"))
         return fam.variants[min(i, len(fam.variants) - 1)].block_id
+
+
+_ROOF_COMPANION_CACHE: dict[str, str | None] = {}
+
+
+def roof_companion(name: str) -> str | None:
+    """A kindred family with stairs to texture a roof with: a weathering companion, or a darker relative."""
+    if name in _ROOF_COMPANION_CACHE:
+        return _ROOF_COMPANION_CACHE[name]
+    out = None
+    for cand in WEATHERED_COMPANIONS.get(name, []) + [shade_family(name) or ""]:
+        fam = catalog.family(cand)
+        if fam is not None and fam.has("stairs") and fam.has("slab"):
+            out = cand
+            break
+    _ROOF_COMPANION_CACHE[name] = out
+    return out
+
+
+def _occlusion(grid: SemanticGrid, x: int, y: int, z: int, normal: int) -> float:
+    """How much overhang sits above this wall cell, in front of the wall plane: 1.0 right under it,
+    fading to 0 three cells down."""
+    vx, _, vz = DIR_VEC[normal]
+    ox, oz = x + vx, z + vz
+    for dist in (1, 2, 3):
+        yy = y + dist
+        if not grid.in_bounds(ox, yy, oz):
+            break
+        r = int(grid.role[ox, yy, oz])
+        if r not in (Role.EMPTY, Role.INTERIOR, Role.FOLIAGE, Role.DETAIL, Role.LIGHT, Role.SHUTTER):
+            return {1: 1.0, 2: 0.6, 3: 0.3}[dist]
+    return 0.0
 
 
 _BLOCK_TO_FAMILY: dict[str, Family] = {}
@@ -327,12 +397,28 @@ def _block_for(res: _Resolver, grid: SemanticGrid, x: int, y: int, z: int) -> Bl
     need = shape_name if role in (Role.DOOR, Role.SHUTTER) else None
     rp = _role_palette(res.spec, chain, need)
     fam = res.pick_family(rp, x, y, z)
+    # Roof texture: a single-family roof mixes in a kindred family at its texture rate, in patches.
+    if role in (Role.ROOF, Role.ROOF_FILL) and rp.texture_rate > 0 and len(rp.families) == 1:
+        u = 0.6 * float(res.n_tex[x, y, z]) + 0.4 * float(res.u_tex[x, y, z])
+        if u < rp.texture_rate:
+            comp = roof_companion(fam.name)
+            if comp:
+                fam = catalog.family(comp)
     flags = int(grid.flags[x, y, z])
 
     if shape == BShape.FULL:
         if flags & Flag.NO_TEXTURE:
             return BlockRef.make(fam.shapes["full"])
-        return BlockRef.make(res.pick_variant(fam, rp, x, y, z))
+        block = res.pick_variant(fam, rp, x, y, z)
+        # Shading: a darker relative under eaves, balconies and jetties.
+        if res.shading > 0 and role in (Role.WALL, Role.FOUNDATION) and (flags & Flag.PERIMETER) and normal in HORIZONTAL \
+                and block == fam.shapes["full"]:
+            strength = _occlusion(grid, x, y, z, normal)
+            if strength > 0 and float(res.u_var[x, y, z]) < strength * res.shading:
+                dark = shade_family(fam.name)
+                if dark:
+                    return BlockRef.make(catalog.family(dark).shapes["full"])
+        return BlockRef.make(block)
 
     block_id = catalog.resolve_shape(fam, shape_name)
     if block_id is None:
@@ -371,6 +457,7 @@ def _block_for(res: _Resolver, grid: SemanticGrid, x: int, y: int, z: int) -> Bl
 
 def materials(grid: SemanticGrid, program: BuildProgram) -> None:
     res = _Resolver(grid, program.palette)
+    res.shading = program.depth.shading
     xs, ys, zs = np.nonzero((grid.role != Role.EMPTY) & (grid.role != Role.DETAIL))
     dx, dy, dz = np.nonzero(grid.role == Role.DETAIL)
     xs, ys, zs = np.concatenate([xs, dx]), np.concatenate([ys, dy]), np.concatenate([zs, dz])

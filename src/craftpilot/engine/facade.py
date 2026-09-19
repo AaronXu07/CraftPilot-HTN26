@@ -429,6 +429,74 @@ def _round_part(grid: SemanticGrid, part: LayoutPart, k: int, rules: FacadeRules
     return placed_door
 
 
+def _gable_windows(grid: SemanticGrid, part: LayoutPart, rules: FacadeRules, accent: bool) -> int:
+    """Windows in the triangular gable-end walls above the top storey: one in the middle, a pair
+    on wide gables, and a small round one near the peak when the triangle is tall."""
+    from craftpilot.program.model import RoofType
+    t = part.spec.roof.type
+    if t not in (RoofType.gable, RoofType.gambrel) or not part.floor_masks:
+        return 0
+    along_x = part.spec.roof.ridge_axis == "x" or (part.spec.roof.ridge_axis == "auto" and part.width >= part.depth)
+    ends = (Dir.EAST, Dir.WEST) if along_x else (Dir.NORTH, Dir.SOUTH)
+    m = part.floor_masks[-1]
+    placed = 0
+    for side in ends:
+        runs = _face_runs(m, side)
+        if not runs:
+            continue
+        run = max(runs, key=len)
+        if len(run) < 3:
+            continue
+        vx, _, vz = DIR_VEC[side]
+
+        def wall_height(x: int, z: int) -> int:
+            h = 0
+            y = part.eave_y
+            while grid.in_bounds(x, y, z) and grid.role[x, y, z] == Role.WALL and grid.part_id[x, y, z] == part.index:
+                h += 1
+                y += 1
+            return h
+
+        def put_window(cells: list[tuple[int, int]], wb: int, wh: int, style: WindowStyle) -> bool:
+            hs = [wall_height(x, z) for (x, z) in cells]
+            if min(hs) < 1:
+                return False
+            ceiling = part.eave_y + min(hs)          # one row of wall stays above the window
+            wh = min(wh, ceiling - 1 - wb)
+            if wh < 1:
+                return False
+            for (x, z) in cells:
+                for y in range(wb, wb + wh):
+                    ox, oz = x + vx, z + vz
+                    if not grid.in_bounds(ox, y, oz) or grid.role[ox, y, oz] != Role.EMPTY:
+                        return False
+            _window(grid, cells, side, wb, wh, part, style, rules, ceiling, accent)
+            return True
+
+        centre = run[len(run) // 2]
+        hc = wall_height(*centre)
+        if hc < 3:
+            continue
+        style = rules.window if rules.window not in (WindowStyle.wall, WindowStyle.slit, WindowStyle.stair_slit) else WindowStyle.plain
+        wh = 3 if style == WindowStyle.tall else max(1, min(rules.window_height, 2))
+        wb = part.eave_y + 1
+        if len(run) >= 9 and hc >= 4:
+            for o in (-2, 2):
+                idx = len(run) // 2 + o
+                if 0 <= idx < len(run) and put_window([run[idx]], wb, wh, style):
+                    placed += 1
+            if hc >= 7:
+                # Near the peak; step down until the cell outside is clear of the rake overhang's fill.
+                for wb_top in range(part.eave_y + hc - 3, part.eave_y + hc - 6, -1):
+                    if wb_top > wb + wh and put_window([centre], wb_top, 1, WindowStyle.round):
+                        placed += 1
+                        break
+        else:
+            if put_window([centre], wb, wh, style):
+                placed += 1
+    return placed
+
+
 def facade(grid: SemanticGrid, program: BuildProgram) -> None:
     rules = program.facade
     root_name = program.root().name
@@ -475,6 +543,8 @@ def facade(grid: SemanticGrid, program: BuildProgram) -> None:
                     if _process_run(grid, run, side, part, k, rules, is_front, want_door=not door_done, accent=accent,
                                     entrance=entrance, outset=outset):
                         door_done = True
+    gable = sum(_gable_windows(grid, p, rules, accent) for p in grid.parts)
+    grid.report["gable_windows"] = gable
     if not door_done:
         # Fallback: a front-facing wall cell with interior behind it, nearest the middle of the face.
         vx, _, vz = DIR_VEC[grid.front]

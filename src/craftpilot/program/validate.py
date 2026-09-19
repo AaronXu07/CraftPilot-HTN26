@@ -66,6 +66,9 @@ def _repair_palette(rp: RolePalette | None, role: str, notes: list[str], require
             notes.append(f"Block family '{fw.family}' in {role} palette was read as '{resolved}'.")
             fw.family = resolved
         fam = catalog.family(resolved)
+        if role != "glass" and fam.tone == "glass":
+            notes.append(f"Glass ('{fw.family}') is only for windows; dropped from the {role} palette.")
+            continue
         if fw.weight <= 0:
             continue
         kept.append(FamilyWeight(family=fw.family, weight=float(fw.weight)))
@@ -117,6 +120,8 @@ def repair(program: BuildProgram, safety_limit: tuple[int, int, int]) -> tuple[B
         r = p.roof
         r.pitch = float(round(_clamp(r.pitch, 0.5, 3.0) * 2) / 2)
         r.overhang = int(_clamp(r.overhang, 0, 3))
+        r.curl = _clamp(r.curl, 0.0, 3.0)
+        r.ridge_offset = _clamp(r.ridge_offset, -0.4, 0.4)
         r.tiers = int(_clamp(r.tiers, 1, 5))
         if r.crenellated and r.type != RoofType.parapet:
             r.type = RoofType.parapet
@@ -142,6 +147,7 @@ def repair(program: BuildProgram, safety_limit: tuple[int, int, int]) -> tuple[B
     d.foundation_outset = int(_clamp(d.foundation_outset, 0, 2))
     d.detail = _clamp(d.detail, 0.0, 1.0)
     d.foliage = _clamp(d.foliage, 0.0, 1.0)
+    d.shading = _clamp(d.shading, 0.0, 1.0)
 
     b = program.budget
     b.dominant = int(_clamp(b.dominant, 0, 3))

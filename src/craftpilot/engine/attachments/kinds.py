@@ -184,58 +184,65 @@ def _slope_sides(part: LayoutPart) -> list[int]:
     return []
 
 
-def _place_dormer(grid: SemanticGrid, part: LayoutPart, side: int, cx: int, cz: int) -> bool:
-    """cx, cz is the wall cell on `side` under the dormer's centre column."""
-    vx, vz, ax, az = _axis_dirs(side)
-    ridge_y = int(math.ceil(float(part.roof_surface[part.roof_mask].max()))) - 1
-    # Walk uphill from the wall column until the roof top block is two above the eave.
-    x, z = cx, cz
-    for _ in range(4):
-        t = _roof_top_y(grid, x, z)
-        if t is not None and t >= part.eave_y + 2:
-            break
-        x, z = x - vx, z - vz
-        if not grid.in_bounds(x, 0, z):
-            return False
-    fx, fz = x, z
-    yb = _roof_top_y(grid, fx, fz)
-    if yb is None:
-        return False
-    for wall_h in (3, 2):
-        y_w0, y_w1 = yb + 1, yb + wall_h
-        y_r = y_w1 + 1
-        if y_r + 1 <= ridge_y:
-            break
-    else:
-        return False
-    # Occlusion check across the dormer footprint.
-    if is_reserved(grid, fx - 2 * ax - vx * 1, y_w0, fz - 2 * az - vz * 1, fx + 2 * ax + vx * 1, y_r + 1, fz + 2 * az + vz * 1):
-        return False
+def _dormer_walk(grid: SemanticGrid, part: LayoutPart, fx: int, fz: int, vx: int, vz: int, y_r: int):
+    """Cells from the front column up the slope until the main roof reaches the dormer roof height.
+    The slope must keep rising; a dormer that never meets the roof would be open at the back."""
     depth_cells = []
     x, z = fx, fz
     prev_t = None
-    reached = False
     while grid.in_bounds(x, 0, z) and part.roof_mask[x, z]:
         t = _roof_top_y(grid, x, z)
         if t is None:
-            break
+            return depth_cells, False
         if t >= y_r:
-            reached = True
-            break
-        # The slope must keep rising under the dormer (on a hip roof the corner regions are flat
-        # along the walk); a dormer that never meets the roof would be open at the back.
+            return depth_cells, True
         if prev_t is not None and t < prev_t:
-            break
+            return depth_cells, False
         if prev_t is not None and t == prev_t and len(depth_cells) >= 2 and _roof_top_y(grid, x - vx, z - vz) == t:
-            break
+            return depth_cells, False
         depth_cells.append((x, z))
         prev_t = t
         x, z = x - vx, z - vz
         if len(depth_cells) > 12:
-            break
-    if len(depth_cells) < 2 or not reached:
-        return False
+            return depth_cells, False
+    return depth_cells, False
 
+
+def _place_dormer(grid: SemanticGrid, part: LayoutPart, side: int, cx: int, cz: int) -> bool:
+    """cx, cz is the wall cell on `side` under the dormer's centre column."""
+    vx, vz, ax, az = _axis_dirs(side)
+    ridge_y = int(math.ceil(float(part.roof_surface[part.roof_mask].max()))) - 1
+    # Candidate front columns: from the wall line up the slope, as long as the front sits above the eave.
+    fronts = []
+    x, z = cx, cz
+    for _ in range(4):
+        if not grid.in_bounds(x, 0, z) or not part.roof_mask[x, z]:
+            break
+        t = _roof_top_y(grid, x, z)
+        if t is not None and t >= part.eave_y + 1:
+            fronts.append((x, z, t))
+        x, z = x - vx, z - vz
+    if not fronts:
+        return False
+    chosen = None
+    for (fx, fz, yb) in fronts:
+        for wall_h in (3, 2):
+            y_w0, y_w1 = yb + 1, yb + wall_h
+            y_r = y_w1 + 1
+            if y_r > ridge_y:
+                continue
+            depth_cells, reached = _dormer_walk(grid, part, fx, fz, vx, vz, y_r)
+            if reached and len(depth_cells) >= 2:
+                chosen = (fx, fz, yb, y_w0, y_w1, y_r, depth_cells)
+                break
+        if chosen:
+            break
+    if chosen is None:
+        return False
+    fx, fz, yb, y_w0, y_w1, y_r, depth_cells = chosen
+    # Occlusion check across the dormer footprint.
+    if is_reserved(grid, fx - 2 * ax - vx * 1, y_w0, fz - 2 * az - vz * 1, fx + 2 * ax + vx * 1, y_r + 1, fz + 2 * az + vz * 1):
+        return False
     def put(px, pz, py, role, shape=BShape.FULL, normal=Dir.NONE, flags=0):
         if grid.in_bounds(px, py, pz) and int(grid.role[px, py, pz]) in OVERWRITABLE:
             grid.set(px, py, pz, role, shape, normal, part.index, 1.0, flags)
@@ -318,7 +325,11 @@ def dormer(grid: SemanticGrid, program: BuildProgram, req: AttachmentRequest) ->
             if n_side == 0:
                 break
             n_side = min(n_side, max(1, (len(cells) - 3) // 6))
-        idxs = spread(n_side, 2, len(cells) - 3, grid.rng, req.spacing == "regular", 5)
+        # On hip and mansard roofs the corner regions slope sideways, so keep to the middle band.
+        margin = 5 if part.spec.roof.type in (RoofType.hip, RoofType.mansard) else 2
+        if len(cells) - 2 * margin < 3:
+            margin = 2
+        idxs = spread(n_side, margin, len(cells) - 1 - margin, grid.rng, req.spacing == "regular", 5)
         for i in idxs:
             for shift in (0, -1, 1, -2, 2, -3, 3):
                 j = i + shift

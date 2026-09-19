@@ -1,5 +1,5 @@
 description: >
-  A tall octagonal stone watchtower. Thick walls, a crenellated parapet, arrow slits, a
+  A tall octagonal stone watchtower. A crenellated parapet, arrow slits, a
   flagpole with a banner on top, corner bartizans near the top, and a mossy cobblestone base
   weathering into clean stone bricks.
 tags: [watchtower, tower, lookout, guard, octagonal, stone, fortification, keep, turret, outpost]
@@ -13,7 +13,6 @@ program:
       size: {width: 0.8, depth: 0.8}
       floors: 5
       floor_height: 4
-      wall_thickness: 2
       roof: {type: parapet, crenellated: true, overhang: 0}
   facade:
     bay_width: {min: 3, max: 4}

@@ -67,7 +67,7 @@ lighthouse, pagoda, watchtower, townhouse.
 
 - `src/craftpilot/program/` the BuildProgram vocabulary, validation, palette rules, and exemplar library
 - `src/craftpilot/engine/` layout, massing, roof, attachments, facade, interior, depth, detail, materials, postprocess
-- `src/craftpilot/blocks/` block family catalog (filtered by `data/blocks_<version>.json`), per-family colour, noise and style data with the curated palette library, and circle templates
+- `src/craftpilot/blocks/` block family catalog (filtered by `data/blocks_<version>.json`); each family carries its colour, texture noise, material and style tags from `palette_data.py`, which also holds the curated palette library
 - `src/craftpilot/llm/` Azure OpenAI compose/edit, strict schema, offline fallback
 - `src/craftpilot/export/` litemapy export
 - `src/craftpilot/preview/` isometric PNG renderer

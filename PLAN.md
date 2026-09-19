@@ -13,8 +13,13 @@
 > and doorways are carved where needed, palettes are checked against 60-30-10 colour rules, context
 > tags and texture noisiness (with a curated library of 28 named palettes), and a final detail pass
 > adds inline wall details (stairs and slabs set into the wall) plus vines and leaf bushes.
-> Deferred until after the next evaluation: better interior stairs (stairwells reserved at layout,
-> spirals in towers), the critique loop from preview images, and WFC facade fill (M6).
+> Second review round: staircases rebuilt with proper head room (straight runs, 3x3 and 2x2 spirals,
+> ladders), entrances (double doors, portals with pillars and steps, castle gates), window styles
+> (stair slits, boarded, fence gates), buttons and flush trapdoors matched to the wall, sills as
+> stairs or trapdoor ledges, dormers carved into the attic with flat floors, roof bodies filled so
+> corner stairs never show gaps, block families carrying colour, texture noise, material and style
+> tags that the model sees in the catalog, and a `material_reasoning` field the model fills before
+> choosing a palette. Deferred: the critique loop from preview images and WFC facade fill (M6).
 
 Procedural Minecraft building generator. A player types `/build <natural
 language>` in a singleplayer world, a Fabric mod forwards it to a local Python
