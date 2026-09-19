@@ -6,6 +6,7 @@ HTTP, `mock_mod.MockBridge` keeps an in-memory world. `get_bridge()` picks one f
 from __future__ import annotations
 
 import os
+import time
 from typing import Any, Dict, List, Optional, Protocol, Sequence, Tuple, runtime_checkable
 
 import httpx
@@ -15,6 +16,8 @@ from .engine.coretypes import BlockMap, IVec3
 DEFAULT_MOD_URL = "http://127.0.0.1:7777"
 SCAN_CHUNK = 64  # /scan requests are split into <= 64x64x64 boxes
 BRIDGE_TIMEOUT_S = 30.0  # cap for every mod call (health/player/say use shorter ones)
+BRIDGE_RETRIES = 2  # extra attempts on *connection* errors (refused / connect timeout), with backoff
+BRIDGE_BACKOFF_S = 0.5  # first retry waits this long, the second twice as long
 
 SetblockChunk = Tuple[List[Tuple[int, int, int, str]], int]  # (blocks, delay_ms)
 
@@ -59,28 +62,40 @@ class Bridge(Protocol):
 class HttpBridge:
     """HTTP client for the mod's 7 endpoints. JSON exactly per CONTRACTS.md §7."""
 
-    def __init__(self, base_url: str = DEFAULT_MOD_URL, timeout: float = 10.0):
+    def __init__(self, base_url: str = DEFAULT_MOD_URL, timeout: float = 10.0, retries: int = BRIDGE_RETRIES, backoff_s: float = BRIDGE_BACKOFF_S):
         self.base_url = base_url.rstrip("/")
         self._client = httpx.Client(base_url=self.base_url, timeout=timeout)
+        self.retries = max(0, int(retries))
+        self.backoff_s = float(backoff_s)
 
     # -- helpers ----------------------------------------------------------------------------
+    def _request(self, method: str, path: str, timeout: float, body: Optional[Dict[str, Any]] = None) -> Any:
+        """One mod call. Connection errors (refused, connect timeout, network) are retried `retries`
+        times with backoff; read timeouts and HTTP errors are not (the mod got the request)."""
+        attempt = 0
+        while True:
+            try:
+                if method == "GET":
+                    r = self._client.get(path, timeout=timeout)
+                else:
+                    r = self._client.post(path, json=body, timeout=timeout)
+            except (httpx.ConnectError, httpx.ConnectTimeout, httpx.NetworkError) as e:
+                if attempt < self.retries:
+                    time.sleep(self.backoff_s * (2**attempt))
+                    attempt += 1
+                    continue
+                raise BridgeError(f"mod not connected at {self.base_url} ({path}: {e})") from e
+            except httpx.HTTPError as e:
+                raise BridgeError(f"mod unreachable at {self.base_url}{path}: {e}") from e
+            if r.status_code >= 400:
+                raise BridgeError(f"{method} {path} -> {r.status_code}: {r.text[:200]}")
+            return r.json()
+
     def _get(self, path: str, timeout: float) -> Any:
-        try:
-            r = self._client.get(path, timeout=timeout)
-        except httpx.HTTPError as e:
-            raise BridgeError(f"mod unreachable at {self.base_url}{path}: {e}") from e
-        if r.status_code >= 400:
-            raise BridgeError(f"GET {path} -> {r.status_code}: {r.text[:200]}")
-        return r.json()
+        return self._request("GET", path, timeout)
 
     def _post(self, path: str, body: Dict[str, Any], timeout: float) -> Any:
-        try:
-            r = self._client.post(path, json=body, timeout=timeout)
-        except httpx.HTTPError as e:
-            raise BridgeError(f"mod unreachable at {self.base_url}{path}: {e}") from e
-        if r.status_code >= 400:
-            raise BridgeError(f"POST {path} -> {r.status_code}: {r.text[:200]}")
-        return r.json()
+        return self._request("POST", path, timeout, body)
 
     # -- endpoints --------------------------------------------------------------------------
     def health(self) -> Dict[str, Any]:
@@ -176,7 +191,7 @@ def get_bridge(prefer: Optional[str] = None, url: Optional[str] = None) -> Bridg
     if prefer == "http":
         return http
     try:
-        http.health()
+        HttpBridge(url, retries=0).health()  # a quick probe: no retry backoff at startup
         return http
     except BridgeError:
         from mock_mod.bridge import MockBridge

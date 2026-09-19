@@ -111,6 +111,14 @@ def map_bbox(block_map: BlockMap) -> Optional[Tuple[IVec3, IVec3]]:
     return (min(xs), min(ys), min(zs)), (max(xs), max(ys), max(zs))
 
 
+def _bbox_nonempty(block_map: BlockMap) -> Tuple[IVec3, IVec3]:
+    """map_bbox for a map the caller has already checked is non-empty."""
+    bb = map_bbox(block_map)
+    if bb is None:  # pragma: no cover - callers guard
+        raise ValueError("empty block map")
+    return bb
+
+
 def _bbox_pair(scene_bbox: Any) -> Tuple[List[float], List[float]]:
     if hasattr(scene_bbox, "lo") and hasattr(scene_bbox, "hi"):
         return [float(v) for v in scene_bbox.lo], [float(v) for v in scene_bbox.hi]
@@ -260,11 +268,11 @@ def place_scene(
     world = session.world
     if world.anchor is None:
         player = bridge.player()
-        lo, hi = map_bbox(block_map)
+        lo, hi = _bbox_nonempty(block_map)
         scene_bbox = (lo, (hi[0] + 1, hi[1] + 1, hi[2] + 1))
         world.anchor, world.quarter_turns = plan_anchor(player, scene_bbox)
     new_map = transform_block_map(block_map, world.anchor, world.quarter_turns)
-    lo, hi = map_bbox(new_map)
+    lo, hi = _bbox_nonempty(new_map)
     plo = (lo[0] - 1, lo[1] - 1, lo[2] - 1)
     phi = (hi[0] + 1, hi[1] + 1, hi[2] + 1)
     if world.pre_scan is None:
@@ -274,11 +282,18 @@ def place_scene(
         # extend the snapshot for any newly covered region (only positions we have not seen yet)
         missing = [p for p in new_map if p not in world.pre_scan]
         if missing:
-            mlo, mhi = map_bbox({p: "" for p in missing})
+            mlo, mhi = _bbox_nonempty({p: "" for p in missing})
             extra = bridge.scan(mlo, mhi)
             for p, s in extra.items():
                 world.pre_scan.setdefault(p, s)
-            world.pre_scan_bbox = (tuple(min(a, b) for a, b in zip(world.pre_scan_bbox[0], mlo)), tuple(max(a, b) for a, b in zip(world.pre_scan_bbox[1], mhi)))  # type: ignore[assignment]
+            if world.pre_scan_bbox is None:
+                world.pre_scan_bbox = (mlo, mhi)
+            else:
+                (slo, shi) = world.pre_scan_bbox
+                world.pre_scan_bbox = (
+                    (min(slo[0], mlo[0]), min(slo[1], mlo[1]), min(slo[2], mlo[2])),
+                    (max(shi[0], mhi[0]), max(shi[1], mhi[1]), max(shi[2], mhi[2])),
+                )
     old_map = world.placed if mode == "diff" else {}
     added, removed = _diff(old_map, new_map)
     if mode != "diff":

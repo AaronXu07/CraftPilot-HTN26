@@ -6,16 +6,20 @@ so the model gets immediate, actionable feedback. Engine modules (Track 3/4) are
 from __future__ import annotations
 
 import json
+import logging
 import os
 import subprocess
 import sys
 import time
+import traceback
 from dataclasses import dataclass, field
 from typing import Any, Callable, Dict, List, Optional
 
-from ..engine.scene import OPS, READ_ONLY_OPS, SceneError
+from ..engine.scene import OPS, READ_ONLY_OPS, SceneError, bad_args_message
 from ..jobs import JobCancelled
 from .schemas import AGENT_TOOL_NAMES, HISTORY_TOOL_NAMES, TOOLS_BY_NAME
+
+log = logging.getLogger("copilot.tools")
 
 MAX_RESULT_CHARS = 4000
 SCRIPT_TIMEOUT_S = 10.0
@@ -109,7 +113,7 @@ def _build_all(ctx: ToolContext) -> Dict[str, Any]:
     try:
         from ..engine.resolver import resolve
 
-        block_map = resolve(raster, fit, scene, ctx.registry, seed=0, warnings=warnings)
+        block_map = resolve(raster, fit, scene, _registry(ctx), seed=0, warnings=warnings)
     except ImportError as e:
         warnings.append(f"resolver unavailable ({e}); using stone")
         block_map = _fallback_block_map(raster)
@@ -124,6 +128,23 @@ def _build_all(ctx: ToolContext) -> Dict[str, Any]:
     session.put_cache("build", result)
     ctx.emit({"event": "build", "scene_hash": session.scene_hash(), "blocks": len(block_map), "timings": result["timings"]})
     return result
+
+
+_DEFAULT_REGISTRY: Any = None
+
+
+def _registry(ctx: ToolContext) -> Any:
+    """The context's registry, or the bundled fallback dump (loaded once) when none was wired in —
+    `place` used to crash with `'NoneType' object has no attribute 'validate_state'`."""
+    global _DEFAULT_REGISTRY
+    if ctx.registry is not None:
+        return ctx.registry
+    if _DEFAULT_REGISTRY is None:
+        from ..engine.registry import Registry
+
+        _DEFAULT_REGISTRY = Registry.load(bridge=None)
+    ctx.registry = _DEFAULT_REGISTRY
+    return _DEFAULT_REGISTRY
 
 
 def _fallback_block_map(raster) -> Dict[Any, str]:
@@ -188,7 +209,14 @@ def dispatch(ctx: ToolContext, name: str, args: Optional[Dict[str, Any]] = None)
         res = ToolResult(f"ERROR: {e}")
     except JobCancelled:
         raise  # unwind the job; not a tool error
+    except TypeError as e:
+        # Malformed arguments (unknown/missing keyword, wrong type) — say which field, keep the job alive.
+        res = ToolResult("ERROR: " + bad_args_message(name, e))
+        log.warning("tool %s bad args %s: %s", name, _short(args), e)
     except Exception as e:  # noqa: BLE001 - never crash the tool loop
+        tb = traceback.format_exc()
+        log.error("tool %s raised %s: %s\n%s", name, type(e).__name__, e, tb)
+        ctx.emit({"event": "tool_error", "name": name, "args": _short(args), "error": f"{type(e).__name__}: {e}", "traceback": tb[-2000:]})
         res = ToolResult(f"ERROR: {name} failed: {type(e).__name__}: {e}")
     res.text = truncate(res.text)
     ctx.emit({"event": "tool", "name": name, "args": _short(args), "result": res.text[:500], "images": len(res.images), "ms": round((time.time() - t0) * 1000)})

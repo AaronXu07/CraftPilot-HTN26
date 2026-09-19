@@ -46,6 +46,22 @@ def _safe_builtins(out: io.StringIO):
         raise ImportError(f"scripts may only import {', '.join(sorted(SAFE_MODULES))} — {name!r} is not available")
 
     safe["__import__"] = _import
+
+    # getattr/hasattr showed up in bench scripts (`NameError: name 'getattr' is not defined`); allow
+    # them for public names only so a script cannot poke at private state through a string.
+    _missing = object()
+
+    def _getattr(obj, name, default=_missing):
+        if not isinstance(name, str) or name.startswith("_"):
+            raise AttributeError(f"getattr: {name!r} is not accessible from a script")
+        return _b.getattr(obj, name) if default is _missing else _b.getattr(obj, name, default)
+
+    def _hasattr(obj, name):
+        return isinstance(name, str) and not name.startswith("_") and _b.hasattr(obj, name)
+
+    safe["getattr"] = _getattr
+    safe["hasattr"] = _hasattr
+    safe["AttributeError"] = AttributeError
     return safe
 
 

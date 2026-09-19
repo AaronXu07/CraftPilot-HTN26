@@ -54,7 +54,7 @@ class Session:
         self.brief: Optional[Dict[str, Any]] = None
         self.chat: List[Dict[str, Any]] = []
         self.world = WorldState()
-        self.cache: Dict[str, Any] = {}  # engine outputs keyed by scene hash (raster/fit/block_map/renders)
+        self.cache: Dict[Tuple[str, str], Any] = {}  # engine outputs keyed by (scene hash, key) (raster/fit/block_map/renders)
         self.live_preview: Optional[bool] = None  # None → env LIVE_PREVIEW (default on); `/cp preview on|off` sets it
         self.verbose: bool = False  # `/cp verbose on|off`: one chat line per tool call
         self.build_lock = threading.Lock()  # serialises rasterize/fit/resolve when tools run concurrently
@@ -178,7 +178,7 @@ class Session:
 class SessionStore:
     """One session per player."""
 
-    def __init__(self):
+    def __init__(self) -> None:
         self._sessions: Dict[str, Session] = {}
 
     def get(self, player: str) -> Session:

@@ -23,7 +23,7 @@ def export_litematic(block_map: BlockMap, name: str, path: str, author: str = "m
     x0, y0, z0 = min(xs), min(ys), min(zs)
     w, h, l = max(xs) - x0 + 1, max(ys) - y0 + 1, max(zs) - z0 + 1
     region = Region(0, 0, 0, w, h, l)
-    cache = {}
+    cache: dict = {}
     for (x, y, z), state in block_map.items():
         bs = cache.get(state)
         if bs is None:

@@ -197,6 +197,22 @@ def create_app(bridge=None, registry=None, store: Optional[SessionStore] = None,
             res.brief = ctx.session.brief
         return res
 
+    def _mod_down_reason() -> Optional[str]:
+        """Before starting a job: is the world bridge reachable? None when fine (or when there is no
+        real mod behind it — the mock bridge is always 'connected')."""
+        b = state["bridge"]
+        if b is None or not hasattr(b, "health"):
+            return None
+        try:
+            info = b.health()
+        except BridgeError as e:
+            return str(e)[:200]
+        except Exception as e:  # noqa: BLE001
+            return f"{type(e).__name__}: {str(e)[:160]}"
+        if isinstance(info, dict) and (info.get("ok") is False or info.get("world_loaded") is False):
+            return str(info.get("error") or "no world loaded in the mod (join a world first)")
+        return None
+
     def say_to(player: str, text: str) -> None:
         b = state["bridge"]
         if b is None:
@@ -234,6 +250,9 @@ def create_app(bridge=None, registry=None, store: Optional[SessionStore] = None,
             return {"job_id": active.id, "status": active.status, "reply": "[cp] " + job_status_line(active)}
         if active is not None:
             return {"job_id": active.id, "status": active.status, "reply": f"[cp] still working on job {active.id} ({active.stage or 'starting'}, {int(active.elapsed)} s) — say `cancel` to stop it.", "busy": True}
+        down = await run_in_threadpool(_mod_down_reason)
+        if down:
+            return {"job_id": None, "status": "rejected", "reply": f"[cp] mod not connected — {down}", "mod_down": True}
         session = state["store"].get(player)
         job = jobs.submit(player, text, stage_fn=lambda: getattr(session, "stage", None))
         inline = await run_in_threadpool(jobs.wait_inline, job, CHAT_INLINE_WAIT_S)

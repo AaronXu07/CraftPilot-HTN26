@@ -35,10 +35,13 @@ class RasterCache(dict):
 
 def _object_key(scene: Scene, obj: SceneObject, origin: Tuple[int, int, int], rng) -> str:
     """Cache key: object json + boolean targets' json + grid origin + voxel range."""
-    payload = {"o": obj.to_dict(), "origin": list(origin), "rng": [list(map(int, rng[0])), list(map(int, rng[1]))]}
+    payload: Dict[str, object] = {"o": obj.to_dict(), "origin": list(origin), "rng": [list(map(int, rng[0])), list(map(int, rng[1]))]}
+    targets: List[dict] = []
     for m in obj.modifiers:
         if m["type"] == "boolean" and scene.has(m["target"]):
-            payload.setdefault("t", []).append(scene.get(m["target"]).to_dict())
+            targets.append(scene.get(m["target"]).to_dict())
+    if targets:
+        payload["t"] = targets
     return hashlib.sha1(json.dumps(payload, sort_keys=True).encode()).hexdigest()
 
 
@@ -138,7 +141,7 @@ def rasterize(scene: Scene, pad: int = 1, cache: Optional[dict] = None) -> Raste
         if rng is None:
             continue
         rlo, rhi = rng
-        key = _object_key(scene, obj, tuple(int(v) for v in origin), rng)
+        key = _object_key(scene, obj, (int(origin[0]), int(origin[1]), int(origin[2])), rng)
         g = None
         if cache is not None and key in cache:
             g = cache[key]
@@ -190,6 +193,8 @@ def rasterize(scene: Scene, pad: int = 1, cache: Optional[dict] = None) -> Raste
             if fn_i is None:
                 continue
             bb = obj_bboxes[i]
+            if bb is None:
+                continue
             m = np.all((P >= bb.lo - 0.01) & (P <= bb.hi + 0.01), axis=1)
             if obj.op == "intersect":
                 ff[~m] = np.inf

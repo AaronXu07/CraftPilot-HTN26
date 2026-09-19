@@ -332,3 +332,60 @@ error counts can, and they are what the fixes target. Kept.
   next bench feature. The judge's ±0.5 per-prompt noise means a single full run cannot resolve < 0.3.
 - The five levers are kept (no drop, cleaner prompts/lines); the R9 change above is the one to revisit.
 - `MORNING_CHECKLIST.md` "T4" gained the `set_shape(params=…)` script check.
+
+## T5 — Fix all bugs [done]
+
+**Checkers**: `pytest -q` 259 → **267 passed** (10.8 s); `ruff check .` clean; `mypy copilot --ignore-missing-imports`
+**17 errors in 10 files → 0** (mypy installed into `.venv`). All 17 were typing-only (no behaviour change):
+`schematic.cache` annotation, `registry` `img.getdata()` iteration, `materials._norm_palette` `bid: Any`,
+`scene` dedupe via `dict.fromkeys`, `resolver` explicit 3-tuple, `lint` `max(key=lambda)`, `render` SHADE key
++ a shadowed `order`/`cols`, `session.cache` keyed by `(scene_hash, key)`, `raster` payload typing + `bb is None`
+guard, `placement` `_bbox_nonempty()` helper (the three `map_bbox` call sites already guard non-empty) and
+an explicit `pre_scan_bbox` merge instead of a `type: ignore`.
+
+**TODO/FIXME grep**: only `solids.Solid.sdf` → `NotImplementedError` (abstract base, intended). Nothing else.
+
+**Dispatcher** (`tools/dispatch.py`): every non-cancel exception → `ERROR: <tool> failed: <Type>: <msg>` (already
+so), now also **logged with the traceback** (`logging` `copilot.tools` + a `tool_error` event with the traceback
+in the turn log). **Malformed arguments name the field**: `scene.apply_op` maps `TypeError` →
+`add: unknown argument 'bogus'; valid arguments: id, shape, pos, …` / `add: missing required argument(s) id; …`
+(`scene.bad_args_message` / `op_arg_names` from the op signature); the same message reaches `run_script` and
+the dispatcher's own `TypeError` path. The traceback logging paid for itself immediately: **`place` with no
+registry crashed** (`'NoneType' object has no attribute 'validate_state'` in `resolver._state_for`) — now
+`_build_all` lazily loads the bundled fallback registry (`Registry.load(bridge=None)`, once) when the context
+has none. `tests/test_hardening.py` (8 tests).
+
+**Bridge** (`bridge.py`): `HttpBridge._request` retries **connection** errors (`ConnectError`/`ConnectTimeout`/
+`NetworkError`) 2× with 0.5 s/1.0 s backoff → `BridgeError("mod not connected at …")`; read timeouts/HTTP errors
+are not retried (the mod got the request; re-posting `setblocks` would double-place). `get_bridge(auto)` probes
+with `retries=0` so startup does not wait 1.5 s. **`/chat`** checks `bridge.health()` before submitting a job
+and answers `[cp] mod not connected — <reason>` (`status: rejected`, `mod_down: true`, no job) when the mod is
+unreachable, reports `ok: false`, or `world_loaded: false`. Tested with `httpx.MockTransport` (call/sleep
+counts) and a down/no-world bridge through the FastAPI TestClient.
+
+**Session**: `undo`/`redo`/`undo_world` with nothing to undo were already safe ("nothing to undo"); `reset`
+already restores the world and replaces `WorldState`. Now covered by a test (including `reset` after a real
+`place`: `placed`/`pre_scan`/`anchor` cleared, scene emptied, brief cleared, pre-reset scene one `undo` away).
+
+**Log replay**: `runs/` only has test sessions (`p_/q_/steve_`, one deliberate bad-JSON line). The real logs are
+`bench/out/20260919_045541/runs/*/1.jsonl` (5 builds, pre-T4-fix). Error lines: `set_shape … has no parameter
+'params'` ×6 (fixed in T4), **`NameError: name 'getattr' is not defined`** ×1 → sandbox now provides
+`getattr`/`hasattr` for public names only (`_`-prefixed → `AttributeError`), **`object 'x' already exists`** ×2
+(the model re-ran a script after a partial error) → the message now says the ops before the error already
+applied and to skip them, `selection ['material:stone_wall'] matched no objects` ×2 (model error; message
+already precise). Each fixed one has a test.
+
+**Mod** (`HttpBridgeServer.java`, `./gradlew build` green with `~/.jdks/jdk-21.0.12.1+1/Contents/Home`):
+no world/player → **503** (was 409; the agent treats any ≥ 400 as `BridgeError`, so nothing else changes);
+`/player` read `client.world.getBlockState` and the crosshair on the HTTP thread → now runs on the client
+thread via `client.submit(...)`; `/scan`'s `server.submit(...).join()` and the new player call are bounded by
+`joinWithTimeout` (30 s → 503 instead of a hung handler if the world unloads mid-request). Streams were already
+try-with-resources. `BlockPlacer` places on the server tick (T3) — no world access off-thread found in `WorldOps`
+(its callers are the server-thread lambdas).
+
+**Known gaps** (not reproduced / out of scope):
+- The mock mod server (`mock_mod/server.py`) has no "no world" state, so the 503 path is only exercised in-game.
+- `selection [...] matched no objects` is a model error, not a bug; a bench `--errors DIR` summary (T4 note)
+  would track its frequency.
+- `session.cache` also stores the raster cache under a plain-string key (`RASTER_CACHE_KEY`) — works, but the
+  tuple annotation is loose for that entry (untyped call site; mypy does not flag it).

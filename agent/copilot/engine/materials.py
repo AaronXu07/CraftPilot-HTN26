@@ -123,6 +123,8 @@ def _norm_palette(pal: Any, registry: Registry, what: str) -> List[List[Any]]:
         raise MaterialError(f"{what} must be a non-empty list like [['stone_bricks', 0.7], ['cobblestone', 0.3]]")
     out: List[List[Any]] = []
     for entry in pal:
+        bid: Any
+        w: Any
         if isinstance(entry, str):
             bid, w = entry, 1.0
         elif isinstance(entry, dict):

@@ -77,3 +77,16 @@ Start the agent first: `cd agent && ../.venv/bin/python -m copilot.server --port
 - Bench: `cd agent && ../.venv/bin/python -m bench.run --quick --profile --jobs 2`; expect 5 prompts in ~8 min,
   mean score in `bench/out/<ts>/report.md`; `python -m bench.run --compare bench/results/t4_baseline bench/out/<ts>`
   prints the per-prompt Δ table. Full-bench baseline 6.81 vs after 6.66 (noise; see OVERNIGHT_PROGRESS T4).
+
+## T5 — bug fixes / hardening
+- In-game, with the agent running but **before opening a world** (title screen): type `/cp build a hut`;
+  expect one line `[cp] mod not connected — no world loaded (open a single-player world first)` within ~2 s
+  and no job started (`/cp status` → no active job). The mod's `/scan`, `/player`, `/setblocks` now answer
+  **503** (was 409) when no world/player is loaded.
+- In-game, with the agent **stopped**: type `/cp build a hut`; expect the mod's own timeout line (unchanged).
+  With the mod stopped and the agent running: `curl -s localhost:8000/health` → `bridge_ok: false`, and
+  `POST /chat` → `[cp] mod not connected — … (/health: …)` after ~1.5 s (2 retries with 0.5/1.0 s backoff).
+- In-game: `/cp op move {"ids":"keep","by":[1,0,0]}` (wrong field); expect
+  `ERROR: move: unknown argument 'by'; valid arguments: ids, delta`.
+- In-game: `/cp player` is unchanged in behaviour but now reads the crosshair target on the client thread;
+  `/cp build …` on a fresh world still plans the anchor from where you stand and look.

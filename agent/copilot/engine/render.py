@@ -169,7 +169,7 @@ def _build_faces(block_map: BlockMap, color_fn: ColorFn):
             q = nb + off[None, :]
             occ = np.isin(_key(q[:, 0], q[:, 1], q[:, 2]), all_keys)
             ao += (occ & in_plane) * 0.07
-    shade = np.array([SHADE[tuple(int(v) for v in n)] for n in normals])
+    shade = np.array([SHADE[(int(n[0]), int(n[1]), int(n[2]))] for n in normals])
     shade = shade * (1.0 - np.minimum(ao, 0.28))
     colors = np.clip(colors * shade[:, None], 0, 255)
     return corners, normals, colors
@@ -220,14 +220,14 @@ def render_blocks(
     draw = ImageDraw.Draw(img)
     if ground and view != "top":
         g = to_px(gx, gy)
-        order = [0, 1, 3, 2]
+        gorder = [0, 1, 3, 2]
         gcol = tuple(int(v * 0.93) for v in background)
-        draw.polygon([tuple(g[i]) for i in order], fill=gcol, outline=None)
+        draw.polygon([tuple(g[i]) for i in gorder], fill=gcol, outline=None)
     pix = to_px(sx, sy).reshape(-1, 4, 2)
     order = np.argsort(depth, kind="stable")
-    cols = colors.astype(np.int64)
+    icols = colors.astype(np.int64)
     for i in order:
-        c = cols[i]
+        c = icols[i]
         poly = [(float(pix[i, k, 0]), float(pix[i, k, 1])) for k in range(4)]
         draw.polygon(poly, fill=(int(c[0]), int(c[1]), int(c[2])))
     return img

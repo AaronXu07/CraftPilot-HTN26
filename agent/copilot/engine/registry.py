@@ -198,7 +198,7 @@ class Registry:
                     img = Image.open(io.BytesIO(z.read(name))).convert("RGBA")
                 except Exception:  # noqa: BLE001
                     continue
-                px = [p for p in img.getdata() if p[3] > 0]
+                px = [p for p in list(img.getdata()) if p[3] > 0]
                 if not px:
                     continue
                 n = len(px)

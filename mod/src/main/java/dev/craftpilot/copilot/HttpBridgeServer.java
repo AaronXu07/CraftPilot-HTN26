@@ -31,8 +31,12 @@ import java.net.URL;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 
 /**
  * The 7-endpoint bridge (CONTRACTS.md §7). JSON in, JSON out. Every world access is marshalled onto
@@ -41,6 +45,7 @@ import java.util.concurrent.Executors;
 public final class HttpBridgeServer {
     private static final Gson GSON = new Gson();
     private static final long MAX_SCAN_BLOCKS = 2_000_000L;
+    private static final long GAME_THREAD_TIMEOUT_S = 30L;
     private static final int DEFAULT_FLAGS = Block.NOTIFY_ALL; // 3: notify neighbours + clients
 
     private final HttpServer server;
@@ -148,11 +153,11 @@ public final class HttpBridgeServer {
         return MinecraftClient.getInstance();
     }
 
-    /** The integrated server, or a 409 if no world is loaded. */
+    /** The integrated server, or a 503 (service unavailable) if no world is loaded. */
     private static MinecraftServer requireServer() {
         MinecraftServer s = client().getServer();
         if (s == null || client().world == null) {
-            throw new HttpError(409, "no world loaded (open a single-player world first)");
+            throw new HttpError(503, "no world loaded (open a single-player world first)");
         }
         return s;
     }
@@ -160,7 +165,7 @@ public final class HttpBridgeServer {
     private static ClientPlayerEntity requirePlayer() {
         ClientPlayerEntity p = client().player;
         if (p == null) {
-            throw new HttpError(409, "no player (open a single-player world first)");
+            throw new HttpError(503, "no player (open a single-player world first)");
         }
         return p;
     }
@@ -250,8 +255,14 @@ public final class HttpBridgeServer {
         return null;
     }
 
-    private JsonElement player(HttpExchange ex, JsonObject body) {
+    private JsonElement player(HttpExchange ex, JsonObject body) throws Exception {
         MinecraftClient client = client();
+        requirePlayer();
+        // Player + crosshair state lives on the client thread; never read it from the HTTP thread.
+        return joinWithTimeout(client.submit(() -> playerOnClientThread(client)), "player");
+    }
+
+    private JsonElement playerOnClientThread(MinecraftClient client) {
         ClientPlayerEntity p = requirePlayer();
         JsonObject o = new JsonObject();
         o.addProperty("name", p.getGameProfile().getName());
@@ -274,7 +285,7 @@ public final class HttpBridgeServer {
         return o;
     }
 
-    private JsonElement scan(HttpExchange ex, JsonObject body) {
+    private JsonElement scan(HttpExchange ex, JsonObject body) throws Exception {
         MinecraftServer server = requireServer();
         int[] lo = vec3i(body, "min");
         int[] hi = vec3i(body, "max");
@@ -283,13 +294,29 @@ public final class HttpBridgeServer {
             throw new HttpError(400, "scan volume " + volume + " exceeds the " + MAX_SCAN_BLOCKS + " block cap");
         }
         RegistryKey<World> dim = playerDimension();
-        return server.submit(() -> {
+        return joinWithTimeout(server.submit(() -> {
             ServerWorld world = server.getWorld(dim);
             if (world == null) {
                 world = server.getOverworld();
             }
             return WorldOps.scan(world, lo[0], lo[1], lo[2], hi[0], hi[1], hi[2]);
-        }).join();
+        }), "scan");
+    }
+
+    /** Wait for game-thread work with a cap, so a world unloading mid-request cannot hang the HTTP thread. */
+    private static <T> T joinWithTimeout(CompletableFuture<T> future, String what) throws Exception {
+        try {
+            return future.get(GAME_THREAD_TIMEOUT_S, TimeUnit.SECONDS);
+        } catch (TimeoutException e) {
+            future.cancel(true);
+            throw new HttpError(503, what + ": the game thread did not answer within " + GAME_THREAD_TIMEOUT_S + " s");
+        } catch (ExecutionException e) {
+            Throwable c = e.getCause() != null ? e.getCause() : e;
+            if (c instanceof HttpError he) {
+                throw he;
+            }
+            throw new HttpError(500, what + " failed: " + c.getClass().getSimpleName() + ": " + c.getMessage());
+        }
     }
 
     private JsonElement setblocks(HttpExchange ex, JsonObject body) {

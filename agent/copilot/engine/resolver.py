@@ -185,8 +185,8 @@ def _expand_prop(pos: Tuple[int, int, int], state: str, registry: Registry, warn
     bdef = registry.get(bid)
     if bdef is not None and "persistent" in bdef.properties and "persistent" not in props:
         props["persistent"] = "true"
-    out = [(tuple(int(v) for v in pos), format_state(bid, props))]
-    x, y, z = out[0][0]
+    x, y, z = (int(pos[0]), int(pos[1]), int(pos[2]))
+    out: List[Tuple[Tuple[int, int, int], str]] = [((x, y, z), format_state(bid, props))]
     if bdef is not None and "half" in bdef.properties:
         vals = bdef.properties["half"]
         if "lower" in vals and "upper" in vals and props.get("half", "lower") == "lower":

@@ -9,6 +9,7 @@ from __future__ import annotations
 import copy as _copy
 import fnmatch
 import hashlib
+import inspect
 import json
 import re
 from dataclasses import dataclass, field
@@ -210,8 +211,7 @@ class Scene:
                 out.extend(self.select(token))
             else:
                 raise SceneError(f"unknown object or group {token!r}. Known objects: {self._known_ids_hint()}")
-        seen = set()
-        uniq = [x for x in out if not (x in seen or seen.add(x))]
+        uniq = list(dict.fromkeys(out))
         if not uniq and not allow_empty:
             raise SceneError(f"selection {ids!r} matched no objects")
         return uniq
@@ -472,8 +472,37 @@ def apply_op(scene: Scene, op_name: str, /, **kwargs) -> Tuple[Scene, str]:
         return OPS[op_name](scene, **kwargs)
     except SceneError:
         raise
-    except (ShapeError, ValueError, TypeError, KeyError) as e:
+    except TypeError as e:
+        raise SceneError(bad_args_message(op_name, e)) from e
+    except (ShapeError, ValueError, KeyError) as e:
         raise SceneError(f"{op_name}: {e}") from e
+
+
+_BAD_KW_RE = re.compile(r"unexpected keyword argument '([A-Za-z_][A-Za-z0-9_]*)'")
+_MISSING_RE = re.compile(r"missing \d+ required (?:positional|keyword-only) arguments?: (.+)$")
+
+
+def op_arg_names(op_name: str) -> List[str]:
+    """Keyword arguments an op accepts (from its signature), for error messages."""
+    fn = OPS.get(op_name)
+    if fn is None:
+        return []
+    return [p for p in inspect.signature(fn).parameters if p != "scene"]
+
+
+def bad_args_message(op_name: str, e: TypeError) -> str:
+    """A TypeError from calling an op with bad kwargs -> a message that names the bad field."""
+    msg = str(e)
+    valid = ", ".join(op_arg_names(op_name))
+    tail = f"; valid arguments: {valid}" if valid else ""
+    m = _BAD_KW_RE.search(msg)
+    if m:
+        return f"{op_name}: unknown argument {m.group(1)!r}{tail}"
+    m = _MISSING_RE.search(msg)
+    if m:
+        names = ", ".join(re.findall(r"'([^']+)'", m.group(1)))
+        return f"{op_name}: missing required argument(s) {names}{tail}"
+    return f"{op_name}: bad arguments — {msg}{tail}"
 
 
 def _check_id(oid: Any) -> str:
@@ -542,7 +571,7 @@ def op_add(
     sc = scene.copy()
     oid = _check_id(id)
     if sc.has(oid):
-        raise SceneError(f"object {oid!r} already exists; choose another id or delete it first")
+        raise SceneError(f"object {oid!r} already exists; choose another id, or use set_shape/set_material/delete on it (if you are re-running a script after a partial error, the ops before the error already applied — skip them)")
     if isinstance(rot, (int, float)):
         rot = (0, float(rot), 0)
     if op not in OPS_TYPES:

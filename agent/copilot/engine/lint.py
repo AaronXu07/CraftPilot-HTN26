@@ -323,7 +323,8 @@ def _r9_materials(scene: Any) -> List[LintFinding]:
     out: List[LintFinding] = []
     if len(volumes) < MIN_MATERIALS:
         out.append(LintFinding("R9", "warn", f"only {len(volumes)} distinct material(s) on solids ({', '.join(sorted(volumes))}): wall, roof and trim must be three contrasting materials (P5)", []))
-    main = max(grounded or volumes, key=(grounded or volumes).get)  # the wall material: biggest grounded volume
+    pool = grounded or volumes
+    main = max(pool, key=lambda k: pool[k])  # the wall material: biggest grounded volume
     spec = mats.get(main) or PRESETS.get(main) or {}
     if isinstance(spec, dict) and "preset" in spec and not spec.get("gradient"):
         spec = {**PRESETS.get(str(spec.get("preset")), {}), **spec}
