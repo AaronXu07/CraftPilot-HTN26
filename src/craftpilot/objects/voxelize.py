@@ -64,8 +64,20 @@ PALETTE: dict[str, tuple[int, int, int]] = {
     "blue_concrete": (45, 47, 143), "blue_terracotta": (74, 60, 91), "blue_wool": (53, 57, 157),
     "light_blue_concrete": (36, 137, 199), "light_blue_terracotta": (113, 108, 138), "light_blue_wool": (58, 175, 217),
     "cyan_concrete": (21, 119, 136), "cyan_terracotta": (87, 91, 91), "cyan_wool": (21, 137, 145),
-    "lapis_block": (31, 67, 140), "dark_prismarine": (52, 92, 76),
+    "lapis_block": (31, 67, 140), "dark_prismarine": (52, 92, 76), "packed_ice": (141, 180, 250), "blue_ice": (116, 167, 253),
+    "warped_wart_block": (22, 119, 121), "diamond_block": (98, 237, 228),
+    # saturated / bright accents (a "lightning" dragon's glow, fire, gems). The emissive ones also light up in game.
+    "glowstone": (171, 131, 84), "sea_lantern": (172, 199, 190), "shroomlight": (240, 146, 70), "magma_block": (142, 64, 30),
+    "ochre_froglight": (250, 240, 196), "verdant_froglight": (229, 245, 220), "pearlescent_froglight": (245, 225, 238),
+    "redstone_block": (170, 25, 10), "emerald_block": (42, 203, 87), "amethyst_block": (133, 97, 191),
+    "crying_obsidian": (32, 10, 60), "raw_gold_block": (221, 169, 46), "raw_copper_block": (154, 105, 79),
+    "netherrack": (98, 38, 38), "nether_wart_block": (114, 2, 2),
+    "snow_block": (249, 254, 254), "bone_block": (229, 225, 207), "coal_block": (16, 16, 16), "obsidian": (15, 10, 24),
+    "pale_oak_planks": (227, 213, 200), "resin_block": (220, 102, 32), "resin_bricks": (208, 96, 32), "dried_kelp_block": (50, 58, 38),
 }
+# blocks that emit light: never used as a *dominant* material (a whole statue of glowstone glows like a lamp)
+EMISSIVE = {"glowstone", "sea_lantern", "shroomlight", "magma_block", "ochre_froglight", "verdant_froglight", "pearlescent_froglight"}
+MAX_EMISSIVE_SHARE = 0.25
 
 
 # Full block -> (stairs, slab) variants that exist in 1.21.1 (checked against the mod's registry). Blocks
@@ -327,7 +339,7 @@ def clamp_chroma(lab: np.ndarray, factor: float = 1.2, floor: float = 6.0, perce
 
 
 def match_blocks(colors: np.ndarray, palette: dict[str, tuple[int, int, int]] | None = None,
-                 allowed: list[str] | None = None, max_types: int | None = 6) -> np.ndarray:
+                 allowed: list[str] | None = None, max_types: int | None = None) -> np.ndarray:
     """Nearest palette block (by CIELAB distance) for an (N, 3) array of sRGB colours -> array of block names.
     With `max_types`, a second pass keeps only the N most used blocks so the surface reads as one material
     with shading rather than a mosaic of near-identical greys."""
@@ -336,6 +348,21 @@ def match_blocks(colors: np.ndarray, palette: dict[str, tuple[int, int, int]] | 
     lab_pal = _srgb_to_lab(np.array([pal[n] for n in names], dtype=np.float64))
     lab = clamp_chroma(_srgb_to_lab(colors)) if len(colors) > 8 else _srgb_to_lab(colors)
     chosen = _nearest(lab, lab_pal, names)
+    # an emissive block is an accent (eyes, glow lines), never the bulk material: drop any that would cover
+    # more than a quarter of the surface and re-match those voxels to ordinary blocks
+    for _ in range(len(EMISSIVE)):
+        vals, counts = np.unique(chosen, return_counts=True)
+        share = {str(v): c / len(chosen) for v, c in zip(vals, counts)}
+        bulky = [n for n in share if n in EMISSIVE and share[n] > MAX_EMISSIVE_SHARE]
+        if not bulky or len(names) <= len(bulky):
+            break
+        names = [n for n in names if n not in bulky]
+        lab_pal = _srgb_to_lab(np.array([pal[n] for n in names], dtype=np.float64))
+        chosen = _nearest(lab, lab_pal, names)
+    if max_types is None:
+        # colourful subjects need more types than a grey statue: 6 for low chroma, up to 10 for saturated ones
+        chroma = np.hypot(lab[:, 1], lab[:, 2])
+        max_types = 6 if np.percentile(chroma, 90) < 18 else 10
     if max_types and len(set(chosen.tolist())) > max_types:
         vals, counts = np.unique(chosen, return_counts=True)
         keep = [str(v) for v in vals[np.argsort(-counts)][:max_types]]
@@ -382,7 +409,7 @@ def despeckle(occ: np.ndarray, block: np.ndarray, passes: int = 2) -> np.ndarray
 
 
 def to_grid(obj: VoxelObject, filler: str = "stone", allowed: list[str] | None = None, seed: int = 0,
-            pad_xz: int = 1, max_types: int | None = 6) -> SemanticGrid:
+            pad_xz: int = 1, max_types: int | None = None) -> SemanticGrid:
     """Write the voxel object into a SemanticGrid: surface voxels get their matched block, the interior
     gets `filler` (invisible, but keeps the statue solid for placement and undo)."""
     W, H, D = obj.size

@@ -47,7 +47,9 @@ into a brief for an image model and a voxeliser. Reply with JSON only.
 - Thin parts do not survive: masts, rigging, ropes, wires, antennas, blades thinner than 1/15 of the object.
   Describe such subjects as a chunky toy-like model with thick simplified parts (a ship: solid thick masts,
   billowing solid sails, no rigging) so they come out as blocks.
-- palette: "stone" (grey statue), "wood", "metal", "colorful" (painted/coloured subject) or "auto".
+- palette: "stone" ONLY when the player asks for a stone/marble/granite statue or monument; otherwise
+  "colorful" (the subject has colours — keep them vivid in `subject`), "wood"/"metal" only if the player names
+  that material, else "auto". A lightning dragon is "colorful" (electric blue, glowing white), not "metal".
 - style: 3-8 words of rendering style for the image model, e.g. "carved granite, weathered", "glossy red paint,
   chrome trim", "smooth marble". Match the player's intent.
 - label: 2-3 snake_case words naming the object, e.g. dragon_statue."""
@@ -88,7 +90,10 @@ class ObjectBrief:
 
     @property
     def allowed_blocks(self) -> list[str] | None:
-        return PALETTE_FAMILIES.get(self.palette)
+        # Only a stone statue restricts the block set (its reconstruction colours are noisy greys anyway).
+        # Everything else trusts the reference image's colours: a "metal" hint used to turn an electric-blue
+        # dragon into grey iron.
+        return PALETTE_FAMILIES.get(self.palette) if self.palette == "stone" else None
 
 
 def object_deployment() -> str | None:
@@ -115,7 +120,7 @@ def _height_from_text(text: str) -> int | None:
 def fallback_brief(text: str) -> ObjectBrief:
     t = text.lower()
     plinth = any(w in t for w in ("statue", "monument", "bust", "sculpture", "memorial"))
-    palette = "stone" if any(w in t for w in ("stone", "marble", "granite", "statue")) else "auto"
+    palette = "stone" if any(w in t for w in ("stone", "marble", "granite")) else "auto"
     if any(w in t for w in ("wooden", "wood ", "oak", "spruce")):
         palette = "wood"
     if any(w in t for w in ("iron", "steel", "metal", "chrome", "robot", "mech")):

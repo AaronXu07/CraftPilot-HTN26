@@ -154,7 +154,7 @@ def object_(
     no_llm: bool = typer.Option(False, "--no-llm", help="Skip the LLM brief; use the request text as the image prompt"),
     no_preview: bool = typer.Option(False, "--no-preview"),
     yaw: float = typer.Option(0.0, "--yaw", help="Rotate the object about the vertical axis (degrees)"),
-    types: int = typer.Option(6, "--types", help="Max distinct block types on the surface"),
+    types: int = typer.Option(None, "--types", help="Max distinct block types on the surface (default: 6 for grey subjects, 10 for colourful)"),
     resolution: int = typer.Option(256, "--resolution", help="Reconstruction marching-cubes resolution"),
     place_now: bool = typer.Option(False, "--place", help="Also place it in the running game, in front of the player (needs the Fabric mod)"),
 ) -> None:

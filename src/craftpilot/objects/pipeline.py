@@ -55,7 +55,7 @@ class ObjectResult:
 
 def build_object(text: str, out_dir: Path | None = None, height: int | None = None, use_llm: bool = True,
                  preview: bool = True, schematic: bool = True, resolution: int = 256, seed: int = 0,
-                 yaw_deg: float = 0.0, max_types: int = 6, max_recon_tries: int = 2,
+                 yaw_deg: float = 0.0, max_types: int | None = None, max_recon_tries: int = 2,
                  on_stage: Callable[[str, str], None] | None = None) -> ObjectResult:
     """The whole object path. Raises `recon.ReconUnavailable` when the local 3D worker is missing.
     `on_stage(name, text)` is called as each stage completes (brief, image, mesh, voxel) for live progress."""

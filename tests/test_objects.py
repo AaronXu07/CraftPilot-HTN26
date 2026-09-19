@@ -42,7 +42,7 @@ def test_colors_map_to_nearest_block_in_palette_family():
     obj = voxelize_mesh(_colored_box(rgb=(200, 30, 30)), height=8, up="y")
     grid = to_grid(obj)
     names = {r.block_id.split(":")[1] for r in grid.palette}
-    assert names & {"red_concrete", "red_wool", "red_terracotta"}, names
+    assert names & {"red_concrete", "red_wool", "red_terracotta", "redstone_block"}, names
     # a stone-only allowed list keeps a red box grey
     grid2 = to_grid(obj, allowed=["stone", "andesite", "deepslate"])
     bases = {r.block_id.split(":")[1].replace("_slab", "").replace("_stairs", "") for r in grid2.palette}
@@ -76,13 +76,33 @@ def test_relief_gate_distinguishes_pancakes_from_narrow_objects():
 
 
 def test_palette_only_has_full_opaque_blocks():
-    bad = [n for n in PALETTE if any(s in n for s in ("glass", "leaves", "slab", "stairs", "fence", "pane", "door"))]
+    bad = [n for n in PALETTE if any(s in n for s in ("glass", "leaves", "slab", "stairs", "fence", "pane", "door", "mushroom", "hay", "sponge"))]
     assert not bad
+
+
+def test_colourful_objects_get_more_types_and_emissive_is_never_dominant():
+    from craftpilot.objects.voxelize import EMISSIVE
+
+    rng = np.random.default_rng(0)
+    hues = np.array([[200, 30, 30], [30, 60, 200], [240, 200, 40], [40, 180, 80], [230, 230, 230], [20, 20, 20], [150, 80, 200], [250, 140, 40]])
+    colors = hues[rng.integers(0, len(hues), 600)] + rng.integers(-8, 8, (600, 3))
+    out = match_blocks(np.clip(colors, 0, 255))
+    assert 7 <= len(set(out.tolist())) <= 10  # adaptive cap: a colourful subject keeps its colours
+    greys = np.array([[120, 120, 120]] * 300) + rng.integers(-6, 6, (300, 3))
+    assert len(set(match_blocks(greys).tolist())) <= 6
+    glow = np.array([[171, 131, 84]] * 90 + [[120, 120, 120]] * 10)  # a glowstone-coloured bulk
+    out = match_blocks(glow, max_types=2).tolist()
+    assert not (set(out) & EMISSIVE)  # would have been >25% glowstone: re-matched to ordinary blocks
+    # on a colourful subject a bright accent below the share cap keeps its emissive block
+    accent = np.array([[30, 60, 200]] * 80 + [[240, 146, 70]] * 20)  # blue body, shroomlight-orange glow
+    assert "shroomlight" in set(match_blocks(accent, max_types=4).tolist())
 
 
 def test_fallback_brief_reads_height_and_plinth():
     b = fallback_brief("build a dragon statue 40 blocks tall")
-    assert b.height == 40 and b.plinth and b.palette == "stone" and b.label == "dragon_statue" and b.source == "fallback"
+    assert b.height == 40 and b.plinth and b.palette == "auto" and b.label == "dragon_statue" and b.source == "fallback"
+    assert fallback_brief("a marble lion statue").palette == "stone"  # only an explicit stone material restricts colours
+    assert fallback_brief("a marble lion statue").allowed_blocks and fallback_brief("a red robot").allowed_blocks is None
     c = fallback_brief("a red sports car")
     assert not c.plinth and c.height == 32 and c.palette == "auto" and c.subject == "red sports car"
     brief, meta = compose_brief("a wooden rowing boat", use_llm=False, height=10)
