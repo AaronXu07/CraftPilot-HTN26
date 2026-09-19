@@ -110,8 +110,10 @@ def test_every_block_state_is_valid_for_the_target_version():
     if known is None:
         pytest.skip("no generated block list")
     import json
+    import os
     from pathlib import Path
-    data = json.loads((Path(__file__).resolve().parents[1] / "data" / "blocks_26.2.json").read_text())["blocks"]
+    version = os.environ.get("CRAFTPILOT_MC_VERSION", "26.2")
+    data = json.loads((Path(__file__).resolve().parents[1] / "data" / f"blocks_{version}.json").read_text())["blocks"]
     for ref in grid.palette:
         assert ref.block_id in known, ref
         props = data[ref.block_id]["properties"]

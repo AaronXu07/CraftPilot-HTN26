@@ -28,6 +28,11 @@ class Settings:
     edit_deployment: str | None
     llm_timeout: float
     service_port: int
+    mod_url: str
+    place_gap: int
+    place_sink: int
+    place_chunk: int
+    place_delay_ms: int
 
     @property
     def llm_configured(self) -> bool:
@@ -65,7 +70,15 @@ def load_settings() -> Settings:
         compose_deployment=os.environ.get("AZURE_OPENAI_COMPOSE_DEPLOYMENT"),
         edit_deployment=os.environ.get("AZURE_OPENAI_EDIT_DEPLOYMENT"),
         llm_timeout=float(os.environ.get("CRAFTPILOT_LLM_TIMEOUT", "60")),
-        service_port=int(os.environ.get("CRAFTPILOT_PORT", "7777")),
+        # The Fabric mod's bridge listens on 7777, so the service takes the next port.
+        service_port=int(os.environ.get("CRAFTPILOT_PORT", "7778")),
+        mod_url=os.environ.get("CRAFTPILOT_MOD_URL", "http://127.0.0.1:7777").rstrip("/"),
+        # In-game placement: air gap between the player and the building, how many blocks the plinth
+        # sinks below the player's feet, blocks per tick-chunk, and the pause between chunks.
+        place_gap=int(os.environ.get("CRAFTPILOT_PLACE_GAP", "2")),
+        place_sink=int(os.environ.get("CRAFTPILOT_PLACE_SINK", "0")),
+        place_chunk=int(os.environ.get("CRAFTPILOT_PLACE_CHUNK", "1500")),
+        place_delay_ms=int(os.environ.get("CRAFTPILOT_PLACE_DELAY_MS", "60")),
     )
 
 

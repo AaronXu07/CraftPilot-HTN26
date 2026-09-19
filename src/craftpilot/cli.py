@@ -6,11 +6,15 @@ import json
 import re
 import time
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import typer
 
 from craftpilot.config import SETTINGS
 from craftpilot.program.model import Bounds, BuildProgram
+
+if TYPE_CHECKING:
+    from craftpilot.place.placer import PlaceContext
 
 app = typer.Typer(add_completion=False, help="Procedural Minecraft buildings from natural language.")
 
@@ -29,7 +33,9 @@ def _slug(text: str) -> str:
 
 
 def run_build(program: BuildProgram, bounds: Bounds | None, seed: int, out: Path | None, preview: bool,
-              author: str, source_text: str, extra_notes: list[str], facing: str = "south") -> dict:
+              author: str, source_text: str, extra_notes: list[str], facing: str = "south",
+              place_ctx: PlaceContext | None = None) -> dict:
+    """Generate, write the schematic, and (with ``place_ctx``) stream the blocks into the running game."""
     from craftpilot.engine.pipeline import generate
     from craftpilot.export.litematic import save
     from craftpilot.grid.ops import quarter_turns_for_facing, rotate_cw
@@ -66,6 +72,12 @@ def run_build(program: BuildProgram, bounds: Bounds | None, seed: int, out: Path
         "notes": notes + grid.report["notes"],
         "attachments": [s for s in grid.report["stages"] if s["stage"].startswith("attachments")],
     }
+    if place_ctx is not None:
+        from craftpilot.place.placer import place_grid
+
+        placement = place_grid(grid, place_ctx, program.label)
+        result["placement"] = placement
+        result["notes"] = result["notes"] + placement["warnings"]
     if preview:
         from craftpilot.preview.render import render
         png = out.with_suffix(".png")
@@ -86,10 +98,25 @@ def build(
     author: str = typer.Option("craftpilot", "--author"),
     facing: str = typer.Option("south", "--facing", "-f", help="Which way the front door faces: north, east, south, west"),
     show_program: bool = typer.Option(False, "--show-program", help="Print the composed program"),
+    place: bool = typer.Option(False, "--place", "-P", help="Also place the blocks in the running game via the mod"),
+    gap: int = typer.Option(None, "--gap", help="Air blocks between you and the building (place only)"),
+    sink: int = typer.Option(None, "--sink", help="Blocks the plinth row sinks below your feet (place only)"),
+    no_clear: bool = typer.Option(False, "--no-clear", help="Do not clear terrain inside the bounding box"),
+    delay_ms: int = typer.Option(None, "--delay-ms", help="Pause between placed chunks (place only)"),
+    chunk: int = typer.Option(None, "--chunk", help="Blocks per game tick (place only)"),
+    flags: int = typer.Option(None, "--flags", help="setBlockState flags; default 18 = force state, no updates"),
 ) -> None:
     """Compose a build program from TEXT, generate it, and write a Litematica schematic."""
     from craftpilot.llm.compose import compose
     from craftpilot.program.exemplars import load_one
+
+    place_ctx = None
+    if place:
+        place_ctx = _place_context(gap, sink, not no_clear, delay_ms, chunk, flags)
+        from craftpilot.place.anchor import facing_from_yaw
+
+        facing = facing_from_yaw(place_ctx.player["yaw"])
+        typer.echo(f"placing in front of {place_ctx.player['name']}, building faces {facing}", err=True)
 
     if seed is None:
         seed = int(time.time()) % 1_000_000
@@ -107,9 +134,52 @@ def build(
         typer.echo(program.model_dump_json(indent=2))
     if facing not in ("north", "east", "south", "west"):
         raise typer.BadParameter("facing must be north, east, south, or west")
-    result = run_build(program, b, seed, out, preview, author, text, notes, facing)
+    result = run_build(program, b, seed, out, preview, author, text, notes, facing, place_ctx)
     result["source"] = source
     typer.echo(json.dumps(result, indent=2))
+
+
+def _place_context(gap: int | None, sink: int | None, clear: bool, delay_ms: int | None, chunk: int | None,
+                   flags: int | None):
+    from craftpilot.place.bridge import BridgeError, HttpBridge
+    from craftpilot.place.placer import PlaceContext, PlaceOptions
+
+    bridge = HttpBridge()
+    try:
+        player = bridge.player()
+    except BridgeError as exc:
+        raise typer.BadParameter(
+            f"mod not reachable at {bridge.base_url} ({exc}); is Minecraft running with the CraftPilot mod "
+            "and a world open?") from exc
+    opts = PlaceOptions(clear=clear)
+    if gap is not None:
+        opts.gap = gap
+    if sink is not None:
+        opts.sink = sink
+    if delay_ms is not None:
+        opts.delay_ms = delay_ms
+    if chunk is not None:
+        opts.chunk_blocks = chunk
+    if flags is not None:
+        opts.flags = flags
+    return PlaceContext(bridge=bridge, player=player, opts=opts)
+
+
+@app.command("place-status")
+def place_status() -> None:
+    """Show the mod's health and placement queue."""
+    from craftpilot.place.bridge import HttpBridge
+
+    bridge = HttpBridge()
+    typer.echo(json.dumps({"health": bridge.health(), "status": bridge.status()}, indent=2))
+
+
+@app.command("place-cancel")
+def place_cancel() -> None:
+    """Drop everything still queued for placement in the game."""
+    from craftpilot.place.bridge import HttpBridge
+
+    typer.echo(json.dumps(HttpBridge().cancel()))
 
 
 @app.command()

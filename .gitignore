@@ -9,3 +9,8 @@ out/
 .pytest_cache/
 .ruff_cache/
 .cache/
+
+# Fabric mod build output
+mod/build/
+mod/.gradle/
+mod/run/
