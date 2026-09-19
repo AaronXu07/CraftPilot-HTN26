@@ -9,7 +9,7 @@ from typing import Sequence, Tuple
 
 import numpy as np
 
-ANCHORS = ("bottom_center", "center", "bottom_min", "top_center", "bottom_max")
+ANCHORS = ("bottom_center", "center", "bottom_min", "top_center", "bottom_max", "origin")
 
 
 def rot_x(deg: float) -> np.ndarray:
@@ -55,6 +55,9 @@ def anchor_point(lo: np.ndarray, hi: np.ndarray, anchor: str) -> np.ndarray:
         return np.array([hi[0], lo[1], hi[2]])
     if anchor == "top_center":
         return np.array([c[0], hi[1], c[2]])
+    if anchor == "origin":
+        # the shape's local origin lands on pos: `line`/`sweep` points are then world coordinates when pos=0
+        return np.zeros(3)
     raise ValueError(f"unknown anchor {anchor!r}; expected one of {ANCHORS}")
 
 

@@ -12,6 +12,33 @@ from .common import get_tools
 from .stages import load_prompt, system_prompt
 
 DEFAULT_STAGES = ["blocking", "detailing", "materials", "decoration"]
+OBJECT_STAGES = ["blocking", "detailing", "materials"]  # props/lighting rarely apply to a statue or a vehicle
+KINDS = ("building", "object")
+
+# Requests for things that are not architecture: no façades, roofs or entrances to check, a skeleton of
+# parts instead. Word-boundary matched against the request; the model's own `kind` wins when it sets one.
+_OBJECT_WORDS = (
+    "statue", "sculpture", "figure", "figurine", "bust", "monument", "creature", "monster", "dragon", "wyvern",
+    "phoenix", "griffin", "animal", "horse", "dog", "cat", "wolf", "bear", "lion", "tiger", "elephant", "bird",
+    "eagle", "owl", "fish", "whale", "shark", "snake", "serpent", "spider", "turtle", "dinosaur", "t-rex", "golem",
+    "giant", "robot", "mech", "android", "human", "person", "man", "woman", "knight", "warrior", "wizard", "skeleton",
+    "zombie", "creeper", "enderman", "villager", "steve", "alex", "car", "truck", "bus", "van", "tank", "train",
+    "locomotive", "ship", "boat", "yacht", "submarine", "plane", "airplane", "jet", "helicopter", "rocket",
+    "spaceship", "starship", "ufo", "bike", "motorcycle", "cart", "wagon", "carriage", "sword", "axe", "hammer",
+    "shield", "bow", "trident", "pickaxe", "skull", "head", "heart", "hand", "crown", "chess piece", "pawn",
+    "mushroom", "flower", "cactus", "pumpkin", "apple", "cake", "trophy", "logo", "letter", "emoji", "duck",
+    "teddy bear", "toy", "vehicle", "mascot", "pokemon", "pikachu", "totem",
+)
+_OBJECT_RE = re.compile(r"\b(" + "|".join(re.escape(w) for w in _OBJECT_WORDS) + r")s?\b", re.I)
+_BUILDING_RE = re.compile(r"\b(house|castle|tower|hall|church|cathedral|temple|villa|cottage|barn|bridge|lighthouse|pagoda|keep|fort|wall|gate|shop|market|inn|tavern|library|hut|cabin|mansion|palace|shrine|windmill|greenhouse|aqueduct|arena|stadium|station|farm|garden|treehouse|base|room|bunker|dock|pier|plaza|fountain)s?\b", re.I)
+
+
+def guess_kind(request: str) -> str:
+    """'object' when the request names a statue/creature/vehicle/prop and no building word, else 'building'."""
+    r = request or ""
+    if _OBJECT_RE.search(r) and not _BUILDING_RE.search(r):
+        return "object"
+    return "building"
 
 SET_BRIEF_SCHEMA: Dict[str, Any] = {
     "type": "function",
@@ -25,6 +52,7 @@ SET_BRIEF_SCHEMA: Dict[str, Any] = {
                     "type": "object",
                     "properties": {
                         "name": {"type": "string"},
+                        "kind": {"type": "string", "enum": ["building", "object"], "description": "building = architecture (walls, roofs, an entrance); object = a statue, creature, vehicle, prop or sculpture composed from a skeleton of parts"},
                         "build_type": {"type": "string"},
                         "style": {"type": "string"},
                         "footprint": {"type": "array", "items": {"type": "number"}, "minItems": 2, "maxItems": 2},
@@ -55,7 +83,9 @@ def normalize_brief(brief: Any, request: str = "") -> Dict[str, Any]:
     b: Dict[str, Any] = dict(brief) if isinstance(brief, dict) else {}
     if "brief" in b and isinstance(b["brief"], dict):
         b = dict(b["brief"])
-    build_type = str(b.get("build_type") or _guess_type(request) or "structure")
+    kind = str(b.get("kind") or "").lower()
+    b["kind"] = kind if kind in KINDS else guess_kind(request or str(b.get("build_type") or ""))
+    build_type = str(b.get("build_type") or _guess_type(request) or ("object" if b["kind"] == "object" else "structure"))
     b["build_type"] = build_type
     b["name"] = str(b.get("name") or _slug(build_type))
     b["style"] = str(b.get("style") or "")
@@ -76,9 +106,15 @@ def normalize_brief(brief: Any, request: str = "") -> Dict[str, Any]:
     b["materials_intent"] = str(b.get("materials_intent") or "")
     plan = str(b.get("silhouette_plan") or "").strip()
     if not plan:
-        plan = f"{build_type} with footprint {int(b['footprint'][0])}x{int(b['footprint'][1])} and height {int(b['height'])}, entrance facing {b['facing']}."
+        if b["kind"] == "object":
+            plan = f"{build_type} within a {int(b['footprint'][0])}x{int(b['footprint'][1])} footprint, {int(b['height'])} tall, front facing {b['facing']}."
+        else:
+            plan = f"{build_type} with footprint {int(b['footprint'][0])}x{int(b['footprint'][1])} and height {int(b['height'])}, entrance facing {b['facing']}."
     b["silhouette_plan"] = plan
-    stages = [str(s) for s in (b.get("stages") or DEFAULT_STAGES) if str(s) in DEFAULT_STAGES]
+    default_stages = OBJECT_STAGES if b["kind"] == "object" else DEFAULT_STAGES
+    stages = [str(s) for s in (b.get("stages") or default_stages) if str(s) in DEFAULT_STAGES]
+    if b["kind"] == "object":
+        stages = [s for s in stages if s in OBJECT_STAGES]  # lanterns/props/entrance framing: not for a statue
     if "blocking" not in stages:
         stages = ["blocking"] + stages
     b["stages"] = stages
@@ -128,6 +164,8 @@ def validate_brief(brief: Dict[str, Any]) -> List[str]:
     """Design-rule problems in a brief that the interpret stage must fix before building (T4 lever 1):
     towers wider than tall, a roof with no stated overhang, and no stated entrance."""
     plan = str(brief.get("silhouette_plan") or "")
+    if brief.get("kind") == "object":
+        return _object_problems(plan)
     text = " ".join([plan] + [str(x) for x in brief.get("key_features", [])] + [str(x) for x in brief.get("constraints", [])])
     problems = _tower_problems(plan)
     if re.search(r"\broofs?\b", plan, flags=re.I) and not re.search(r"\b(overhang|eaves?|flat roofs?|parapet)", text, flags=re.I):
@@ -135,6 +173,17 @@ def validate_brief(brief: Dict[str, Any]) -> List[str]:
     if not re.search(r"\b(entrance|entry|door(way)?|gate(house|way)?|portal|portico|porch|archway|opening)\b", text, flags=re.I):
         problems.append(f"no entrance is stated — say where the door/gate is on the {brief.get('facing', 'south')} side and its size (P6)")
     return problems
+
+
+def _object_problems(plan: str) -> List[str]:
+    """An object plan must be a parts list with numbers (the builder turns it into one script), and it
+    must say which way the front faces — the two things a vague plan omits and a blob results from."""
+    out: List[str] = []
+    if len(re.findall(_NUM, plan)) < 6:
+        out.append("the plan needs numbers for every part (size and position of body, head, limbs/wheels, base) — a parts list, not adjectives")
+    if not re.search(r"\b(faces?|facing|front|nose|head|bow|points?|pointing)\b[^.;]{0,40}?(\+z|-z|\+x|-x|\b(?:south|north|east|west|the player)\b)", plan, flags=re.I):
+        out.append("say which way the front/head faces (default: the player, +z/south)")
+    return out
 
 
 def brief_to_text(brief: Dict[str, Any]) -> str:

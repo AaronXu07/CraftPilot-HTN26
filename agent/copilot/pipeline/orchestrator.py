@@ -23,6 +23,11 @@ from .stages import FIX_STAGE, STAGE_BY_NAME, StageResult, run_stage, stage_for_
 
 CRITIC_PASS = 8
 MAX_FINAL_FIX_ROUNDS = 2
+# Objects (statues, vehicles, props): the silhouette critique after blocking is the one that changes the
+# result; per-stage critiques after detailing/materials mostly cost a fix round each (~50 s a build) for
+# polish the final round covers anyway. One final round instead of two for the same reason.
+OBJECT_CRITIC_STAGES = ("blocking",)
+OBJECT_MAX_FINAL_FIX_ROUNDS = 1
 SECOND_ROUND_BELOW = 7  # a second final critic/fix round only if the first scored below this
 FIX_ROUND_CALLS = 15
 
@@ -321,6 +326,7 @@ def run_build(ctx: Any, llm: Any, request: str, fast: bool = False, place: bool 
     report = BuildReport(brief=brief)
     progress.say("interpret", one_line(brief.get("silhouette_plan") or "", 150) or brief_to_text(brief))
     stage_names = [s for s in brief.get("stages", DEFAULT_STAGES) if s in STAGE_BY_NAME] or list(DEFAULT_STAGES)
+    is_object = brief.get("kind") == "object"
     carry: Optional[str] = None
     images: List[Any] = []
     skipped: List[str] = []
@@ -341,7 +347,7 @@ def run_build(ctx: Any, llm: Any, request: str, fast: bool = False, place: bool 
         carry = None
         images = res.images or images
         _stage_line(ctx, stage.name, before, res)
-        if not fast and budget.allow_critic():
+        if not fast and budget.allow_critic() and (not is_object or stage.name in OBJECT_CRITIC_STAGES):
             budget.start_critic()
             crit = critique(llm, ctx, stage.name, brief, lint_text=res.lint_text)
             report.critiques.append(crit)
@@ -362,7 +368,7 @@ def run_build(ctx: Any, llm: Any, request: str, fast: bool = False, place: bool 
             _place(ctx, "diff", animate=True)
     if not fast:
         first_final: Optional[int] = None
-        for round_no in range(MAX_FINAL_FIX_ROUNDS):
+        for round_no in range(OBJECT_MAX_FINAL_FIX_ROUNDS if is_object else MAX_FINAL_FIX_ROUNDS):
             if not budget.allow_critic():
                 break
             if round_no > 0 and (first_final is None or first_final >= SECOND_ROUND_BELOW):

@@ -11,7 +11,7 @@ from ..jobs import check_cancel
 from ..llm import IMAGES_PER_CALL, extract_json, image_parts, single_call, text_content
 from .budget import profile_row
 from .common import call_tool, outline
-from .stages import load_prompt
+from .stages import brief_kind, load_prompt, prompt_variant
 
 CRITIC_VIEWS = ["contact"]  # one image: iso + front + top (+ cutaway), sent as one 640 px JPEG (T2)
 
@@ -142,7 +142,7 @@ def critique(llm: Any, ctx: Any, stage: str, brief: Optional[Dict[str, Any]], li
         # text-only fallback: bbox/block summary plus an ASCII plan slice at mid height
         r = call_tool(ctx, "render", {"views": ["top"], "slice_y": _mid_y(ctx)})
         render_text = (getattr(r, "text", "") or "") or render_text
-    sys_prompt = load_prompt("critic")
+    sys_prompt = load_prompt(prompt_variant("critic", brief_kind(brief, ctx)))
     parts: List[Dict[str, Any]] = []
     head = [f"## Stage under review: {stage}"]
     if brief:

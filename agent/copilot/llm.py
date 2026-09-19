@@ -425,6 +425,7 @@ class AzureLLM:
                 else:
                     raise
             if attempt < attempts:
+                log.warning("chat call to %s failed (%s: %s) — attempt %d/%d, retrying in %.0fs", kwargs.get("model"), type(last_err).__name__, str(last_err)[:120], attempt, attempts, min(delay, timeout or 60.0))
                 time.sleep(min(delay, timeout or 60.0))
                 delay = min(delay * 2, 60.0)
         raise RuntimeError(f"Azure OpenAI failed after {attempt} attempts: {last_err}")
@@ -515,6 +516,8 @@ class AzureLLM:
                 else:
                     raise
             if attempt < attempts:
+                # a hung call costs the whole per-call timeout before this retry: make it visible in the log
+                log.warning("responses call to %s failed (%s: %s) — attempt %d/%d, retrying in %.0fs", model, type(last_err).__name__, str(last_err)[:120], attempt, attempts, min(delay, timeout or 60.0))
                 time.sleep(min(delay, timeout or 60.0))
                 delay = min(delay * 2, 60.0)
         raise RuntimeError(f"Azure OpenAI (responses) failed after {attempt} attempts: {last_err}")

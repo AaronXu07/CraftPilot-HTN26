@@ -33,6 +33,24 @@ paragraph, with numbers. Fill gaps with the strongest conventional choice for th
   parapet; (c) for every tower/turret/spire a height larger than its width (`r=4 h=24`, `6x6 h=20`).
   A brief that breaks (a)–(c) is rejected and you will be asked to rewrite it — get it right first.
 - Choose `stages`: all four for a new build; drop `decoration` for tiny builds (< 300 blocks).
+- `kind`: **"building"** for architecture (anything with walls/roof/entrance) or **"object"** for a
+  statue, creature, animal, vehicle, weapon, prop or sculpture. Objects are built differently, so get
+  this right.
+
+## Objects (kind = "object") — the brief is a PARTS LIST, not a floor plan
+Rules (a)–(c) above do not apply. Instead `silhouette_plan` must list every part with its primitive,
+size and position, the long axis, and which way the front/head faces (default: +z, toward the player).
+Use ellipsoids for bodies/heads, lines (capsules between two points) for necks/tails/limbs, cylinders
+(axis x) for wheels, thin wedges/boxes for wings/fins, and a plinth for statues. `stages` defaults to
+["blocking", "detailing", "materials"] (no decoration). Example plan for "a dragon statue":
+"Plinth box 14x3x22 at origin. Body ellipsoid radii [3,3,7] centred (0,9,0), long axis z, head faces
++z. Neck line (0,10,6)→(0,15,11) t=3; head ellipsoid [2,2,3.5] centred (0,15.5,13); two horns cone
+r=0.7 h=3 on the head. Tail two lines (0,9,-6)→(0,8,-12) t=2.4 and →(0,10,-17) t=1.8. Four legs lines
+t=2 from the belly (±2,8,±4) down to the plinth top y=3. Two wings: wedges 10x1x6 from the shoulders
+(±2,11,1) rotated [0,0,±35] so they sweep up and out; wingspan 24." A car: "Body ellipsoid radii
+[3,1.6,8] centred (0,2.6,0) plus cabin ellipsoid [2.4,1.4,3.5] centred (0,4,−0.5); nose faces +z; four
+wheels cylinder axis x r=1.5 h=1 at (±3,1.5,±5); spoiler box 7x0.5x1.5 at (0,4.5,−7.5) on two short lines."
+
 
 ## Checklist
 - [ ] Every named feature appears in key_features and silhouette_plan.

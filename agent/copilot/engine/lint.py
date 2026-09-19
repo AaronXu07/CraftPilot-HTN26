@@ -52,17 +52,23 @@ def lint_scene_only(scene: Any) -> List[LintFinding]:
 
 def lint(scene: Any, raster: Optional[RasterResult], fit: Optional[FitResult], block_map: Optional[BlockMap],
          registry: Optional[Registry] = None) -> List[LintFinding]:
-    """Run every design rule. `raster`, `fit` and `block_map` may be None (then only scene rules run)."""
-    findings = lint_scene_only(scene) + _r9_materials(scene)
+    """Run every design rule. `raster`, `fit` and `block_map` may be None (then only scene rules run).
+
+    Object scenes (brief kind "object": statues, creatures, vehicles, props) skip the architecture rules —
+    R1 blank façade, R2 roofs, R3 entrance and R9's ground gradient — which would only feed the critic
+    irrelevant findings; floating/isolated blocks, props on air, scale and unknown materials still apply."""
+    building = not is_object_scene(scene)
+    findings = lint_scene_only(scene) + _r9_materials(scene, gradient=building)
     if raster is None or fit is None:
         return findings
     kind = np.asarray(fit.kind)
     occ = kind > 0
     if not occ.any():
         return findings
-    findings += _r1_blank_facades(scene, raster, kind)
-    findings += _r2_roofs(scene)
-    findings += _r3_entrance(scene, raster, kind)
+    if building:
+        findings += _r1_blank_facades(scene, raster, kind)
+        findings += _r2_roofs(scene)
+        findings += _r3_entrance(scene, raster, kind)
     if block_map is not None:
         findings += _r4_variety(block_map)
     findings += _r5_floating(scene, raster, kind)
@@ -287,7 +293,14 @@ def _r3_entrance(scene: Any, raster: RasterResult, kind: np.ndarray) -> List[Lin
 MIN_MATERIALS = 3
 
 
-def _r9_materials(scene: Any) -> List[LintFinding]:
+def is_object_scene(scene: Any) -> bool:
+    """True when the scene's brief (scene.meta["brief"]) says kind == "object"."""
+    meta = getattr(scene, "meta", None) or {}
+    brief = meta.get("brief") if isinstance(meta, dict) else None
+    return isinstance(brief, dict) and brief.get("kind") == "object"
+
+
+def _r9_materials(scene: Any, gradient: bool = True) -> List[LintFinding]:
     """Materials-stage rules (T4, P4/P5). Runs once the scene defines at least one material — i.e. the
     materials stage has begun — so blocking's placeholders do not trigger it."""
     mats = getattr(scene, "materials", {}) or {}
@@ -328,7 +341,7 @@ def _r9_materials(scene: Any) -> List[LintFinding]:
     spec = mats.get(main) or PRESETS.get(main) or {}
     if isinstance(spec, dict) and "preset" in spec and not spec.get("gradient"):
         spec = {**PRESETS.get(str(spec.get("preset")), {}), **spec}
-    if isinstance(spec, dict) and not spec.get("gradient"):
+    if gradient and isinstance(spec, dict) and not spec.get("gradient"):
         ids = [o.id for o in scene.objects if o.op == "add" and o.material_name() == main][:6]
         out.append(LintFinding("R9", "warn", f"main wall material {main!r} has no ground gradient (P4): define it with \"gradient\": {{\"axis\": \"y\", \"from\": 0, \"to\": 3, \"palette\": [[darker/rougher block, 1]]}}", ids))
     return out

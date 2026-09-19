@@ -40,6 +40,9 @@ class SceneError(ValueError):
 # ----------------------------------------------------------------------------------------------
 # Data model
 # ----------------------------------------------------------------------------------------------
+POINT_SHAPES = ("line", "sweep")  # shapes given as absolute points: default anchor "origin", not bottom_center
+
+
 @dataclass
 class SceneObject:
     id: str
@@ -71,6 +74,9 @@ class SceneObject:
             raise SceneError(f"op must be one of {OPS_TYPES}, got {obj.op!r}")
         if obj.shape["type"] == "block":
             obj.transform.anchor = "bottom_min"
+        elif obj.shape["type"] in POINT_SHAPES and obj.transform.anchor == "bottom_center":
+            # from/to and path are absolute points; re-centring them on pos (the default anchor) is never wanted
+            obj.transform.anchor = "origin"
         return obj
 
     def to_dict(self) -> Dict[str, Any]:
@@ -392,7 +398,8 @@ class Scene:
             s += f" rot({_n(t.rot[0])},{_n(t.rot[1])},{_n(t.rot[2])})"
         if np.any(t.scale != 1):
             s += f" scale({_n(t.scale[0])},{_n(t.scale[1])},{_n(t.scale[2])})"
-        if t.anchor != "bottom_center" and o.shape["type"] != "block":
+        natural = "bottom_min" if o.shape["type"] == "block" else "origin" if o.shape["type"] in POINT_SHAPES else "bottom_center"
+        if t.anchor != natural:
             s += f" anchor={t.anchor}"
         if o.op == "add":
             if o.material:
@@ -920,6 +927,8 @@ def op_set_shape(scene: Scene, id: str, **params) -> Tuple[Scene, str]:
     o.shape = validate_shape(new)
     if o.shape["type"] == "block":
         o.transform.anchor = "bottom_min"
+    elif o.shape["type"] in POINT_SHAPES and o.transform.anchor == "bottom_center":
+        o.transform.anchor = "origin"
     nb = sc.object_bbox(o)
     return sc, f"{id} is now {shape_summary(o.shape)} bbox {_fmt_bbox(nb)} (was {_fmt_bbox(old_bb)})" + _dimension_warning(o)
 

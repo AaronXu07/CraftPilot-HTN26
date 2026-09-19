@@ -60,12 +60,39 @@ def catalog_text(ctx: Any) -> str:
     return FALLBACK_CATALOG
 
 
-def system_prompt(ctx: Any, stage: Optional["Stage"] = None, extra_sections: Optional[List[str]] = None) -> str:
-    """system_core with the catalog placeholder filled, plus the stage prompt and extra sections."""
+def prompt_variant(name: str, kind: Optional[str]) -> str:
+    """`<name>_object` when the brief is for an object (statue, creature, vehicle, prop) and that prompt
+    exists, else `name`. Buildings keep the façade/roof/entrance prompts; objects get skeleton-first ones."""
+    if kind == "object":
+        cand = f"{name}_object"
+        if os.path.exists(os.path.join(PROMPT_DIR, cand + ".md")):
+            return cand
+    return name
+
+
+def brief_kind(brief: Optional[Dict[str, Any]], ctx: Any = None) -> Optional[str]:
+    """The brief's `kind` (building | object), falling back to the session's brief / scene meta."""
+    if isinstance(brief, dict) and brief.get("kind"):
+        return str(brief["kind"])
+    session = getattr(ctx, "session", None) if ctx is not None else None
+    sb = getattr(session, "brief", None)
+    if isinstance(sb, dict) and sb.get("kind"):
+        return str(sb["kind"])
+    scene = getattr(session, "scene", None)
+    meta = getattr(scene, "meta", None) or {}
+    mb = meta.get("brief") if isinstance(meta, dict) else None
+    if isinstance(mb, dict) and mb.get("kind"):
+        return str(mb["kind"])
+    return None
+
+
+def system_prompt(ctx: Any, stage: Optional["Stage"] = None, extra_sections: Optional[List[str]] = None, kind: Optional[str] = None) -> str:
+    """system_core with the catalog placeholder filled, plus the stage prompt (object variant when
+    `kind == "object"`) and extra sections."""
     core = load_prompt("system_core").replace("{{materials_catalog}}", catalog_text(ctx))
     parts = [core]
     if stage is not None:
-        parts.append(load_prompt(stage.prompt_file))
+        parts.append(load_prompt(prompt_variant(stage.prompt_file, kind)))
     for s in extra_sections or []:
         if s:
             parts.append(s)
@@ -116,13 +143,16 @@ FIX_STAGE = Stage("fix", "stage_detailing", ["set_shape", "move", "add", "add_mo
 
 
 def stage_for_rule(rule: str) -> Stage:
-    """Which stage prompt best applies a critic fix rule (P4/P5 → materials, P7 → decoration, else detailing)."""
+    """Which stage prompt best applies a critic fix rule (P4/P5 → materials, P7 → decoration, else detailing).
+
+    Object rubric: S1 silhouette / S2 proportion / S3 connectivity / S4 orientation / S5 symmetry → blocking,
+    S6 surface → materials."""
     r = (rule or "").upper()
-    if r in ("P4", "P5"):
+    if r in ("P4", "P5", "S6"):
         return STAGE_BY_NAME["materials"]
     if r == "P7":
         return STAGE_BY_NAME["decoration"]
-    if r in ("P1", "F"):
+    if r in ("P1", "F", "S1", "S2", "S3", "S4", "S5"):
         return STAGE_BY_NAME["blocking"]
     return STAGE_BY_NAME["detailing"]
 
@@ -204,7 +234,7 @@ def run_stage(
         op_cap = env_int("COPILOT_OP_CAP", DEFAULT_OP_CAP)
     budget_s = (deadline - t0) if deadline else None
     tools = get_tools(ctx, exclude=STAGE_TOOL_EXCLUDE)
-    sys_prompt = system_prompt(ctx, stage)
+    sys_prompt = system_prompt(ctx, stage, kind=brief_kind(brief, ctx))
     if stage.encouraged_tools:
         sys_prompt += "\n\nEncouraged tools in this stage: " + ", ".join(stage.encouraged_tools) + "."
     user = stage_user_message(stage, request, brief, outline(ctx), selection, extra, fix_round, budget_s)

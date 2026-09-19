@@ -107,7 +107,7 @@ def tool(name: str, description: str, props: Dict[str, Any], required: Sequence[
     }
 
 
-ANCHOR_ENUM = ["bottom_center", "center", "bottom_min", "top_center", "bottom_max"]
+ANCHOR_ENUM = ["bottom_center", "center", "bottom_min", "top_center", "bottom_max", "origin"]
 
 TOOL_SCHEMAS: List[Dict[str, Any]] = [
     # ---------------------------------------------------------------- create / delete

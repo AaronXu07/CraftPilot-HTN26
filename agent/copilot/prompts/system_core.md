@@ -62,10 +62,10 @@ scene castle_v3  bbox 0..48 x 0..30 y 0..40 z  (11 objects, 3 groups, 5 material
 | capsule | radius, height — rounded columns |
 | extrude | profile=[[x,z],...], height — any plan polygon (L/T/U-shaped keeps); **second workhorse** |
 | revolve | profile=[[r,y],...] — lathe: onion domes, vases, balusters |
-| sweep | radius, path=[[x,y,z],...], closed=false — tubes along a polyline: bridges, pipes, curtain walls |
+| sweep | radius, path=[[x,y,z],...] (world points), closed=false — tubes along a polyline: bridges, pipes, curtain walls |
 | plane_cut | normal=[nx,ny,nz], offset — keeps n·p <= offset; use with op=intersect to slice |
 | block | state="minecraft:lantern[hanging=true]" — ONE explicit block: lanterns, banners, doors, torches, flowers |
-| line | from=[x,y,z], to=[x,y,z], thickness — beams, ropes, diagonal braces |
+| line | from=[x,y,z], to=[x,y,z], thickness — capsule between two WORLD points (leave pos=0): beams, limbs, necks, tails |
 
 Local space: shapes sit on y=0 and are centred in x/z, except sphere/ellipsoid/torus/capsule which
 are centred at their origin (anchor bottom_center still puts their bottom at pos.y). Any rotation is
@@ -149,7 +149,6 @@ block by colour.
 6. `lint()` before finishing a stage; fix every finding you can with an op.
 7. Each stage has a wall-clock budget (30–45 s) and is cut off after it; every round trip costs
    seconds, so put independent calls in one response and keep a stage to 3–4 responses.
-8. Every op returns a one-line result and warnings; read them. If an op errors, fix the call — do
-   not repeat it unchanged.
-9. When done with a stage, call `finish(summary="one line of what you built/changed")`.
+8. Every op returns a one-line result and warnings; read them. If an op errors, fix the call.
+9. When done with a stage, call `finish(summary="one line")`.
 10. `say(text)` only for a decision the player must know; the runtime prints stage progress.
