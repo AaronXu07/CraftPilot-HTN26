@@ -8,6 +8,7 @@ from __future__ import annotations
 import base64
 import io
 import json
+import logging
 import os
 import re
 import time
@@ -15,6 +16,8 @@ from dataclasses import dataclass, field
 from typing import Any, Callable, Dict, List, Optional, Protocol, Sequence, Tuple
 
 from .jobs import JobCancelled, check_cancel
+
+log = logging.getLogger(__name__)
 
 try:  # optional: .env support
     from dotenv import load_dotenv
@@ -283,6 +286,9 @@ class AzureLLM:
         if self.api == "auto":
             self.api = "responses" if self.endpoint.rstrip("/").endswith("/responses") else "chat"
         self.reasoning_effort = os.environ.get("AZURE_OPENAI_REASONING_EFFORT", "low")
+        # Extra max_output_tokens granted to reasoning models on top of the visible-output budget (see
+        # _chat_via_responses); only the tokens actually used are billed.
+        self.reasoning_headroom = int(os.environ.get("AZURE_OPENAI_REASONING_HEADROOM_TOKENS", "16000"))
         self.timeout = float(timeout if timeout is not None else os.environ.get("AZURE_OPENAI_TIMEOUT_S", 120.0))
         self.max_attempts = max(1, int(max_attempts if max_attempts is not None else os.environ.get("AZURE_OPENAI_MAX_ATTEMPTS", 2)))
         # 429s are short and frequent on small deployments: allow a few more (cheap) attempts than for timeouts
@@ -335,6 +341,13 @@ class AzureLLM:
         """gpt-5.x and o-series deployments reject `temperature` and want `max_completion_tokens`."""
         m = (model or "").lower()
         return m.startswith("gpt-5") or m.startswith("o1") or m.startswith("o3") or m.startswith("o4")
+
+    @classmethod
+    def _may_reason(cls, model: str) -> bool:
+        """Models that can spend output tokens on hidden reasoning (and so need headroom above the visible
+        budget): the OpenAI reasoning family plus the Foundry-hosted DeepSeek / Kimi / grok deployments."""
+        m = (model or "").lower()
+        return cls._is_reasoning_model(m) or any(k in m for k in ("deepseek", "kimi", "grok", "-r1", "thinking", "reasoning"))
 
     def chat(
         self,
@@ -442,6 +455,11 @@ class AzureLLM:
                 kwargs["reasoning"] = {"effort": self.reasoning_effort}
         else:
             kwargs["temperature"] = temperature
+        if self._may_reason(model):
+            # Reasoning tokens are billed against max_output_tokens. Without headroom a medium/high-effort
+            # call can spend the whole budget thinking and come back `incomplete` with no tool calls and
+            # no text — which used to look exactly like "the model chose to stop".
+            kwargs["max_output_tokens"] = max_tokens + self.reasoning_headroom
         if tools:
             kwargs["tools"] = tools_to_responses(tools)
             kwargs["tool_choice"] = tool_choice_to_responses(tool_choice)
@@ -450,12 +468,27 @@ class AzureLLM:
         last_err: Optional[Exception] = None
         attempts = self.max_attempts
         attempt = 0
+        truncated_retry = False
         while attempt < attempts:
             attempt += 1
             try:
                 resp = self.client.responses.create(**kwargs)
                 self.calls += 1
-                return self._parse_responses(resp)
+                parsed = self._parse_responses(resp)
+                if self._responses_truncated(resp) and not parsed.tool_calls and not parsed.text:
+                    used = parsed.usage.get("completion_tokens", "?")
+                    if not truncated_retry:
+                        # One retry with double the budget; the reasoning models rarely need more than that.
+                        truncated_retry = True
+                        kwargs["max_output_tokens"] = int(kwargs["max_output_tokens"]) * 2
+                        log.warning("responses call truncated at max_output_tokens (%s output tokens, no tool calls) — retrying with %s", used, kwargs["max_output_tokens"])
+                        continue
+                    raise RuntimeError(
+                        f"Azure OpenAI (responses) hit max_output_tokens={kwargs['max_output_tokens']} while reasoning "
+                        f"({used} output tokens, no tool calls or text). Lower AZURE_OPENAI_REASONING_EFFORT or raise "
+                        "AZURE_OPENAI_REASONING_HEADROOM_TOKENS."
+                    )
+                return parsed
             except openai.BadRequestError as e:
                 msg = str(e)
                 if has_images and "image" in msg.lower():
@@ -485,6 +518,15 @@ class AzureLLM:
                 time.sleep(min(delay, timeout or 60.0))
                 delay = min(delay * 2, 60.0)
         raise RuntimeError(f"Azure OpenAI (responses) failed after {attempt} attempts: {last_err}")
+
+    @staticmethod
+    def _responses_truncated(resp: Any) -> bool:
+        """True when the Responses API stopped at max_output_tokens (status `incomplete`)."""
+        if getattr(resp, "status", None) != "incomplete":
+            return False
+        details = getattr(resp, "incomplete_details", None)
+        reason = getattr(details, "reason", None) if details is not None else None
+        return reason in (None, "max_output_tokens")
 
     def _parse_responses(self, resp: Any) -> LLMResponse:
         calls: List[ToolCall] = []

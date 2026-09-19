@@ -237,3 +237,113 @@ def test_azure_llm_retries_429_a_few_times_and_passes_timeout(monkeypatch):
     with pytest.raises(RuntimeError, match="after 2 attempts"):
         a.chat([{"role": "user", "content": "hi"}])
     assert len(seen) == 2 and "timeout" not in seen[0]
+
+
+def _responses_llm(monkeypatch, create, deployment="gpt-5.4-mini", **env):
+    import types
+
+    monkeypatch.setenv("AZURE_OPENAI_ENDPOINT", "https://x.services.ai.azure.com/openai/v1/responses")
+    monkeypatch.setenv("AZURE_OPENAI_API_KEY", "k")
+    monkeypatch.setenv("AZURE_OPENAI_DEPLOYMENT", deployment)
+    monkeypatch.delenv("AZURE_OPENAI_REASONING_HEADROOM_TOKENS", raising=False)
+    for k, v in env.items():
+        monkeypatch.setenv(k, v)
+    a = L.AzureLLM()
+    assert a.api == "responses"
+    a._client = types.SimpleNamespace(responses=types.SimpleNamespace(create=create))
+    return a
+
+
+def _incomplete(output_tokens):
+    import types
+
+    return types.SimpleNamespace(
+        status="incomplete",
+        incomplete_details=types.SimpleNamespace(reason="max_output_tokens"),
+        output=[],
+        usage=types.SimpleNamespace(input_tokens=100, output_tokens=output_tokens, total_tokens=100 + output_tokens),
+    )
+
+
+def _completed_call():
+    import types
+
+    call = types.SimpleNamespace(type="function_call", call_id="c1", name="add", arguments='{"id": "keep"}')
+    return types.SimpleNamespace(status="completed", incomplete_details=None, output=[call], usage=None)
+
+
+def test_responses_reasoning_models_get_headroom_above_max_tokens(monkeypatch):
+    """Reasoning tokens count against max_output_tokens: a 4000-token visible budget must not cap the
+    model's thinking, or medium/high effort silently returns nothing (seen in the object bench)."""
+    seen = []
+
+    def create(**kw):
+        seen.append(kw)
+        return _completed_call()
+
+    a = _responses_llm(monkeypatch, create)
+    r = a.chat([{"role": "user", "content": "hi"}], max_tokens=4000)
+    assert r.tool_calls and r.tool_calls[0].name == "add"
+    assert seen[0]["max_output_tokens"] == 4000 + 16000
+    # non-reasoning deployments keep the plain budget
+    seen.clear()
+    b = _responses_llm(monkeypatch, create, deployment="gpt-4o")
+    b.chat([{"role": "user", "content": "hi"}], max_tokens=4000)
+    assert seen[0]["max_output_tokens"] == 4000
+    # the headroom is tunable
+    seen.clear()
+    c = _responses_llm(monkeypatch, create, AZURE_OPENAI_REASONING_HEADROOM_TOKENS="500")
+    c.chat([{"role": "user", "content": "hi"}], max_tokens=4000)
+    assert seen[0]["max_output_tokens"] == 4500
+
+
+def test_responses_truncated_reasoning_retries_once_then_errors(monkeypatch):
+    """An `incomplete` response with no tool calls and no text is a truncation, not a normal stop: retry
+    once with double the budget, then fail loudly so the stage records an error instead of 'ops 0'."""
+    import pytest
+
+    seen = []
+
+    def create(**kw):
+        seen.append(kw)
+        return _incomplete(kw["max_output_tokens"]) if len(seen) == 1 else _completed_call()
+
+    a = _responses_llm(monkeypatch, create)
+    r = a.chat([{"role": "user", "content": "hi"}], max_tokens=4000)
+    assert r.tool_calls and len(seen) == 2
+    assert seen[1]["max_output_tokens"] == 2 * seen[0]["max_output_tokens"]
+
+    seen.clear()
+
+    def always_truncated(**kw):
+        seen.append(kw)
+        return _incomplete(kw["max_output_tokens"])
+
+    b = _responses_llm(monkeypatch, always_truncated)
+    with pytest.raises(RuntimeError, match="max_output_tokens"):
+        b.chat([{"role": "user", "content": "hi"}], max_tokens=4000)
+    assert len(seen) == 2
+
+    # an incomplete response that still carries a tool call or text is used as-is
+    import types
+
+    partial = _incomplete(20000)
+    partial.output = [types.SimpleNamespace(type="message", content=[types.SimpleNamespace(type="output_text", text="done")])]
+    c = _responses_llm(monkeypatch, lambda **kw: partial)
+    assert c.chat([{"role": "user", "content": "hi"}]).text == "done"
+
+
+def test_foundry_deepseek_kimi_grok_get_reasoning_headroom_but_keep_temperature(monkeypatch):
+    """The Foundry-hosted open models reason too (Kimi returns `reasoning` items) but accept temperature."""
+    seen = []
+
+    def create(**kw):
+        seen.append(kw)
+        return _completed_call()
+
+    for dep in ("DeepSeek-V4-Pro", "Kimi-K2.7-Code", "grok-4.6"):
+        seen.clear()
+        a = _responses_llm(monkeypatch, create, deployment=dep)
+        a.chat([{"role": "user", "content": "hi"}], max_tokens=4000)
+        assert seen[0]["max_output_tokens"] == 20000, dep
+        assert "temperature" in seen[0] and "reasoning" not in seen[0], dep
