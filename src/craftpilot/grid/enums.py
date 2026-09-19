@@ -64,6 +64,7 @@ class BShape(IntEnum):
     LICHEN = 22         # glow lichen on the wall face
     BARS = 23           # iron bars
     FENCE_GATE = 24     # facing from normal
+    HAY = 25            # hay bale under a chimney campfire for tall smoke
     VINE = 19           # attached to the wall in direction OPPOSITE[normal]... normal = wall's outward side
     LEAVES = 20
 

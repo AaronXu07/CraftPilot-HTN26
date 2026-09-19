@@ -144,11 +144,12 @@ class _Resolver:
         self._families[str(key)] = fams
         return fams
 
-    def pick_family(self, rp: RolePalette, x: int, y: int, z: int) -> Family:
+    def pick_family(self, rp: RolePalette, x: int, y: int, z: int, speckle: bool = False) -> Family:
         fams = self.families_for(rp)
         if len(fams) == 1:
             return fams[0][0]
-        u = float(self.n_family[x, y, z])
+        # Walls mix in soft patches; roofs mix as fine speckle, the way tile variation reads.
+        u = (0.5 * float(self.n_tex[x, y, z]) + 0.5 * float(self.u_tex[x, y, z])) if speckle else float(self.n_family[x, y, z])
         weights = np.array([w for _, w in fams], dtype=np.float64)
         if rp.gradient == Gradient.horizontal:
             t = x / max(1, self.grid.W - 1) + 0.2 * (float(self._jitter[x, z]) - 0.5)
@@ -218,17 +219,37 @@ _ROOF_COMPANION_CACHE: dict[str, str | None] = {}
 
 
 def roof_companion(name: str) -> str | None:
-    """A kindred family with stairs to texture a roof with: a weathering companion, or a darker relative."""
+    """The family with stairs and slabs closest in colour to this one (same material, small lightness
+    difference), so roof variation reads like masonry texture rather than a two-tone patchwork."""
     if name in _ROOF_COMPANION_CACHE:
         return _ROOF_COMPANION_CACHE[name]
-    out = None
-    for cand in WEATHERED_COMPANIONS.get(name, []) + [shade_family(name) or ""]:
-        fam = catalog.family(cand)
-        if fam is not None and fam.has("stairs") and fam.has("slab"):
-            out = cand
-            break
-    _ROOF_COMPANION_CACHE[name] = out
-    return out
+    import colorsys
+    src = catalog.family(name)
+    if src is None:
+        _ROOF_COMPANION_CACHE[name] = None
+        return None
+    h0, l0, s0 = colorsys.rgb_to_hls(*(c / 255.0 for c in src.rgb))
+    best, best_d = None, 1e9
+    for fam in catalog.FAMILIES.values():
+        if fam.name == name or fam.loud or fam.material != src.material or not (fam.has("stairs") and fam.has("slab")):
+            continue
+        h, l, s_ = colorsys.rgb_to_hls(*(c / 255.0 for c in fam.rgb))
+        if abs(l - l0) > 0.16:
+            continue
+        dh = min(abs(h - h0), 1 - abs(h - h0))
+        if max(s_, s0) > 0.25 and dh > 30 / 360:
+            continue
+        d = abs(l - l0) * 3 + dh * 4 * max(s_, s0) + abs(s_ - s0) + abs(fam.noise - src.noise) * 0.5
+        if d < best_d:
+            best, best_d = fam.name, d
+    if best is None:
+        for cand in WEATHERED_COMPANIONS.get(name, []) + [shade_family(name) or ""]:
+            fam = catalog.family(cand)
+            if fam is not None and fam.has("stairs") and fam.has("slab"):
+                best = cand
+                break
+    _ROOF_COMPANION_CACHE[name] = best
+    return best
 
 
 def _occlusion(grid: SemanticGrid, x: int, y: int, z: int, normal: int) -> float:
@@ -310,6 +331,7 @@ def _block_for(res: _Resolver, grid: SemanticGrid, x: int, y: int, z: int) -> Bl
     role = int(grid.role[x, y, z])
     shape = int(grid.shape[x, y, z])
     normal = int(grid.normal[x, y, z])
+    flags = int(grid.flags[x, y, z])
     if role in (Role.EMPTY, Role.INTERIOR) or shape == BShape.NONE:
         return None
     if shape == BShape.LANTERN:
@@ -379,6 +401,9 @@ def _block_for(res: _Resolver, grid: SemanticGrid, x: int, y: int, z: int) -> Bl
         return BlockRef.make(block_id or "minecraft:spruce_trapdoor", facing=facing, half="top", open="true",
                              powered="false", waterlogged="false")
     if shape == BShape.LEAVES:
+        if flags & Flag.PROTRUDE:   # window box
+            box = "minecraft:flowering_azalea_leaves" if (x + z) % 2 == 0 else "minecraft:azalea_leaves"
+            return BlockRef.make(box, distance="7", persistent="true", waterlogged="false")
         return BlockRef.make(grid.leaf_block, distance="7", persistent="true", waterlogged="false")
     if shape == BShape.VINE:
         # The vine sits in the air cell; it attaches to the wall on the side opposite the wall's outward normal.
@@ -390,16 +415,19 @@ def _block_for(res: _Resolver, grid: SemanticGrid, x: int, y: int, z: int) -> Bl
         facing = DIR_NAME.get(normal if normal in HORIZONTAL else Dir.SOUTH, "south")
         return BlockRef.make("minecraft:ladder", facing=facing, waterlogged="false")
     if shape == BShape.CAMPFIRE:
-        return BlockRef.make(catalog.CAMPFIRE, lit="true", signal_fire="false", waterlogged="false",
+        return BlockRef.make(catalog.CAMPFIRE, lit="true", signal_fire="true", waterlogged="false",
                              facing="north")
+    if shape == BShape.HAY:
+        return BlockRef.make("minecraft:hay_block", axis="y")
     chain = ROLE_PALETTE.get(role, ["primary"])
     shape_name = SHAPE_NAME.get(shape, "full")
     need = shape_name if role in (Role.DOOR, Role.SHUTTER) else None
     rp = _role_palette(res.spec, chain, need)
-    fam = res.pick_family(rp, x, y, z)
-    # Roof texture: a single-family roof mixes in a kindred family at its texture rate, in patches.
-    if role in (Role.ROOF, Role.ROOF_FILL) and rp.texture_rate > 0 and len(rp.families) == 1:
-        u = 0.6 * float(res.n_tex[x, y, z]) + 0.4 * float(res.u_tex[x, y, z])
+    is_roof = role in (Role.ROOF, Role.ROOF_FILL, Role.ROOF_TRIM)
+    fam = res.pick_family(rp, x, y, z, speckle=is_roof)
+    # Roof texture: a single-family roof mixes in the closest-coloured kindred family at its texture rate.
+    if is_roof and rp.texture_rate > 0 and len(rp.families) == 1:
+        u = 0.4 * float(res.n_tex[x, y, z]) + 0.6 * float(res.u_tex[x, y, z])
         if u < rp.texture_rate:
             comp = roof_companion(fam.name)
             if comp:

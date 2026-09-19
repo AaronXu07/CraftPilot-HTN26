@@ -1,0 +1,63 @@
+description: >
+  A New England saltbox house. A two storey clapboard house whose gable ridge sits toward the
+  front so the back slope runs long and shallow, a roof that darkens toward the eave, a central
+  brick chimney with smoke, stone window surrounds, shutters, window boxes, and lamp posts.
+tags: [saltbox, colonial, new, england, clapboard, house, farmhouse, american, asymmetric, gable]
+program:
+  label: saltbox house
+  bounds: {width: 23, height: 24, depth: 19}
+  parts:
+    - name: house
+      shape: rect
+      size: {width: 0.9, depth: 0.75}
+      floors: 2
+      floor_height: 4
+      roof: {type: gable, pitch: 1.5, overhang: 1, ridge_axis: x, ridge_offset: -0.3}
+  facade:
+    bay_width: {min: 3, max: 4}
+    window: plain
+    window_width: 1
+    window_height: 2
+    shutters: 0.8
+    sills: true
+    framing: corners
+    symmetry: true
+    max_flat_run: 6
+    window_boxes: 0.4
+    entrance: door
+  depth:
+    frame_protrude: 1
+    window_inset: 0
+    eave_trim: true
+    foundation_rise: 1
+    foundation_outset: 1
+    corbels: true
+    detail: 0.3
+    foliage: 0.3
+  attachments:
+    - {kind: chimney, count: 1}
+  interior: {stairs: true, doorways: true, partitions: false, lighting: true}
+  palette:
+    primary:
+      families: [{family: birch, weight: 1.0}]
+      texture_rate: 0.2
+      weathering: 0.1
+    framing:
+      families: [{family: spruce, weight: 1.0}]
+    roof:
+      families: [{family: dark_oak, weight: 1.0}, {family: spruce, weight: 1.0}]
+      gradient: vertical
+      texture_rate: 0.1
+      weathering: 0.3
+    trim:
+      families: [{family: stone_bricks, weight: 1.0}]
+    foundation:
+      families: [{family: stone_bricks, weight: 0.6}, {family: granite, weight: 0.4}]
+      weathering: 0.5
+      texture_rate: 0.3
+    secondary:
+      families: [{family: bricks, weight: 1.0}]
+    accent:
+      families: [{family: dark_oak, weight: 1.0}]
+    glass:
+      families: [{family: glass, weight: 1.0}]

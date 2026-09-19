@@ -264,7 +264,7 @@ def _protected(grid: SemanticGrid, x: int, y: int, z: int, part: int) -> bool:
 
 def _quantize_column(grid: SemanticGrid, part: LayoutPart, S: np.ndarray, valid: np.ndarray, x: int, z: int,
                      closed: bool, edge: bool, top_role: int, fill_role: int, top_shape: int, top_perims: dict,
-                     eave_trim: bool, under: bool) -> None:
+                     eave_trim: bool, under: bool, ridge_y: float = 0.0) -> None:
     """Place one column of a part's roof from its own surface S. With `under` the column belongs to a
     lower roof running beneath a higher one, so only empty cells and this part's attic air are written."""
     W, D = grid.W, grid.D
@@ -330,8 +330,11 @@ def _quantize_column(grid: SemanticGrid, part: LayoutPart, S: np.ndarray, valid:
         shape, normal = BShape.FULL, Dir.NONE
     in_mask = bool(part.mask[x, z])
     flags = 0 if in_mask else Flag.OVERHANG
+    # Height within the roof, so roof palettes can run a gradient from eave to ridge.
+    roof_h = (yb - eave_y) / max(1.0, ridge_y - eave_y)
+    roof_h = min(1.0, max(0.0, roof_h))
     if writable(yb):
-        grid.set(x, yb, z, top_role, shape, normal, pi, 1.0, flags)
+        grid.set(x, yb, z, top_role, shape, normal, pi, roof_h, flags)
 
     if closed:
         y_lo = eave_y
@@ -341,7 +344,7 @@ def _quantize_column(grid: SemanticGrid, part: LayoutPart, S: np.ndarray, valid:
         y_lo = eave_y
     for y in range(y_lo, yb):
         if writable(y):
-            grid.set(x, y, z, fill_role, BShape.FULL, Dir.NONE, pi, 1.0, flags)
+            grid.set(x, y, z, fill_role, BShape.FULL, Dir.NONE, pi, roof_h, flags)
 
     # Walls and attic air under the surface, for every part whose top storey sits in this column.
     for other in grid.parts:
@@ -356,15 +359,17 @@ def _quantize_column(grid: SemanticGrid, part: LayoutPart, S: np.ndarray, valid:
             elif r == Role.EMPTY:
                 grid.set(x, y, z, Role.INTERIOR, BShape.FULL, Dir.NONE, other.index, 1.0)
 
-    # Bracket under the eave.
-    if eave_trim and not in_mask and edge and eave_y - 1 >= 0:
+    # Under the eave: brackets (a row of upside-down stairs); under a parapet that overhangs they are
+    # machicolations and appear regardless of the trim setting.
+    parapet = part.spec.roof.type == RoofType.parapet
+    if (eave_trim or parapet) and not in_mask and edge and eave_y - 1 >= 0:
         ty = eave_y - 1
         if grid.role[x, ty, z] == Role.EMPTY:
             for d in HORIZONTAL:
                 vx, _, vz = DIR_VEC[d]
                 nx, nz = x + vx, z + vz
                 if grid.in_bounds(nx, ty, nz) and grid.role[nx, ty, nz] in (Role.WALL, Role.FRAME):
-                    grid.set(x, ty, z, Role.ROOF_TRIM, BShape.STAIR_UPSIDE, d, pi, 1.0, Flag.OVERHANG)
+                    grid.set(x, ty, z, Role.ROOF_TRIM, BShape.STAIR_UPSIDE, d, pi, 0.0, Flag.OVERHANG)
                     break
 
 
@@ -400,7 +405,8 @@ def roof(grid: SemanticGrid, program: BuildProgram) -> None:
         pp = per_part[pi]
         _quantize_column(grid, part, pp["S"], pp["valid"], int(x), int(z), bool(pp["closed"][x, z]),
                          bool(pp["edge"][x, z]), int(pp["top_role"][x, z]), int(pp["fill_role"][x, z]),
-                         int(pp["top_shape"][x, z]), top_perims, eave_trim, under=False)
+                         int(pp["top_shape"][x, z]), top_perims, eave_trim, under=False,
+                         ridge_y=part_max[pi] - 1)
 
     # Pass 2: lower roofs continue underneath higher ones (a wing's roof under the parent's eave)
     # wherever the column is not inside another part's footprint.
@@ -414,7 +420,8 @@ def roof(grid: SemanticGrid, program: BuildProgram) -> None:
         for x, z in zip(*np.nonzero(cols)):
             _quantize_column(grid, part, pp["S"], pp["valid"], int(x), int(z), bool(pp["closed"][x, z]),
                              bool(pp["edge"][x, z]), int(pp["top_role"][x, z]), int(pp["fill_role"][x, z]),
-                             int(pp["top_shape"][x, z]), top_perims, eave_trim, under=True)
+                             int(pp["top_shape"][x, z]), top_perims, eave_trim, under=True,
+                             ridge_y=part_max[pi] - 1)
 
     # Ridge anchors: highest cells of each part's own surface.
     for part in grid.parts:

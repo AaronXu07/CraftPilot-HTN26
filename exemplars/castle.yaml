@@ -13,7 +13,7 @@ program:
       size: {width: 0.8, depth: 0.8}
       floors: 4
       floor_height: 5
-      roof: {type: parapet, crenellated: true, overhang: 0}
+      roof: {type: parapet, crenellated: true, overhang: 1}
     - name: gatehouse
       shape: rect
       size: {width: 0.4, depth: 0.2}
@@ -48,8 +48,8 @@ program:
       weathering: 0.7
       texture_rate: 0.3
     roof:
-      families: [{family: deepslate_tiles, weight: 1.0}, {family: cobbled_deepslate, weight: 0.25}]
-      texture_rate: 0.2
+      families: [{family: deepslate_tiles, weight: 1.0}]
+      texture_rate: 0.25
       weathering: 0.6
     foundation:
       families: [{family: cobbled_deepslate, weight: 0.5}, {family: cobblestone, weight: 0.5}]

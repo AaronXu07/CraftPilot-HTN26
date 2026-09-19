@@ -58,8 +58,8 @@ program:
     framing:
       families: [{family: dark_oak, weight: 1.0}]
     roof:
-      families: [{family: deepslate_tiles, weight: 1.0}, {family: deepslate_bricks, weight: 0.2}]
-      texture_rate: 0.15
+      families: [{family: deepslate_tiles, weight: 1.0}]
+      texture_rate: 0.2
       weathering: 0.3
     trim:
       families: [{family: stone_bricks, weight: 1.0}]

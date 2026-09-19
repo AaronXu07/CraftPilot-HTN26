@@ -130,21 +130,23 @@ def chimney(grid: SemanticGrid, program: BuildProgram, req: AttachmentRequest) -
     sides = [s for s in sides if s != grid.front] + [s for s in sides if s == grid.front]
     placed = 0
     clear = req.params.height if req.params.height else 3
+    # 3x3 stacks (three along the wall, stepping two out) on larger buildings hide a campfire; 2x2 otherwise.
+    size = req.params.width if req.params.width in (2, 3) else (3 if min(part.width, part.depth) >= 15 else 2)
     for side in sides:
         if placed >= count:
             break
         cells = _face_cells(part, side)
-        if len(cells) < 5:
+        if len(cells) < 5 + (size - 2):
             continue
         vx, vz, ax, az = _axis_dirs(side)
         mid = len(cells) // 2
         # Off-centre by a bay so it does not sit over the middle window.
         order = [mid + 2, mid - 2, mid + 3, mid - 3, mid, mid + 4, mid - 4]
         for oi in order:
-            if placed >= count or not (1 <= oi < len(cells) - 2):
+            if placed >= count or not (1 <= oi < len(cells) - size):
                 continue
-            (x0, z0), (x1, z1) = cells[oi], cells[oi + 1]
-            cols = [(x0, z0), (x1, z1), (x0 + vx, z0 + vz), (x1 + vx, z1 + vz)]
+            base = [cells[oi + k] for k in range(size)]
+            cols = [(bx + vx * d, bz + vz * d) for (bx, bz) in base for d in range(size)]
             if any(not (0 <= cx < grid.W and 0 <= cz < grid.D) for cx, cz in cols):
                 continue
             tops = [_roof_top_y(grid, cx, cz) for cx, cz in cols]
@@ -157,14 +159,21 @@ def chimney(grid: SemanticGrid, program: BuildProgram, req: AttachmentRequest) -
             if is_reserved(grid, min(c[0] for c in cols), 0, min(c[1] for c in cols),
                            max(c[0] for c in cols), y_top, max(c[1] for c in cols)):
                 continue
-            for cx, cz in cols:
-                for y in range(y_top):
+            centre = (base[1][0] + vx, base[1][1] + vz) if size == 3 else None
+            for (cx, cz) in cols:
+                is_centre = (cx, cz) == centre
+                for y in range(y_top - (2 if is_centre else 0)):
                     r = int(grid.role[cx, y, cz])
                     if r == Role.DOOR:
                         continue
                     hn = min(1.0, y / max(1, part.top_y))
                     grid.set(cx, y, cz, Role.CHIMNEY, BShape.FULL, side, part.index, hn, Flag.RESERVED)
-                grid.set(cx, y_top, cz, Role.CHIMNEY_CAP, BShape.SLAB_BOTTOM, Dir.NONE, part.index, 1.0)
+                if is_centre:
+                    # Recessed fire: hay under a lit campfire one block below the rim, open above.
+                    grid.set(cx, y_top - 2, cz, Role.CHIMNEY, BShape.HAY, Dir.NONE, part.index, 1.0, Flag.RESERVED)
+                    grid.set(cx, y_top - 1, cz, Role.CHIMNEY_CAP, BShape.CAMPFIRE, Dir.NONE, part.index, 1.0)
+                else:
+                    grid.set(cx, y_top, cz, Role.CHIMNEY_CAP, BShape.SLAB_BOTTOM, Dir.NONE, part.index, 1.0)
             reserve(grid, min(c[0] for c in cols) - 1, 0, min(c[1] for c in cols) - 1,
                     max(c[0] for c in cols) + 1, y_top, max(c[1] for c in cols) + 1)
             placed += 1

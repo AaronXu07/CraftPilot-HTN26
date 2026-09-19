@@ -21,6 +21,7 @@ program:
     window_height: 2
     shutters: 0.6
     sills: true
+    window_boxes: 0.5
     framing: corners
     symmetry: true
     max_flat_run: 6
@@ -43,8 +44,8 @@ program:
     framing:
       families: [{family: dark_oak, weight: 1.0}]
     roof:
-      families: [{family: dark_oak, weight: 1.0}, {family: spruce, weight: 0.2}]
-      texture_rate: 0.15
+      families: [{family: dark_oak, weight: 1.0}]
+      texture_rate: 0.2
       weathering: 0.3
     foundation:
       families: [{family: cobblestone, weight: 0.6}, {family: stone_bricks, weight: 0.4}]
