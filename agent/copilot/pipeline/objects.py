@@ -89,6 +89,13 @@ def run_object_build(ctx: Any, request: str, place: bool = True, height: Optiona
         if bridge is None:
             place_text = "no bridge on the context"
         else:
+            if session.world.is_placed():
+                # a new object is a new build: it gets its own spot in front of the player instead of
+                # reusing the last anchor (which, in "full" mode, would erase the previous object)
+                from ..session import WorldState
+
+                session.snapshot(f"before_{brief.label}_{session.turn}")
+                session.world = WorldState()
             block_map = grid_to_block_map(result.grid)
 
             def on_progress(pct: int) -> None:
@@ -103,7 +110,9 @@ def run_object_build(ctx: Any, request: str, place: bool = True, height: Optiona
         f"{result.size[0]}×{result.size[2]} footprint, {result.size[1]} tall, {result.blocks:,} blocks, "
         f"{len(result.grid.palette)} block types, in {mins}:{s:02d}"
         + (f" ({', '.join(n for n in result.notes if n.startswith('warning'))})" if any(n.startswith("warning") for n in result.notes) else ""),
-        "Say `undo` to remove it, or describe another object.",
     ]
+    if result.litematic:
+        lines.append(f"Schematic: {result.litematic.name} (Litematica → Load Schematics → craftpilot)")
+    lines.append("Say `undo` to remove it, or describe another object.")
     data = {"kind": "object", "object": result.to_dict(), "place": place_text, "seconds": round(secs, 1)}
     return {"reply": "\n".join(lines), "brief": session.brief, "placed": placed, "data": data}

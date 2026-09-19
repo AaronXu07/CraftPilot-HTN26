@@ -228,6 +228,10 @@ def handle_meta(ctx: Any, text: str) -> Optional[ChatResult]:
             placed = getattr(r, "ok", True) and "ERROR" not in (getattr(r, "text", "") or "")
         return ChatResult(reply=msg, placed=placed)
     if cmd == "export":
+        obj = (session.brief or {}).get("object") if isinstance(session.brief, dict) else None
+        if obj and obj.get("litematic") and not session.scene.objects:
+            # an image-to-3D object was already written as a schematic when it was built
+            return ChatResult(reply=f"Schematic: {obj['litematic']} (Litematica → Load Schematics → craftpilot)", data={"litematic": obj["litematic"]})
         name = arg or session.scene.name or "build"
         r = call_tool(ctx, "export_schematic", {"name": name})
         return ChatResult(reply=getattr(r, "text", "exported"), data=getattr(r, "data", {}) or {})

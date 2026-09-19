@@ -237,3 +237,41 @@ def test_object_path_available_respects_the_switch(monkeypatch):
     monkeypatch.setenv("COPILOT_OBJECT_PATH", "1")
     ok, why = objects.available()
     assert ok or "not importable" in why or "3D worker" in why
+
+
+def test_second_object_gets_its_own_spot_and_keeps_the_first(tmp_path, monkeypatch):
+    """A new object must not reuse the previous anchor (which erased the previous statue)."""
+    from types import SimpleNamespace
+
+    from copilot.pipeline import objects as O
+    from copilot.pipeline.progress import Progress
+
+    ctx = FakeCtx(run_dir=str(tmp_path))
+    monkeypatch.setattr(O, "available", lambda: (True, ""))
+
+    class Grid:  # a 2x2x2 cube of stone in SemanticGrid terms
+        def __init__(self):
+            import numpy as np
+
+            self.block = np.zeros((2, 2, 2), dtype=int)
+            self.palette = [SimpleNamespace(block_id="minecraft:stone", props=())]
+
+    def fake_build_object(text, **kw):
+        return SimpleNamespace(brief=SimpleNamespace(label="cube", subject="a cube", style="", to_dict=lambda: {}),
+                               grid=Grid(), size=(2, 2, 2), blocks=8, notes=[], litematic=None, work_dir=tmp_path,
+                               to_dict=lambda: {"blocks": 8})
+    import craftpilot.objects.pipeline as P
+    monkeypatch.setattr(P, "build_object", fake_build_object)
+    monkeypatch.setattr(O, "grid_to_block_map", lambda grid: {(x, y, z): "minecraft:stone" for x in range(2) for y in range(2) for z in range(2)})
+    ctx.progress = Progress(ctx, sink=lambda m: None)
+    O.run_object_build(ctx, "a cube", place=True)
+    first = dict(ctx.session.world.placed)
+    anchor1 = ctx.session.world.anchor
+    # the player walks 20 blocks east and asks again
+    orig = ctx.bridge.player
+    ctx.bridge.player = lambda: {**orig(), "pos": [20.5, 64.0, 0.5]}
+    O.run_object_build(ctx, "a cube", place=True)
+    assert ctx.session.world.anchor != anchor1
+    # the first cube is still standing after the second was placed (mode "full" on a reused anchor erased it)
+    assert first and all(ctx.bridge.world.get(p) == "minecraft:stone" for p in first)
+    assert len(ctx.bridge.world) == 2 * len(first)
