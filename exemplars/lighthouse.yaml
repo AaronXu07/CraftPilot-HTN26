@@ -1,0 +1,68 @@
+description: >
+  A tall round lighthouse. A single tapering cylindrical tower with red and white horizontal bands,
+  small round porthole windows, a glass lantern room at the top under a conical roof, and a
+  small stone keeper's hut attached at the base.
+tags: [lighthouse, tower, coastal, beacon, round, tall, cylinder, striped, sea, harbour]
+program:
+  label: lighthouse
+  bounds: {width: 19, height: 44, depth: 15}
+  parts:
+    - name: tower
+      shape: circle
+      size: {width: 0.6, depth: 0.6}
+      floors: 7
+      floor_height: 4
+      taper: 0.03
+      roof: {type: cone, pitch: 1.0, overhang: 1}
+    - name: hut
+      shape: rect
+      size: {width: 0.5, depth: 0.5}
+      floors: 1
+      floor_height: 4
+      roof: {type: gable, pitch: 1.0, overhang: 1, ridge_axis: x}
+      attach: {to: tower, side: east, align: center, overlap: 2}
+  facade:
+    bay_width: {min: 3, max: 4}
+    window: round
+    window_width: 1
+    window_height: 1
+    shutters: 0.0
+    sills: false
+    framing: corners
+    symmetry: true
+    max_flat_run: 6
+  depth:
+    frame_protrude: 1
+    window_inset: 0
+    eave_trim: true
+    foundation_rise: 2
+    foundation_outset: 1
+    corbels: true
+  attachments:
+    - {kind: gallery, count: 1}
+  palette:
+    primary:
+      families:
+        - {family: white_concrete, weight: 1.0}
+        - {family: red_concrete, weight: 1.0}
+        - {family: white_concrete, weight: 1.0}
+        - {family: red_concrete, weight: 1.0}
+        - {family: white_concrete, weight: 1.0}
+      gradient: bands
+      texture_rate: 0.0
+      weathering: 0.0
+    roof:
+      families: [{family: copper, weight: 1.0}]
+      texture_rate: 0.0
+    foundation:
+      families: [{family: cobbled_deepslate, weight: 0.6}, {family: stone_bricks, weight: 0.4}]
+      weathering: 0.8
+      texture_rate: 0.3
+    secondary:
+      families: [{family: stone_bricks, weight: 1.0}]
+    framing:
+      families: [{family: stone_bricks, weight: 1.0}]
+    trim:
+      families: [{family: dark_oak, weight: 1.0}]
+    glass:
+      families: [{family: glass, weight: 1.0}]

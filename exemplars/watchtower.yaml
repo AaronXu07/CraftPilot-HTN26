@@ -1,0 +1,58 @@
+description: >
+  A tall octagonal stone watchtower. Thick walls, a crenellated parapet, arrow slits, a
+  flagpole with a banner on top, corner bartizans near the top, and a mossy cobblestone base
+  weathering into clean stone bricks.
+tags: [watchtower, tower, lookout, guard, octagonal, stone, fortification, keep, turret, outpost]
+program:
+  label: watchtower
+  bounds: {width: 17, height: 32, depth: 17}
+  parts:
+    - name: tower
+      shape: ngon
+      sides: 8
+      size: {width: 0.8, depth: 0.8}
+      floors: 5
+      floor_height: 4
+      wall_thickness: 2
+      roof: {type: parapet, crenellated: true, overhang: 0}
+  facade:
+    bay_width: {min: 3, max: 4}
+    window: slit
+    window_width: 1
+    window_height: 2
+    shutters: 0.0
+    sills: false
+    framing: none
+    symmetry: true
+    max_flat_run: 6
+  depth:
+    frame_protrude: 0
+    window_inset: 0
+    eave_trim: false
+    foundation_rise: 2
+    foundation_outset: 1
+    corbels: true
+  attachments:
+    - {kind: flagpole, count: 1, params: {height: 6}}
+    - {kind: buttress, count: 4}
+  interior: {stairs: true, doorways: true, partitions: false, lighting: true}
+  palette:
+    primary:
+      families: [{family: cobblestone, weight: 0.5}, {family: stone_bricks, weight: 1.0}, {family: polished_andesite, weight: 0.3}]
+      gradient: vertical
+      weathering: 0.7
+      texture_rate: 0.3
+    roof:
+      families: [{family: stone_bricks, weight: 1.0}]
+    foundation:
+      families: [{family: cobbled_deepslate, weight: 0.6}, {family: mossy_cobblestone, weight: 0.4}]
+      weathering: 0.9
+      texture_rate: 0.3
+    secondary:
+      families: [{family: stone_bricks, weight: 1.0}]
+    trim:
+      families: [{family: spruce, weight: 1.0}]
+    framing:
+      families: [{family: spruce, weight: 1.0}]
+    accent:
+      families: [{family: red_concrete, weight: 1.0}]

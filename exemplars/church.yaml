@@ -1,0 +1,71 @@
+description: >
+  A stone village church. A long nave with a steep gable roof and tall arched windows, a square
+  bell tower on the west end rising well above the nave with a spire, a small polygonal apse on
+  the east end, buttresses along the base, cobblestone and stone brick walls with a dark spruce
+  roof.
+tags: [church, chapel, cathedral, nave, steeple, bell, tower, spire, religious, gothic, stone]
+program:
+  label: church
+  bounds: {width: 41, height: 40, depth: 19}
+  parts:
+    - name: nave
+      shape: rect
+      size: {width: 0.62, depth: 0.75}
+      floors: 2
+      floor_height: 5
+      roof: {type: gable, pitch: 1.0, overhang: 1, ridge_axis: x}
+    - name: tower
+      shape: rect
+      size: {width: 0.24, depth: 0.5}
+      floors: 6
+      floor_height: 4
+      roof: {type: spire, pitch: 2.0, overhang: 1}
+      attach: {to: nave, side: west, align: center, overlap: 1}
+    - name: apse
+      shape: ngon
+      sides: 6
+      size: {width: 0.3, depth: 0.5}
+      floors: 1
+      floor_height: 5
+      roof: {type: cone, pitch: 1.0, overhang: 1}
+      attach: {to: nave, side: east, align: center, overlap: 2}
+  facade:
+    bay_width: {min: 3, max: 4}
+    window: arched
+    window_width: 1
+    window_height: 3
+    shutters: 0.0
+    sills: true
+    framing: corners
+    symmetry: true
+    max_flat_run: 5
+  depth:
+    frame_protrude: 1
+    window_inset: 1
+    eave_trim: true
+    foundation_rise: 1
+    foundation_outset: 1
+    corbels: true
+  attachments:
+    - {kind: buttress, count: 8, spacing: regular, on: nave}
+  palette:
+    primary:
+      families: [{family: cobblestone, weight: 0.5}, {family: stone_bricks, weight: 1.0}]
+      gradient: vertical
+      weathering: 0.6
+      texture_rate: 0.3
+    framing:
+      families: [{family: stone_bricks, weight: 1.0}]
+    roof:
+      families: [{family: spruce, weight: 1.0}]
+      texture_rate: 0.0
+    trim:
+      families: [{family: stone_bricks, weight: 1.0}]
+    foundation:
+      families: [{family: tuff_bricks, weight: 0.6}, {family: cobblestone, weight: 0.4}]
+      weathering: 0.8
+      texture_rate: 0.3
+    secondary:
+      families: [{family: stone_bricks, weight: 1.0}]
+    glass:
+      families: [{family: glass, weight: 1.0}]

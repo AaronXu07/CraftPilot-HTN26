@@ -1,0 +1,64 @@
+description: >
+  A red timber barn with a gambrel roof, a tall silo attached at one end, wide double bays,
+  hay accents, and a low stone footing. Spruce trim and a dark roof.
+tags: [barn, farm, agricultural, gambrel, silo, rural, stable, shed, red, wooden]
+program:
+  label: barn
+  bounds: {width: 29, height: 26, depth: 21}
+  parts:
+    - name: barn
+      shape: rect
+      size: {width: 0.75, depth: 0.85}
+      floors: 2
+      floor_height: 4
+      roof: {type: gambrel, pitch: 1.0, overhang: 1, ridge_axis: x}
+    - name: silo
+      shape: circle
+      size: {width: 0.28, depth: 0.28}
+      floors: 5
+      floor_height: 4
+      roof: {type: dome, pitch: 1.0, overhang: 0}
+      attach: {to: barn, side: east, align: end, overlap: 1}
+  facade:
+    bay_width: {min: 4, max: 5}
+    window: plain
+    window_width: 2
+    window_height: 2
+    shutters: 0.0
+    sills: false
+    framing: bays
+    symmetry: true
+    max_flat_run: 6
+  depth:
+    frame_protrude: 1
+    window_inset: 0
+    eave_trim: true
+    foundation_rise: 1
+    foundation_outset: 1
+    corbels: true
+  attachments:
+    - {kind: dormer, count: 1, spacing: regular}
+    - {kind: cupola, count: 1}
+  interior: {stairs: true, doorways: true, partitions: false, lighting: true}
+  palette:
+    primary:
+      families: [{family: red_concrete, weight: 0.85}, {family: red_terracotta, weight: 0.15}]
+      texture_rate: 0.15
+      weathering: 0.0
+    framing:
+      families: [{family: spruce, weight: 1.0}]
+    roof:
+      families: [{family: spruce, weight: 1.0}]
+      texture_rate: 0.0
+    trim:
+      families: [{family: spruce, weight: 1.0}]
+    foundation:
+      families: [{family: andesite, weight: 0.6}, {family: granite, weight: 0.4}]
+      weathering: 0.6
+      texture_rate: 0.3
+    secondary:
+      families: [{family: smooth_stone, weight: 0.6}, {family: stone_bricks, weight: 0.4}]
+    accent:
+      families: [{family: hay, weight: 1.0}]
+    glass:
+      families: [{family: glass, weight: 1.0}]

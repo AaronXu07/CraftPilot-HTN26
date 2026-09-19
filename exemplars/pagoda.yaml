@@ -1,0 +1,57 @@
+description: >
+  A three tier Japanese pagoda. A square base with a stacked tiered roof of dark oak stairs
+  with upturned eaves, white plaster walls framed with dark oak posts and beams, a small
+  spire finial on top, and a stone plinth.
+tags: [pagoda, japanese, temple, shrine, asian, tiered, oriental, tower, chinese, zen]
+program:
+  label: pagoda
+  bounds: {width: 21, height: 34, depth: 21}
+  parts:
+    - name: base
+      shape: rect
+      size: {width: 0.8, depth: 0.8}
+      floors: 2
+      floor_height: 4
+      roof: {type: pagoda, pitch: 1.0, overhang: 2, tiers: 3}
+  facade:
+    bay_width: {min: 3, max: 3}
+    window: plain
+    window_width: 1
+    window_height: 2
+    shutters: 0.0
+    sills: false
+    framing: tudor
+    symmetry: true
+    max_flat_run: 4
+  depth:
+    frame_protrude: 1
+    window_inset: 0
+    eave_trim: true
+    foundation_rise: 2
+    foundation_outset: 2
+    corbels: true
+  attachments:
+    - {kind: spire, count: 1, params: {height: 4}}
+  budget: {dominant: 1, medium_min: 0, medium_max: 0, small_min: 0, small_max: 0}
+  palette:
+    primary:
+      families: [{family: white_concrete, weight: 0.8}, {family: calcite, weight: 0.2}]
+      texture_rate: 0.15
+      weathering: 0.0
+    framing:
+      families: [{family: dark_oak, weight: 1.0}]
+    roof:
+      families: [{family: dark_oak, weight: 1.0}]
+      texture_rate: 0.0
+    trim:
+      families: [{family: dark_oak, weight: 1.0}]
+    foundation:
+      families: [{family: stone_bricks, weight: 0.6}, {family: andesite, weight: 0.4}]
+      weathering: 0.4
+      texture_rate: 0.3
+    secondary:
+      families: [{family: stone_bricks, weight: 1.0}]
+    accent:
+      families: [{family: red_concrete, weight: 1.0}]
+    glass:
+      families: [{family: glass, weight: 1.0}]

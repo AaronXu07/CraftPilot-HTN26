@@ -1,0 +1,64 @@
+description: >
+  A medieval stone castle keep. A tall rectangular keep with a crenellated parapet, four round
+  corner towers with conical roofs rising above the walls, arrow slit windows, buttresses at the
+  base, and a stone brick palette that goes from mossy cobblestone at the bottom to clean stone
+  bricks at the top.
+tags: [castle, keep, fortress, medieval, stone, towers, crenellations, battlements, stronghold, fort]
+program:
+  label: castle keep
+  bounds: {width: 41, height: 40, depth: 41}
+  parts:
+    - name: keep
+      shape: rect
+      size: {width: 0.8, depth: 0.8}
+      floors: 4
+      floor_height: 5
+      roof: {type: parapet, crenellated: true, overhang: 0}
+    - name: gatehouse
+      shape: rect
+      size: {width: 0.4, depth: 0.2}
+      floors: 2
+      floor_height: 5
+      roof: {type: parapet, crenellated: true, overhang: 0}
+      attach: {to: keep, side: south, align: center, overlap: 1}
+  facade:
+    bay_width: {min: 3, max: 4}
+    window: stair_slit
+    window_width: 1
+    window_height: 2
+    shutters: 0.0
+    sills: false
+    framing: none
+    symmetry: true
+    max_flat_run: 6
+  depth:
+    frame_protrude: 0
+    window_inset: 0
+    eave_trim: false
+    foundation_rise: 2
+    foundation_outset: 1
+    corbels: true
+  attachments:
+    - {kind: tower, count: 4, spacing: regular, params: {roof: cone, radius: 3}}
+    - {kind: buttress, count: 8, spacing: regular}
+  palette:
+    primary:
+      families: [{family: cobblestone, weight: 0.6}, {family: stone_bricks, weight: 1.0}, {family: andesite, weight: 0.5}]
+      gradient: vertical
+      weathering: 0.7
+      texture_rate: 0.3
+    roof:
+      families: [{family: deepslate_tiles, weight: 1.0}]
+      texture_rate: 0.15
+    foundation:
+      families: [{family: cobbled_deepslate, weight: 0.5}, {family: cobblestone, weight: 0.5}]
+      weathering: 0.9
+      texture_rate: 0.35
+    secondary:
+      families: [{family: stone_bricks, weight: 1.0}]
+      weathering: 0.5
+      texture_rate: 0.3
+    trim:
+      families: [{family: stone_bricks, weight: 1.0}]
+    framing:
+      families: [{family: dark_oak, weight: 1.0}]

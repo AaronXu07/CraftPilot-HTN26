@@ -1,0 +1,60 @@
+description: >
+  A cozy two storey cottage. Oak plank walls with dark oak log corner framing, a steep
+  dark oak gable roof with one block overhang, a cobblestone and stone brick foundation
+  that weathers mossy near the ground, one stone chimney on a gable end, dormers on the
+  front slope, and a small porch over the door.
+tags: [cottage, house, cabin, home, cozy, small, medieval, rustic, village]
+program:
+  label: cottage
+  bounds: {width: 19, height: 20, depth: 15}
+  parts:
+    - name: main
+      shape: rect
+      size: {width: 1.0, depth: 1.0}
+      floors: 2
+      floor_height: 4
+      roof: {type: gable, pitch: 1.0, overhang: 1, ridge_axis: x}
+  facade:
+    bay_width: {min: 3, max: 4}
+    window: plain
+    window_width: 1
+    window_height: 2
+    shutters: 0.6
+    sills: true
+    framing: corners
+    symmetry: true
+    max_flat_run: 6
+  depth:
+    frame_protrude: 1
+    window_inset: 1
+    eave_trim: true
+    foundation_rise: 1
+    foundation_outset: 1
+    corbels: true
+  attachments:
+    - {kind: chimney, count: 1}
+    - {kind: dormer, count: 2, spacing: regular}
+    - {kind: porch}
+  palette:
+    primary:
+      families: [{family: oak, weight: 1.0}]
+      texture_rate: 0.15
+      weathering: 0.0
+    framing:
+      families: [{family: dark_oak, weight: 1.0}]
+    roof:
+      families: [{family: dark_oak, weight: 1.0}]
+      texture_rate: 0.0
+    foundation:
+      families: [{family: cobblestone, weight: 0.6}, {family: stone_bricks, weight: 0.4}]
+      gradient: vertical
+      weathering: 0.8
+      texture_rate: 0.3
+    secondary:
+      families: [{family: stone_bricks, weight: 0.7}, {family: cobblestone, weight: 0.3}]
+      weathering: 0.5
+      texture_rate: 0.25
+    trim:
+      families: [{family: spruce, weight: 1.0}]
+    glass:
+      families: [{family: glass, weight: 1.0}]

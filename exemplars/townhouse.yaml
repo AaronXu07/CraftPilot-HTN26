@@ -1,0 +1,61 @@
+description: >
+  A narrow three storey brick townhouse. A mansard roof with dormers, a taller ground floor
+  with arched shop windows under awnings, tall upper windows with stone sills, a jettied
+  first floor on corbels, and a small balcony over the door.
+tags: [townhouse, terrace, row, house, urban, city, shop, narrow, tall, brick, mansard, victorian]
+program:
+  label: townhouse
+  bounds: {width: 15, height: 24, depth: 17}
+  parts:
+    - name: house
+      shape: rect
+      size: {width: 0.8, depth: 0.9}
+      floors: 3
+      floor_height: 4
+      roof: {type: mansard, pitch: 1.0, overhang: 1}
+  facade:
+    bay_width: {min: 3, max: 3}
+    window: tall
+    window_width: 1
+    window_height: 3
+    shutters: 0.0
+    sills: true
+    framing: corners
+    symmetry: true
+    max_flat_run: 5
+    ground_floor_taller: 1
+  depth:
+    frame_protrude: 1
+    window_inset: 1
+    eave_trim: true
+    foundation_rise: 1
+    foundation_outset: 1
+    corbels: true
+  attachments:
+    - {kind: dormer, count: 2, spacing: regular}
+    - {kind: awning}
+    - {kind: balcony, count: 1, params: {width: 3, depth: 1}}
+    - {kind: chimney, count: 1}
+    - {kind: jetty, params: {depth: 1}}
+  interior: {stairs: true, doorways: true, partitions: false, lighting: true}
+  palette:
+    primary:
+      families: [{family: bricks, weight: 1.0}]
+      texture_rate: 0.0
+    framing:
+      families: [{family: stone_bricks, weight: 1.0}]
+    roof:
+      families: [{family: deepslate_tiles, weight: 1.0}]
+      texture_rate: 0.1
+    trim:
+      families: [{family: stone_bricks, weight: 1.0}]
+    foundation:
+      families: [{family: polished_andesite, weight: 1.0}]
+      weathering: 0.4
+      texture_rate: 0.25
+    secondary:
+      families: [{family: stone_bricks, weight: 1.0}]
+    accent:
+      families: [{family: dark_oak, weight: 1.0}]
+    glass:
+      families: [{family: glass, weight: 1.0}]
