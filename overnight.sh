@@ -10,7 +10,7 @@ set -u
 HOURS="${1:-4}"
 MODEL="${MODEL:-opus}"             # override: MODEL=sonnet ./overnight.sh 4
 MAX_TURNS="${MAX_TURNS:-80}"       # per-iteration cap; the outer loop bounds time
-END=$(( $(date +%s) + HOURS * 3600 ))
+END=$(( $(date +%s) + HOURS * 60 ))
 STAMP="$(date +%Y%m%d-%H%M)"
 BRANCH="overnight/$STAMP"
 LOGDIR="runs/overnight/$STAMP"
