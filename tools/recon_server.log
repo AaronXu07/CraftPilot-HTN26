@@ -1,0 +1,16 @@
+{"event": "listening", "port": 7790}
+{"event": "loaded", "seconds": 11.9, "device": "mps"}
+{"event": "warm", "seconds": 1.0}
+{"event": "listening", "port": 7790}
+{"event": "loaded", "seconds": 3.7, "device": "mps"}
+{"event": "warm", "seconds": 0.9}
+{"event": "listening", "port": 7790}
+{"event": "loaded", "seconds": 3.6, "device": "mps"}
+{"event": "warm", "seconds": 0.8}
+{"event": "listening", "port": 7790}
+{"event": "loaded", "seconds": 3.2, "device": "mps"}
+{"event": "warm", "seconds": 0.7}
+{"event": "listening", "port": 7790}
+{"event": "loaded", "seconds": 3.5, "device": "mps"}
+{"event": "rembg", "seconds": 0.8}
+{"event": "warm", "seconds": 0.8}
