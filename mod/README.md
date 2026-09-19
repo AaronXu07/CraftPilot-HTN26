@@ -1,30 +1,37 @@
 # Minecraft Copilot — Fabric bridge mod (Track 1)
 
-A thin **client-side** Fabric mod for Minecraft **1.21.1**. It exposes the running game to the
+A thin **client-side** Fabric mod for Minecraft **26.2**. It exposes the running game to the
 Python agent over HTTP on `127.0.0.1:7777` (7 endpoints) and adds the `/cp <text>` chat command
 that forwards requests to the agent. No build logic lives in Java (plan.md §10).
 
 | | |
 |---|---|
 | Mod id | `copilot` (package `dev.craftpilot.copilot`) |
-| Minecraft | 1.21.1 (yarn `1.21.1+build.3`) |
-| Fabric Loader | 0.16.14 |
-| Fabric API | 0.116.17+1.21.1 |
-| Java | 21 (compile target and runtime) |
-| Build | Gradle 8.10 wrapper, fabric-loom 1.8-SNAPSHOT |
+| Minecraft | 26.2 (Mojang official mappings — yarn stopped at 1.21.x) |
+| Fabric Loader | 0.19.5 |
+| Fabric API | 0.161.0+26.2 |
+| Java | 25 (compile target and runtime; 26.2 requires it) |
+| Build | Gradle 9.5.1 wrapper, fabric-loom 1.17-SNAPSHOT |
 
 ## Build
 
 The wrapper downloads Gradle, Loom, Minecraft and the mappings on first run (needs network).
-**A JDK 21 is required** — this machine currently ships only JDK 27 and no system Gradle, so
-point `JAVA_HOME` at a JDK 21 (e.g. a Temurin tarball extracted anywhere; no install needed):
+**A JDK 25 is required** (Minecraft 26.2's minimum). A Temurin tarball extracted anywhere works,
+no installer needed — this machine has one at `~/.jdks/jdk-25.0.4.1+1`. If `~/.gradle/gradle.properties`
+pins `org.gradle.java.home` to an older JDK, override it on the command line:
 
 ```bash
 cd mod
-export JAVA_HOME=/path/to/jdk-21/Contents/Home     # macOS layout; on Linux: /path/to/jdk-21
-./gradlew build --no-daemon
+export JAVA_HOME=~/.jdks/jdk-25.0.4.1+1/Contents/Home     # macOS layout; on Linux: /path/to/jdk-25
+./gradlew -Dorg.gradle.java.home="$JAVA_HOME" build --no-daemon
 # -> build/libs/copilot-0.1.0.jar
 ```
+
+Port notes (1.21.1 → 26.2, 2026-09-19): yarn → Mojang names (`Text`→`Component`, `ServerWorld`→`ServerLevel`,
+`Identifier` is now `net.minecraft.resources.Identifier`, `RegistryKey.getValue()`→`ResourceKey.identifier()`),
+`Block.NOTIFY_*`→`Block.UPDATE_*`, `postProcessState`→`updateFromNeighbourShapes`, `refreshPositionAndAngles`→`snapTo`,
+`GameProfile.getName()`→`Player.nameAndId().name()`, chat lines via `LocalPlayer.sendSystemMessage`, and Fabric's
+`ClientCommandManager`→`ClientCommands`.
 
 Useful variations:
 
@@ -35,8 +42,8 @@ Useful variations:
 
 ## Run
 
-1. Install [Fabric Loader](https://fabricmc.net/use/installer/) for 1.21.1 in the launcher.
-2. Drop `build/libs/copilot-0.1.0.jar` **and** the matching `fabric-api-0.116.x+1.21.1.jar`
+1. Install [Fabric Loader](https://fabricmc.net/use/installer/) for 26.2 in the launcher.
+2. Drop `build/libs/copilot-0.1.0.jar` **and** the matching `fabric-api-0.161.x+26.2.jar`
    into `.minecraft/mods/`.
 3. Start the game, open (or create) a **single-player world with cheats enabled** (needed for
    `/gamemode` during camera orbits; block placement itself does not need cheats).
@@ -71,7 +78,7 @@ with status 400 (bad request), 409 (no world/player loaded) or 500 (unexpected).
 
 | Endpoint | Request | Response |
 |---|---|---|
-| `GET /health` | – | `{"ok":true,"mod_version":"0.1.0","mc_version":"1.21.1","client_jar":"/abs/path/1.21.1.jar"\|null,"world_loaded":bool,"player":"Steve"\|null,"pending_chunks":n}` |
+| `GET /health` | – | `{"ok":true,"mod_version":"0.1.0","mc_version":"26.2","client_jar":"/abs/path/26.2.jar"\|null,"world_loaded":bool,"player":"Steve"\|null,"pending_chunks":n}` |
 | `GET /player` | – | `{"name","pos":[x,y,z],"yaw","pitch","facing":"north\|east\|south\|west","looking_at":{"pos":[x,y,z],"block":"minecraft:stone","side":"up"}\|null,"dimension":"minecraft:overworld"}` |
 | `POST /scan` | `{"min":[x,y,z],"max":[x,y,z]}` (inclusive, ≤ 2M blocks) | `{"palette":["minecraft:air", ...],"blocks":[[x,y,z,paletteIndex],...],"count":n}` — index 0 is always air |
 | `POST /setblocks` | `{"chunks":[{"blocks":[[x,y,z,"minecraft:stone"],...],"delay_ms":60}],"flags":3}` or `{"blocks":[...]}` | `{"queued":n,"chunks":k,"invalid":m,"invalid_samples":[...]}` — placement is asynchronous |

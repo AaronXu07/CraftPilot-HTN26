@@ -2,11 +2,11 @@ package dev.craftpilot.copilot;
 
 import com.mojang.brigadier.arguments.StringArgumentType;
 import net.fabricmc.api.ClientModInitializer;
-import net.fabricmc.fabric.api.client.command.v2.ClientCommandManager;
+import net.fabricmc.fabric.api.client.command.v2.ClientCommands;
 import net.fabricmc.fabric.api.client.command.v2.ClientCommandRegistrationCallback;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientLifecycleEvents;
-import net.minecraft.client.MinecraftClient;
-import net.minecraft.text.Text;
+import net.minecraft.client.Minecraft;
+import net.minecraft.network.chat.Component;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -54,16 +54,16 @@ public class CopilotClientMod implements ClientModInitializer {
         });
 
         ClientCommandRegistrationCallback.EVENT.register((dispatcher, registryAccess) -> dispatcher.register(
-                ClientCommandManager.literal("cp")
+                ClientCommands.literal("cp")
                         .executes(ctx -> {
-                            ctx.getSource().sendFeedback(Text.literal(
+                            ctx.getSource().sendFeedback(Component.literal(
                                     "§6[copilot]§r usage: /cp <what to build or change>  e.g. /cp build a castle with four towers"));
                             return 1;
                         })
-                        .then(ClientCommandManager.argument("text", StringArgumentType.greedyString())
+                        .then(ClientCommands.argument("text", StringArgumentType.greedyString())
                                 .executes(ctx -> {
                                     String text = StringArgumentType.getString(ctx, "text");
-                                    String player = ctx.getSource().getPlayer().getGameProfile().getName();
+                                    String player = ctx.getSource().getPlayer().nameAndId().name();
                                     String cmd = text.trim().toLowerCase();
                                     // Job controls talk to /jobs/{id} directly; if no job is known they
                                     // fall through to the agent as ordinary chat (`status` = scene outline).
@@ -73,7 +73,7 @@ public class CopilotClientMod implements ClientModInitializer {
                                     if (cmd.equals("status") && AgentChatClient.statusAsync()) {
                                         return 1;
                                     }
-                                    ctx.getSource().sendFeedback(Text.literal("§6[copilot]§7 thinking..."));
+                                    ctx.getSource().sendFeedback(Component.literal("§6[copilot]§7 thinking..."));
                                     AgentChatClient.sendAsync(player, text);
                                     return 1;
                                 }))));
@@ -86,10 +86,10 @@ public class CopilotClientMod implements ClientModInitializer {
      */
     public static void chat(String text) {
         String line = formatLine(text);
-        MinecraftClient client = MinecraftClient.getInstance();
+        Minecraft client = Minecraft.getInstance();
         client.execute(() -> {
-            if (client.inGameHud != null) {
-                client.inGameHud.getChatHud().addMessage(Text.literal(line));
+            if (client.player != null) {
+                client.player.sendSystemMessage(Component.literal(line));
             }
         });
     }

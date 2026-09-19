@@ -1,13 +1,13 @@
 package dev.craftpilot.copilot;
 
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerTickEvents;
-import net.minecraft.block.Block;
-import net.minecraft.block.BlockState;
-import net.minecraft.registry.RegistryKey;
+import net.minecraft.world.level.block.Block;
+import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.resources.ResourceKey;
 import net.minecraft.server.MinecraftServer;
-import net.minecraft.server.world.ServerWorld;
-import net.minecraft.util.math.BlockPos;
-import net.minecraft.world.World;
+import net.minecraft.server.level.ServerLevel;
+import net.minecraft.core.BlockPos;
+import net.minecraft.world.level.Level;
 
 import java.util.ArrayDeque;
 import java.util.Deque;
@@ -19,16 +19,16 @@ import java.util.List;
  * bottom-up. Everything here runs on the server thread via {@code END_SERVER_TICK}.
  *
  * <p>After a chunk is set, a <b>connectivity post-process pass</b> re-evaluates every placed block
- * with {@link Block#postProcessState}: {@code setBlockState(..., NOTIFY_ALL)} updates the
+ * with {@link Block#updateFromNeighbourShapes}: {@code setBlock(..., UPDATE_ALL)} updates the
  * neighbours' shapes but never recomputes the placed block's own connectivity (we skip
- * {@code getPlacementState}), so without this pass the last stair in a row stays
+ * {@code getStateForPlacement}), so without this pass the last stair in a row stays
  * {@code shape=straight} and fences/walls/panes placed after their neighbours stay unconnected.
  */
 public final class BlockPlacer {
     public record Placement(BlockPos pos, BlockState state) {
     }
 
-    public record Chunk(RegistryKey<World> dimension, List<Placement> blocks, int delayTicks, int flags) {
+    public record Chunk(ResourceKey<Level> dimension, List<Placement> blocks, int delayTicks, int flags) {
     }
 
     private static final Deque<Chunk> QUEUE = new ArrayDeque<>();
@@ -86,18 +86,18 @@ public final class BlockPlacer {
             }
             waitTicks = Math.max(0, chunk.delayTicks());
         }
-        ServerWorld world = server.getWorld(chunk.dimension());
+        ServerLevel world = server.getLevel(chunk.dimension());
         if (world == null) {
-            world = server.getOverworld();
+            world = server.overworld();
         }
         int placed = 0;
         for (Placement p : chunk.blocks()) {
             try {
-                if (world.setBlockState(p.pos(), p.state(), chunk.flags())) {
+                if (world.setBlock(p.pos(), p.state(), chunk.flags())) {
                     placed++;
                 }
             } catch (Exception e) {
-                CopilotClientMod.LOGGER.warn("[copilot] setBlockState failed at {}: {}", p.pos(), e.toString());
+                CopilotClientMod.LOGGER.warn("[copilot] setBlock failed at {}: {}", p.pos(), e.toString());
             }
         }
         int fixedCount = postProcess(world, chunk);
@@ -110,27 +110,27 @@ public final class BlockPlacer {
     /**
      * Recompute each placed block's own connectivity from its (now complete) neighbourhood. One
      * extra {@code getBlockState} per block; only changed states are written, with
-     * {@code NOTIFY_LISTENERS | FORCE_STATE} so there is no further neighbour cascade.
+     * {@code UPDATE_CLIENTS | UPDATE_KNOWN_SHAPE} so there is no further neighbour cascade.
      * Air (removed) positions are skipped, and a result of air is ignored so props the agent
      * placed deliberately on unsupported spots are never deleted here.
      */
-    private static int postProcess(ServerWorld world, Chunk chunk) {
+    private static int postProcess(ServerLevel world, Chunk chunk) {
         int fixedCount = 0;
-        int flags = Block.NOTIFY_LISTENERS | Block.FORCE_STATE;
+        int flags = Block.UPDATE_CLIENTS | Block.UPDATE_KNOWN_SHAPE;
         for (Placement p : chunk.blocks()) {
             try {
                 BlockState cur = world.getBlockState(p.pos());
                 if (cur.isAir()) {
                     continue;
                 }
-                BlockState fixed = Block.postProcessState(cur, world, p.pos());
+                BlockState fixed = Block.updateFromNeighbourShapes(cur, world, p.pos());
                 if (fixed != cur && !fixed.isAir()) {
-                    if (world.setBlockState(p.pos(), fixed, flags)) {
+                    if (world.setBlock(p.pos(), fixed, flags)) {
                         fixedCount++;
                     }
                 }
             } catch (Exception e) {
-                CopilotClientMod.LOGGER.warn("[copilot] postProcessState failed at {}: {}", p.pos(), e.toString());
+                CopilotClientMod.LOGGER.warn("[copilot] updateFromNeighbourShapes failed at {}: {}", p.pos(), e.toString());
             }
         }
         return fixedCount;
