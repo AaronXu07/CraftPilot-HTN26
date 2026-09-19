@@ -16,17 +16,18 @@ from craftpilot.llm.azure import endpoint_root
 PALETTES = ("auto", "stone", "wood", "metal", "colorful")
 MIN_HEIGHT, MAX_HEIGHT, DEFAULT_HEIGHT = 6, 96, 40
 
-# Families of full blocks per palette hint (names from objects.voxelize.PALETTE). "auto" = everything.
+# Families of full blocks per palette hint (names from objects.voxelize.PALETTE). "auto" = everything. Every
+# family carries the neutrals: a wooden ship still has white sails, a bronze bust still has dark eye sockets.
+_NEUTRALS = ["white_concrete", "white_wool", "quartz_block", "light_gray_concrete", "gray_concrete", "black_concrete", "black_wool"]
 PALETTE_FAMILIES: dict[str, list[str]] = {
     "stone": ["stone", "smooth_stone", "stone_bricks", "cobblestone", "andesite", "polished_andesite", "diorite",
               "polished_diorite", "calcite", "deepslate", "polished_deepslate", "deepslate_bricks", "deepslate_tiles",
-              "cobbled_deepslate", "tuff", "polished_tuff", "blackstone", "gray_concrete", "light_gray_concrete",
-              "white_concrete", "black_concrete"],
+              "cobbled_deepslate", "tuff", "polished_tuff", "blackstone", *_NEUTRALS],
     "wood": ["oak_planks", "spruce_planks", "birch_planks", "dark_oak_planks", "jungle_planks", "acacia_planks",
              "mangrove_planks", "oak_log", "spruce_log", "stripped_oak_log", "stripped_spruce_log", "brown_terracotta",
-             "brown_concrete", "black_concrete"],
-    "metal": ["iron_block", "white_concrete", "light_gray_concrete", "gray_concrete", "black_concrete", "polished_deepslate",
-              "gold_block", "waxed_copper_block", "waxed_exposed_copper", "waxed_oxidized_copper", "polished_blackstone"],
+             "brown_concrete", *_NEUTRALS],
+    "metal": ["iron_block", "polished_deepslate", "gold_block", "waxed_copper_block", "waxed_exposed_copper",
+              "waxed_oxidized_copper", "polished_blackstone", *_NEUTRALS],
 }
 
 SYSTEM = """You turn a Minecraft player's request for an OBJECT (statue, creature, character, vehicle, weapon, prop)
@@ -39,8 +40,13 @@ into a brief for an image model and a voxeliser. Reply with JSON only.
   never fine textures (feathers, scales, fur strands, filigree): they turn into noise.
 - plinth: true for statues/monuments/busts (a plain rectangular plinth under the figure), false for vehicles,
   weapons, props, animals meant to stand on the ground.
-- height: total height in blocks (6-96). Bigger reads better: default 40 for a statue, 32 for a
-  creature/character, 20 for a vehicle, 30 for a weapon planted in the ground. Respect any number the player gives.
+- height: the object's LARGEST dimension in blocks (6-96) — height for a statue, length for a ship or car.
+  Bigger reads better: default 40 for a statue, 32 for a creature/character, 36 for a vehicle or ship (its
+  length), 30 for a weapon planted in the ground. "big" means 1.5x, "huge"/"giant"/"massive" 2x (cap 96).
+  Respect any number the player gives.
+- Thin parts do not survive: masts, rigging, ropes, wires, antennas, blades thinner than 1/15 of the object.
+  Describe such subjects as a chunky toy-like model with thick simplified parts (a ship: solid thick masts,
+  billowing solid sails, no rigging) so they come out as blocks.
 - palette: "stone" (grey statue), "wood", "metal", "colorful" (painted/coloured subject) or "auto".
 - style: 3-8 words of rendering style for the image model, e.g. "carved granite, weathered", "glossy red paint,
   chrome trim", "smooth marble". Match the player's intent.
@@ -115,6 +121,11 @@ def fallback_brief(text: str) -> ObjectBrief:
     if any(w in t for w in ("iron", "steel", "metal", "chrome", "robot", "mech")):
         palette = "metal"
     height = _height_from_text(text) or (40 if plinth else 32)
+    if not _height_from_text(text):
+        if any(w in t for w in ("huge", "giant", "massive", "enormous", "colossal")):
+            height *= 2
+        elif any(w in t for w in ("big", "large", "tall")):
+            height = int(height * 1.5)
     subject = re.sub(r"^\s*(please\s+)?((build|make|create|spawn)\s+(me\s+)?)?(a|an|the)\s+", "", text, flags=re.IGNORECASE).strip()
     return ObjectBrief(subject=subject or text, plinth=plinth, height=_clamp(height), palette=palette,
                        style="carved stone, matte" if palette == "stone" else "clear readable silhouette",

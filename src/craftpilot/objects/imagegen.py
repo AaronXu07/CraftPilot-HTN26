@@ -33,7 +33,8 @@ def image_deployment() -> str:
 
 # Appended to every prompt: what survives being built from 1 m blocks (bold masses) and what does not (fine
 # texture). Stated separately from the LLM's style so a "weathered granite" style still comes out chunky.
-BLOCK_FRIENDLY = "Stylized sculpture with bold, chunky, simplified forms and smooth surfaces; no fine texture or thin details."
+BLOCK_FRIENDLY = ("Stylized as a chunky, simplified toy-like model: bold masses, thick simplified parts, smooth surfaces; "
+                  "no fine texture, no thin poles, ropes, wires or rigging.")
 
 
 def compose_prompt(subject: str, plinth: bool, style: str = "", camera: int = 0) -> str:

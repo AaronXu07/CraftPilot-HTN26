@@ -224,7 +224,7 @@ def classify_shapes(occ2: np.ndarray) -> tuple[np.ndarray, np.ndarray, np.ndarra
 
 def voxelize_mesh(mesh: trimesh.Trimesh, height: int, max_width: int = 96, fill: bool = True, up: str = "z",
                   yaw_deg: float = 0.0, color_smooth_k: int = 24, fit: bool = True) -> VoxelObject:
-    """Scale to `height` blocks tall (capped so width/depth stay <= max_width), voxelise at 1 block pitch,
+    """Scale so the largest dimension is `height` blocks (capped so width/depth stay <= max_width), voxelise,
     fill the interior, colour each voxel from the nearest vertex. `yaw_deg` rotates about +y first
     (0 keeps the reconstruction's own facing, which for TripoSR is the input image's view direction).
     With `fit`, the mesh is rasterised at half-block pitch and every block gets a shape (full / slab /
@@ -234,7 +234,9 @@ def voxelize_mesh(mesh: trimesh.Trimesh, height: int, max_width: int = 96, fill:
         m.apply_transform(trimesh.transformations.rotation_matrix(np.radians(yaw_deg), [0, 1, 0]))
     lo, hi = m.bounds
     extent = hi - lo
-    scale = height / max(float(extent[1]), 1e-6)
+    # `height` is the object's largest dimension: a statue's height, a ship's or car's length. Scaling by
+    # height alone made a 24-block ship 8 blocks tall and 19 long.
+    scale = height / max(float(extent.max()), 1e-6)
     widest = max(float(extent[0]), float(extent[2])) * scale
     if widest > max_width:
         scale *= max_width / widest
