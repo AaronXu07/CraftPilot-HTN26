@@ -138,6 +138,10 @@ class RoofSpec(BaseModel):
                                         "(East Asian, French); convex = steep at the eave and rounded at the top (bell, barrel)")
     curl: float = Field(default=0.0, description="Blocks the eave corners sweep upward, 0 to 3 (East Asian roofs use 1.5 to 2.5)")
     ridge_offset: float = Field(default=0.0, description="Gable only: shifts the ridge toward one eave, -0.4 to 0.4, giving two different slopes (saltbox)")
+    edge_width: int = Field(default=0, description="Rows in from the roof boundary built in the roof_edge palette (0 = none; 1 is usual)")
+    edge_lines: Literal["none", "ridge", "hips", "bands"] = Field(
+        default="none", description="Also draw lines across the field in the roof_edge palette: the ridge, the ridge plus hip lines, or horizontal bands")
+    band_spacing: int = Field(default=3, description="Rows between bands when edge_lines is bands")
 
 
 class PartSpec(BaseModel):
@@ -166,8 +170,9 @@ class FacadeRules(BaseModel):
     symmetry: bool = True
     max_flat_run: int = Field(default=7, description="Longest wall run without a break")
     ground_floor_taller: int = Field(default=0, description="Extra blocks of height on the ground floor")
-    window_surrounds: Literal["auto", "none", "always"] = Field(
-        default="auto", description="Trim-stone jambs and lintel around each window; auto = when the trim is a different material from the wall")
+    window_trim: Literal["none", "lintel", "surround"] = Field(
+        default="none", description="none = plain openings with a sill (most buildings); lintel = one accent or trim block over each "
+                                    "window (brick, plaster); surround = trim jambs and lintel (grand stone-trimmed facades only)")
     window_boxes: float = Field(default=0.0, description="0..1 chance a window gets a flowering box under its sill (cottages, inns)")
     lamp_posts: bool = Field(default=True, description="A pair of lantern posts flanking the approach to the door")
     entrance: Literal["auto", "door", "double", "portal", "gate"] = Field(
@@ -247,6 +252,7 @@ class RolePalette(BaseModel):
 class PaletteSpec(BaseModel):
     primary: RolePalette
     roof: RolePalette
+    roof_edge: RolePalette | None = Field(default=None, description="Blockset for roof edges and dividing lines, when the roof's edge_width or edge_lines is set")
     secondary: RolePalette | None = None
     accent: RolePalette | None = None
     framing: RolePalette | None = None

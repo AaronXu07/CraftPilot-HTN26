@@ -30,7 +30,7 @@ from craftpilot.program.model import (
     Size,
 )
 
-OVERWRITABLE = {Role.EMPTY, Role.INTERIOR, Role.ROOF, Role.ROOF_FILL, Role.ROOF_TRIM}
+OVERWRITABLE = {Role.EMPTY, Role.INTERIOR, Role.ROOF, Role.ROOF_FILL, Role.ROOF_TRIM, Role.ROOF_EDGE}
 
 
 def _axis_dirs(side: int) -> tuple[int, int, int, int]:
@@ -283,10 +283,10 @@ def _place_dormer(grid: SemanticGrid, part: LayoutPart, side: int, cx: int, cz: 
                 put(wx, wz, y, Role.WALL, BShape.FULL, nrm, Flag.PERIMETER)
             # Wall below the eave inside the footprint where the roof was, down to the floor.
             for y in range(y_w0, base):
-                if grid.in_bounds(wx, y, wz) and int(grid.role[wx, y, wz]) in (Role.ROOF, Role.ROOF_FILL):
+                if grid.in_bounds(wx, y, wz) and int(grid.role[wx, y, wz]) in (Role.ROOF, Role.ROOF_FILL, Role.ROOF_EDGE):
                     grid.set(wx, y, wz, Role.WALL, BShape.FULL, nrm, part.index, 1.0, Flag.PERIMETER)
         for y in range(y_w0, y_w1 + 1):
-            if grid.in_bounds(dx, y, dz) and int(grid.role[dx, y, dz]) in (Role.EMPTY, Role.ROOF, Role.ROOF_FILL):
+            if grid.in_bounds(dx, y, dz) and int(grid.role[dx, y, dz]) in (Role.EMPTY, Role.ROOF, Role.ROOF_FILL, Role.ROOF_EDGE):
                 grid.set(dx, y, dz, Role.INTERIOR, BShape.FULL, Dir.NONE, part.index, 1.0)
         for wx, wz in ((dx, dz), (dx - ax, dz - az), (dx + ax, dz + az)):
             if grid.in_bounds(wx, y_w0 - 1, wz) and int(grid.role[wx, y_w0 - 1, wz]) in (Role.EMPTY, Role.INTERIOR):

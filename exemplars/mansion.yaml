@@ -13,20 +13,20 @@ program:
       size: {width: 0.5, depth: 1.0}
       floors: 3
       floor_height: 4
-      roof: {type: hip, pitch: 1.5, overhang: 1}
+      roof: {type: hip, pitch: 1.5, overhang: 1, edge_width: 1, edge_lines: hips}
     - name: west_wing
       shape: rect
       size: {width: 0.5, depth: 0.75}
       floors: 2
       floor_height: 4
-      roof: {type: hip, pitch: 1.0, overhang: 1}
+      roof: {type: hip, pitch: 1.0, overhang: 1, edge_width: 1, edge_lines: hips}
       attach: {to: center, side: west, align: center, overlap: 1}
     - name: east_wing
       shape: rect
       size: {width: 0.5, depth: 0.75}
       floors: 2
       floor_height: 4
-      roof: {type: hip, pitch: 1.0, overhang: 1}
+      roof: {type: hip, pitch: 1.0, overhang: 1, edge_width: 1, edge_lines: hips}
       attach: {to: center, side: east, align: center, overlap: 1}
   facade:
     bay_width: {min: 3, max: 4}
@@ -35,6 +35,7 @@ program:
     window_height: 3
     shutters: 0.0
     sills: true
+    window_trim: lintel
     framing: bays
     symmetry: true
     max_flat_run: 5
@@ -52,6 +53,9 @@ program:
     - {kind: chimney, count: 2}
     - {kind: porch, params: {width: 5, depth: 2}}
   palette:
+    roof_edge:
+      families: [{family: polished_deepslate, weight: 1.0}]
+      texture_rate: 0.1
     primary:
       families: [{family: bricks, weight: 1.0}]
       texture_rate: 0.15

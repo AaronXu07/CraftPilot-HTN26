@@ -24,7 +24,7 @@ RECT_LIKE = {Shape.rect, Shape.cross, Shape.ring}
 
 _BLOCKING = {Role.WALL, Role.FRAME, Role.ROOF, Role.ROOF_FILL, Role.CHIMNEY, Role.PILLAR, Role.FOUNDATION,
              Role.WINDOW, Role.DOOR, Role.PARAPET, Role.MERLON}
-_SURROUNDS = False   # set per build in facade()
+
 
 
 def _eligible(grid: SemanticGrid, part: LayoutPart, x: int, z: int, side: int, rows: range) -> bool:
@@ -164,27 +164,25 @@ def _window(grid: SemanticGrid, cells: list[tuple[int, int]], side: int, wb: int
                 away = (Dir.EAST if sgn > 0 else Dir.WEST) if along_x else (Dir.SOUTH if sgn > 0 else Dir.NORTH)
                 grid.set(fx, top + 1, fz, Role.TRIM, BShape.STAIR_UPSIDE, away, part.index,
                          grid.h_norm[fx, top + 1, fz], Flag.PERIMETER)
-    if accent and style in (WindowStyle.plain, WindowStyle.tall, WindowStyle.round) and top + 1 < ceiling:
-        for (x, z) in cells:
-            if grid.role[x, top + 1, z] == Role.WALL:
-                grid.set(x, top + 1, z, Role.ACCENT, BShape.FULL, side, part.index, grid.h_norm[x, top + 1, z],
-                         Flag.PERIMETER | Flag.NO_TEXTURE)
-    # Trim-stone surround: jambs beside the window and a lintel above (the accent lintel wins if present).
-    if _SURROUNDS and style not in (WindowStyle.wall, WindowStyle.slit, WindowStyle.stair_slit):
-        along_x = side in (Dir.NORTH, Dir.SOUTH)
-        first, last = cells[0], cells[-1]
-        jambs = [((first[0] - 1, first[1]) if along_x else (first[0], first[1] - 1)),
-                 ((last[0] + 1, last[1]) if along_x else (last[0], last[1] + 1))]
-        for (jx, jz) in jambs:
-            for y in range(wb, top + 1):
-                if grid.in_bounds(jx, y, jz) and grid.role[jx, y, jz] == Role.WALL:
-                    grid.set(jx, y, jz, Role.TRIM, BShape.FULL, side, part.index, grid.h_norm[jx, y, jz],
-                             Flag.PERIMETER | Flag.NO_TEXTURE)
-        if not accent and top + 1 < ceiling:
+    # Window trim, opt-in: a lintel (accent if there is one, else trim) or a full trim surround.
+    trim_mode = rules.window_trim
+    if trim_mode != "none" and style not in (WindowStyle.wall, WindowStyle.slit, WindowStyle.stair_slit):
+        lintel_role = Role.ACCENT if accent else Role.TRIM
+        if top + 1 < ceiling:
             for (x, z) in cells:
                 if grid.role[x, top + 1, z] == Role.WALL:
-                    grid.set(x, top + 1, z, Role.TRIM, BShape.FULL, side, part.index, grid.h_norm[x, top + 1, z],
+                    grid.set(x, top + 1, z, lintel_role, BShape.FULL, side, part.index, grid.h_norm[x, top + 1, z],
                              Flag.PERIMETER | Flag.NO_TEXTURE)
+        if trim_mode == "surround":
+            along_x = side in (Dir.NORTH, Dir.SOUTH)
+            first, last = cells[0], cells[-1]
+            jambs = [((first[0] - 1, first[1]) if along_x else (first[0], first[1] - 1)),
+                     ((last[0] + 1, last[1]) if along_x else (last[0], last[1] + 1))]
+            for (jx, jz) in jambs:
+                for y in range(wb, top + 1):
+                    if grid.in_bounds(jx, y, jz) and grid.role[jx, y, jz] == Role.WALL:
+                        grid.set(jx, y, jz, Role.TRIM, BShape.FULL, side, part.index, grid.h_norm[jx, y, jz],
+                                 Flag.PERIMETER | Flag.NO_TEXTURE)
     if rules.sills and style not in (WindowStyle.wall, WindowStyle.slit, WindowStyle.stair_slit):
         # Sill: an upside-down stair or a closed trapdoor ledge; sometimes a flowering window box instead.
         box = rules.window_boxes > 0 and grid.rng.random() < rules.window_boxes and wb - 1 > part.base_y
@@ -450,21 +448,6 @@ def _round_part(grid: SemanticGrid, part: LayoutPart, k: int, rules: FacadeRules
     return placed_door
 
 
-def _want_surrounds(program: BuildProgram) -> bool:
-    """Trim jambs and lintels read only when the trim is a different material from the wall."""
-    from craftpilot.blocks import catalog
-    mode = program.facade.window_surrounds
-    if mode == "none":
-        return False
-    if mode == "always":
-        return program.palette.trim is not None
-    if program.palette.trim is None or not program.palette.trim.families:
-        return False
-    trim = catalog.family(program.palette.trim.families[0].family)
-    prim = catalog.family(max(program.palette.primary.families, key=lambda f: f.weight).family)
-    return trim is not None and prim is not None and trim.material != prim.material
-
-
 def _lamp_posts(grid: SemanticGrid, part: LayoutPart, outset: int) -> int:
     """Two lantern posts flanking the approach, three blocks out from the door."""
     if grid.door is None:
@@ -562,8 +545,6 @@ def facade(grid: SemanticGrid, program: BuildProgram) -> None:
     rules = program.facade
     root_name = program.root().name
     accent = program.palette.accent is not None
-    global _SURROUNDS
-    _SURROUNDS = _want_surrounds(program)
     door_done = grid.door is not None
     # The door goes on whichever ground part is closest to the front (a gatehouse before the keep).
     ground = [p for p in grid.parts if not p.is_attachment and (p.spec.attach is None or p.spec.attach.side.value != "top")]

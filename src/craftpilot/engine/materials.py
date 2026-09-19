@@ -21,6 +21,7 @@ ROLE_PALETTE: dict[int, list[str]] = {
     Role.FOUNDATION: ["foundation", "secondary", "primary"],
     Role.FLOOR: ["primary"],
     Role.ROOF: ["roof"],
+    Role.ROOF_EDGE: ["roof_edge", "trim", "roof"],
     Role.ROOF_FILL: ["roof"],
     Role.ROOF_TRIM: ["roof"],
     Role.WINDOW: ["glass"],
@@ -237,9 +238,14 @@ def roof_companion(name: str) -> str | None:
         if abs(l - l0) > 0.16:
             continue
         dh = min(abs(h - h0), 1 - abs(h - h0))
-        if max(s_, s0) > 0.25 and dh > 30 / 360:
+        if max(s_, s0) > 0.25 and dh > 20 / 360:
             continue
-        d = abs(l - l0) * 3 + dh * 4 * max(s_, s0) + abs(s_ - s0) + abs(fam.noise - src.noise) * 0.5
+        d = abs(l - l0) * 3 + dh * 8 * max(s_, s0) + abs(s_ - s0) + abs(fam.noise - src.noise) * 0.5
+        if l > l0:
+            d += 0.15          # a slightly darker tile reads as shadow; a lighter one reads as a patch
+        themed = {"nether", "end", "ocean"}
+        if (fam.styles & themed) and not (src.styles & themed):
+            d += 0.3           # keep Nether, End and ocean blocks out of ordinary roofs
         if d < best_d:
             best, best_d = fam.name, d
     if best is None:
@@ -423,7 +429,7 @@ def _block_for(res: _Resolver, grid: SemanticGrid, x: int, y: int, z: int) -> Bl
     shape_name = SHAPE_NAME.get(shape, "full")
     need = shape_name if role in (Role.DOOR, Role.SHUTTER) else None
     rp = _role_palette(res.spec, chain, need)
-    is_roof = role in (Role.ROOF, Role.ROOF_FILL, Role.ROOF_TRIM)
+    is_roof = role in (Role.ROOF, Role.ROOF_FILL, Role.ROOF_TRIM, Role.ROOF_EDGE)
     fam = res.pick_family(rp, x, y, z, speckle=is_roof)
     # Roof texture: a single-family roof mixes in the closest-coloured kindred family at its texture rate.
     if is_roof and rp.texture_rate > 0 and len(rp.families) == 1:
