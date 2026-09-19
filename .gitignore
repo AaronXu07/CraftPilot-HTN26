@@ -1,0 +1,11 @@
+.venv/
+__pycache__/
+*.pyc
+.env
+logs/
+out/
+*.litematic
+*.program.json
+.pytest_cache/
+.ruff_cache/
+.cache/
