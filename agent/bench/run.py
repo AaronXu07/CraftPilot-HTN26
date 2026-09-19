@@ -2,6 +2,8 @@
 
     cd agent && ../.venv/bin/python -m bench.run [--only NAME] [--quick] [--profile] [--jobs N] [--fast] [--mock] [--out DIR]
     cd agent && ../.venv/bin/python -m bench.run --profile --from bench/out/<dir>   # latency table of an old run
+    cd agent && ../.venv/bin/python -m bench.run --rescore bench/out/<dir>          # re-judge rows whose scoring hit a 429
+    cd agent && ../.venv/bin/python -m bench.run --compare DIR_A DIR_B              # per-prompt A/B score + latency table
 
 Writes bench/out/<timestamp>/<name>.png, report.md and report.json. `--quick` runs the first
 QUICK_N prompts (iterate on this; the full set costs real credits). `--profile` prints a per-stage
@@ -186,12 +188,8 @@ def run(items: List[Dict[str, Any]], out_dir: str, fast: bool, mock: bool, profi
             results = list(pool.map(lambda it: run_one(it, out_dir, llm_factory(), fast, mock, profile_mode), items))
     else:
         results = [run_one(item, out_dir, llm_factory(), fast, mock, profile_mode) for item in items]
-    means = [r["scores"].get("mean") for r in results if r["scores"].get("mean") is not None]
-    report = {"timestamp": time.strftime("%Y-%m-%d %H:%M:%S"), "fast": fast, "mock": mock, "jobs": jobs, "mean": round(sum(means) / len(means), 2) if means else None, "results": results}
-    with open(os.path.join(out_dir, "report.json"), "w") as f:
-        json.dump(report, f, indent=1)
-    with open(os.path.join(out_dir, "report.md"), "w") as f:
-        f.write(report_md(report))
+    report: Dict[str, Any] = {"timestamp": time.strftime("%Y-%m-%d %H:%M:%S"), "fast": fast, "mock": mock, "jobs": jobs, "mean": None, "results": results}
+    _write_report(out_dir, report)
     print(f"\nmean score: {report['mean']}  →  {os.path.join(out_dir, 'report.md')}")
     if profile_mode:
         print()
@@ -328,6 +326,76 @@ def report_md(report: Dict[str, Any]) -> str:
     return "\n".join(lines)
 
 
+def _write_report(out_dir: str, report: Dict[str, Any]) -> None:
+    means = [r["scores"].get("mean") for r in report["results"] if r["scores"].get("mean") is not None]
+    report["mean"] = round(sum(means) / len(means), 2) if means else None
+    with open(os.path.join(out_dir, "report.json"), "w") as f:
+        json.dump(report, f, indent=1)
+    with open(os.path.join(out_dir, "report.md"), "w") as f:
+        f.write(report_md(report))
+
+
+def rescore(out_dir: str, prompts_path: str, force: bool = False) -> Dict[str, Any]:
+    """Re-score rows whose scoring failed (429 on the judge call) from the saved `<name>.png` and
+    `<name>.scene.json`; one judge call per row, the build itself is not re-run. Rewrites report.json/md."""
+    from PIL import Image
+
+    from copilot.engine.scene import Scene
+    from copilot.llm import AzureLLM
+
+    with open(os.path.join(out_dir, "report.json")) as f:
+        report = json.load(f)
+    with open(prompts_path) as f:
+        items = {i["name"]: i for i in json.load(f)}
+    llm = AzureLLM()
+    for r in report["results"]:
+        if r["scores"].get("mean") is not None and not force:
+            continue
+        item = items.get(r["name"]) or {"prompt": r["prompt"], "must_have": []}
+        png = os.path.join(out_dir, f"{r['name']}.png")
+        image = Image.open(png) if os.path.exists(png) else None
+        try:
+            with open(os.path.join(out_dir, f"{r['name']}.scene.json")) as f:
+                outline_text = Scene.from_json(f.read()).describe()
+        except Exception:  # noqa: BLE001
+            outline_text = ""
+        r["scores"] = score_build(llm, image, item, outline_text)
+        print(f"   {r['name']}: scores={r['scores']}", flush=True)
+    _write_report(out_dir, report)
+    print(f"\nmean score: {report['mean']}  →  {os.path.join(out_dir, 'report.md')}")
+    return report
+
+
+def compare(a_dir: str, b_dir: str) -> str:
+    """Per-prompt A/B table of two run directories: score, wall seconds and their deltas."""
+    with open(os.path.join(a_dir, "report.json")) as f:
+        a = json.load(f)
+    with open(os.path.join(b_dir, "report.json")) as f:
+        b = json.load(f)
+    ra = {r["name"]: r for r in a["results"]}
+    rb = {r["name"]: r for r in b["results"]}
+    lines = ["| build | A score | B score | Δ | A s | B s | B skipped/stops |", "|---|---|---|---|---|---|---|"]
+    deltas: List[float] = []
+    for name in list(ra) + [n for n in rb if n not in ra]:
+        x, y = ra.get(name), rb.get(name)
+        sa = (x or {}).get("scores", {}).get("mean")
+        sb = (y or {}).get("scores", {}).get("mean")
+        d = round(sb - sa, 2) if sa is not None and sb is not None else None
+        if d is not None:
+            deltas.append(d)
+        stops = _stops((y or {}).get("profile") or {}) if y else ""
+        lines.append(f"| {name} | {sa} | {sb} | {'' if d is None else f'{d:+.2f}'} | {(x or {}).get('seconds', '')} | {(y or {}).get('seconds', '')} | {stops} |")
+
+    def _med(rep: Dict[str, Any]) -> str:
+        secs = [r["seconds"] for r in rep["results"]]
+        return f"median {statistics.median(secs):.0f} s, max {max(secs):.0f} s" if secs else "—"
+
+    lines.append("")
+    lines.append(f"mean A {a.get('mean')} → B {b.get('mean')} ({len(deltas)} paired; Δ mean {sum(deltas) / len(deltas):+.2f})" if deltas else f"mean A {a.get('mean')} → B {b.get('mean')}")
+    lines.append(f"latency A: {_med(a)}; B: {_med(b)}")
+    return "\n".join(lines)
+
+
 def main(argv: Optional[List[str]] = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--only", help="run a single prompt by name")
@@ -340,9 +408,17 @@ def main(argv: Optional[List[str]] = None) -> int:
     ap.add_argument("--prompts", default=os.path.join(HERE, "prompts.json"))
     ap.add_argument("--every", type=float, default=0.0, help="repeat the run every N hours (plan §8.3: 4); 0 = once")
     ap.add_argument("--jobs", type=int, default=1, help="build N prompts concurrently (T4: a full run in ~4 slots)")
+    ap.add_argument("--rescore", metavar="DIR", help="re-score the rows of an existing run whose judge call failed (no rebuild)")
+    ap.add_argument("--compare", nargs=2, metavar=("A", "B"), help="print a per-prompt A/B table of two run directories")
     args = ap.parse_args(argv)
     if args.from_dir:
         print(profile_existing(args.from_dir))
+        return 0
+    if args.rescore:
+        rescore(args.rescore, args.prompts)
+        return 0
+    if args.compare:
+        print(compare(*args.compare))
         return 0
     with open(args.prompts) as f:
         items = json.load(f)

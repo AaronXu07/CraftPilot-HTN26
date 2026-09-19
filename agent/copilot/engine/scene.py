@@ -858,8 +858,24 @@ def _mirror_shape_local(o: SceneObject, axis: str) -> None:
 
 
 # -- shape editing -----------------------------------------------------------------------------
+def _flatten_params(params: Dict[str, Any], what: str) -> Dict[str, Any]:
+    """Accept both `set_shape(id, height=30)` and the tool-schema form `set_shape(id, params={'height': 30})`
+    (also `shape=`): the scripted `scene.set_shape(id=…, params={…})` used to be rejected as an unknown
+    shape key, which cost a whole stage call per build in the T4 bench (15–18 of 20 builds hit it)."""
+    out = dict(params)
+    for key in ("params", "shape"):
+        nested = out.pop(key, None)
+        if nested is None:
+            continue
+        if not isinstance(nested, dict):
+            raise SceneError(f"{what}: {key} must be an object of shape params, got {nested!r}")
+        out = {**nested, **out}
+    return out
+
+
 @op("set_shape")
 def op_set_shape(scene: Scene, id: str, **params) -> Tuple[Scene, str]:
+    params = _flatten_params(params, "set_shape")
     sc = scene.copy()
     o = sc.get(id)
     old_bb = sc.object_bbox(o)
@@ -1007,7 +1023,7 @@ def op_set_modifier(scene: Scene, id: str, index: int, **params) -> Tuple[Scene,
     except IndexError:
         raise SceneError(f"{id} has {len(o.modifiers)} modifiers; index {index} is out of range")
     new = dict(cur)
-    new.update(params)
+    new.update(_flatten_params(params, "set_modifier"))
     o.modifiers[int(index)] = validate_modifier(new)
     return sc, f"{id} modifier {index} = {modifier_summary(o.modifiers[int(index)])}"
 

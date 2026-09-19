@@ -138,3 +138,47 @@ def test_truncate():
     assert truncate("x" * 10) == "x" * 10
     t = truncate("y" * 10000)
     assert len(t) < 4200 and "truncated" in t
+
+
+def test_set_shape_accepts_params_dict_in_scripts_and_ops(ctx):
+    """T4 bench: `scene.set_shape(id=…, params={…})` — the form the tool schema documents — was rejected
+    inside run_script ("pyramid has no parameter 'params'"), wasting a stage call in 15–18 of 20 builds."""
+    src = (
+        "scene.add(id='roof', shape={'type':'pyramid','base':[12,8],'height':4}, pos=[0,0,0], material='stone')\n"
+        "scene.add(id='cap', shape={'type':'cone','radius':3,'height':4}, pos=[20,0,0], material='stone')\n"
+        "scene.add(id='cut', shape={'type':'box','size':[2,2,2]}, pos=[40,0,0], material='stone')\n"
+        "scene.set_shape(id='roof', params={'base':[14,10],'height':5,'top':[2,2]})\n"
+        "scene.set_shape(id='cap', params={'type':'cone','radius':4,'height':3})\n"
+        "scene.set_shape(id='cut', shape={'size':[3,5,2]})\n"
+        "scene.set_shape(id='cut', params={'type':'cylinder','radius':2}, height=9)\n"
+    )
+    r = dispatch(ctx, "run_script", {"python": src})
+    assert "script error" not in r.text and r.data["ops"] == 7
+    sc = ctx.session.scene
+    assert sc.get("roof").shape["base"] == [14.0, 10.0] and sc.get("roof").shape["height"] == 5.0 and sc.get("roof").shape["top"] == [2.0, 2.0]
+    assert sc.get("cap").shape["radius"] == 4.0 and sc.get("cap").shape["height"] == 3.0
+    assert sc.get("cut").shape["type"] == "cylinder" and sc.get("cut").shape["radius"] == 2.0 and sc.get("cut").shape["height"] == 9.0
+    # the direct tool form still works, and a non-dict params is a clear error, not a crash
+    assert "ERROR" not in dispatch(ctx, "set_shape", {"id": "cap", "params": {"height": 6}}).text
+    assert sc.get("cap").shape["height"] == 6.0 or ctx.session.scene.get("cap").shape["height"] == 6.0
+    r = dispatch(ctx, "run_script", {"python": "scene.set_shape(id='cap', params=7)"})
+    assert "params must be an object" in r.text
+    # unknown keys are still rejected (typos never silently no-op)
+    r = dispatch(ctx, "run_script", {"python": "scene.set_shape(id='cap', params={'radius_bottom': 2})"})
+    assert "has no parameter 'radius_bottom'" in r.text
+
+
+def test_run_script_can_import_math_but_nothing_else(ctx):
+    """T4 bench: `import math` / `from math import pi` raised "ImportError: __import__ not found" (3 builds per run)."""
+    src = (
+        "import math\nfrom math import cos, sin, pi\nimport itertools\n"
+        "for i, a in enumerate(itertools.islice((k * 2 * pi / 6 for k in range(6)), 6)):\n"
+        "    scene.add(id=f'p_{i}', shape={'type':'box','size':[1,3,1]}, pos=[round(8*cos(a)), 0, round(8*sin(a))], material='stone')\n"
+        "print(math.floor(2.5))\n"
+    )
+    r = dispatch(ctx, "run_script", {"python": src})
+    assert "script error" not in r.text and r.data["ops"] == 6 and "2" in r.text
+    r = dispatch(ctx, "run_script", {"python": "import os\nos.system('echo hi')"})
+    assert r.data["ops"] == 0 and "may only import" in r.text and "'os'" in r.text
+    r = dispatch(ctx, "run_script", {"python": "import subprocess"})
+    assert r.data["ops"] == 0 and "may only import" in r.text

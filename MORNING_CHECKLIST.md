@@ -71,5 +71,9 @@ Start the agent first: `cd agent && ../.venv/bin/python -m copilot.server --port
   quartz_trim on the trim`); expect the walls to re-paint pale sandstone/calcite with a darker cut-sandstone base
   band. New presets: `limestone_pale`, `tudor_plaster`, `dark_slate_wall`, `red_brick_victorian`, `weathered_wood`,
   `turf_roof`, `spruce_shingle_roof`, `stone_trim_light`, `quartz_trim`, `sandstone_trim`.
+- In-game: type `/cp verbose on`, then `/cp make the keep roof 2 blocks taller` (or any edit); if the model uses
+  `run_script`, expect no `has no parameter 'params'` error line — `scene.set_shape(id=…, params={…})` and
+  `import math` now work inside scripts.
 - Bench: `cd agent && ../.venv/bin/python -m bench.run --quick --profile --jobs 2`; expect 5 prompts in ~8 min,
-  mean score in `bench/out/<ts>/report.md`; compare with `agent/bench/results/t4_baseline/report.md`.
+  mean score in `bench/out/<ts>/report.md`; `python -m bench.run --compare bench/results/t4_baseline bench/out/<ts>`
+  prints the per-prompt Δ table. Full-bench baseline 6.81 vs after 6.66 (noise; see OVERNIGHT_PROGRESS T4).

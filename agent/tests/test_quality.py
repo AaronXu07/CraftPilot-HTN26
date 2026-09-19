@@ -2,6 +2,8 @@
 second final critic round only below 7, R9 materials lint (see test_lint), presets."""
 from __future__ import annotations
 
+import json
+
 from bench.mock_builder import ScriptedBuilderLLM
 from copilot import llm as L
 from copilot.engine.materials import PRESETS
@@ -109,3 +111,51 @@ def test_t4_presets_present_with_grounding():
     assert all(n in PRESETS for n in walls + others)
     assert all(PRESETS[n].get("gradient") for n in walls) and all(len(PRESETS[n]["palette"]) >= 2 for n in walls + others)
     assert all(PRESETS[n]["fit"] == "slab" for n in ("stone_trim_light", "quartz_trim", "sandstone_trim"))
+
+
+def _fake_report(d, rows):
+    d.mkdir(parents=True, exist_ok=True)
+    rep = {"timestamp": "t", "fast": False, "mock": False, "mean": None, "results": rows}
+    (d / "report.json").write_text(json.dumps(rep))
+    return d
+
+
+def test_bench_compare_pairs_scores_and_latency(tmp_path):
+    from bench.run import compare
+
+    a = _fake_report(tmp_path / "a", [
+        {"name": "castle", "prompt": "p", "seconds": 200.0, "scores": {"mean": 6.0}, "profile": {}},
+        {"name": "villa", "prompt": "p", "seconds": 100.0, "scores": {"mean": None}, "profile": {}},
+    ])
+    b = _fake_report(tmp_path / "b", [
+        {"name": "castle", "prompt": "p", "seconds": 150.0, "scores": {"mean": 7.5}, "profile": {"stages": [{"stage": "detailing", "stopped_reason": "budget"}]}},
+        {"name": "villa", "prompt": "p", "seconds": 120.0, "scores": {"mean": 7.0}, "profile": {}},
+    ])
+    out = compare(str(a), str(b))
+    assert "| castle | 6.0 | 7.5 | +1.50 | 200.0 | 150.0 |" in out
+    assert "| villa | None | 7.0 |  |" in out  # unpaired rows are listed but not averaged
+    assert "1 paired; Δ mean +1.50" in out
+    assert "median 150 s, max 200 s" in out and "median 135 s, max 150 s" in out
+
+
+def test_bench_rescore_only_failed_rows(tmp_path, monkeypatch):
+    import bench.run as br
+
+    d = _fake_report(tmp_path / "r", [
+        {"name": "castle", "prompt": "build a castle", "seconds": 1.0, "tool_calls": 0, "objects": 0, "blocks": 0, "scores": {"mean": 6.0, "notes": "ok"}, "png": None, "reply": ""},
+        {"name": "villa", "prompt": "build a villa", "seconds": 1.0, "tool_calls": 0, "objects": 0, "blocks": 0, "scores": {"mean": None, "notes": "scoring failed: 429"}, "png": None, "reply": ""},
+    ])
+    prompts = tmp_path / "prompts.json"
+    prompts.write_text(json.dumps([{"name": "villa", "prompt": "build a villa", "must_have": ["pool"]}]))
+    scored = []
+
+    class _LLM:
+        supports_vision = False
+
+    monkeypatch.setattr("copilot.llm.AzureLLM", lambda: _LLM())
+    monkeypatch.setattr(br, "score_build", lambda llm, image, item, outline: scored.append(item["name"]) or {"silhouette": 8, "detail": 8, "materials": 8, "fidelity": 8, "notes": "n", "mean": 8.0})
+    rep = br.rescore(str(d), str(prompts))
+    assert scored == ["villa"]  # the scored row is left alone
+    assert rep["mean"] == 7.0
+    assert json.loads((d / "report.json").read_text())["results"][1]["scores"]["mean"] == 8.0
+    assert (d / "report.md").exists()

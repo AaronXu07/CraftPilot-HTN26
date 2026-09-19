@@ -210,7 +210,9 @@ op call and name object ids that exist (or `add`/`run_script` something new), at
 final critic/fix round runs only when the first final score is < 7. Critic chat lines show an op gist
 (`fixing: add hall_win on hall`), never the raw op. `bench/run.py --jobs N` builds N prompts
 concurrently (2 is safe on the shared Azure deployment; 4 hits 429s); `bench/prompts.json` has 20
-prompts, the first 5 are `--quick`. Baseline and after runs live in `agent/bench/results/`.
+prompts, the first 5 are `--quick`. `--rescore DIR` re-judges rows whose scoring call failed (429) from the
+saved PNG + scene; `--compare A B` prints the per-prompt A/B table. Baseline and after runs live in
+`agent/bench/results/` (`t4_baseline/`, `t4_after/`).
 Live preview: `LIVE_PREVIEW` (default true; `/cp preview on|off` overrides per session) places the scene
 in the world with diff placement after the blocking and detailing stages; materials and decoration land
 with the final placement. The final placement is animated bottom-up in 400-block layer chunks (60 ms

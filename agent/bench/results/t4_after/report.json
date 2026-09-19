@@ -1,0 +1,2309 @@
+{
+ "timestamp": "2026-09-19 06:08:31",
+ "fast": false,
+ "mock": false,
+ "jobs": 2,
+ "mean": 6.66,
+ "results": [
+  {
+   "name": "medieval_castle",
+   "prompt": "build a medieval castle with an L-shaped keep, four round corner towers with cone roofs, curtain walls and a gatehouse facing me",
+   "seconds": 158.4,
+   "tool_calls": 7,
+   "objects": 58,
+   "blocks": 12874,
+   "final_critic": null,
+   "scores": {
+    "silhouette": 7,
+    "detail": 6,
+    "materials": 6,
+    "fidelity": 7,
+    "notes": "The core brief is satisfied with an L-shaped keep, four round corner towers, and a front-facing gatehouse, but the keep reads a bit blocky and the fa\u00e7ades could use more depth, rhythm, and material contrast.",
+    "mean": 6.5
+   },
+   "reply": "Built castle_v1: castle (medieval stone), 48x36, 30 tall, facing south: L-shaped keep, four round corner towers, curtain walls, gatehouse facing me\n58\u00d748 footprint, 30 tall, 58 objects, 12,874 blocks, in 2:38\nSay `undo`, `export`, or an edit (e.g. \"make the towers taller\", \"copper roofs\").",
+   "png": "/tmp/cp-t4/after/medieval_castle.png",
+   "profile": {
+    "wall_ms": 158385,
+    "llm_ms": 97068,
+    "engine_ms": 4366,
+    "llm_calls": 8,
+    "tool_calls": 10,
+    "plan_s": 150.0,
+    "total_s": 300.0,
+    "stages": [
+     {
+      "stage": "interpret",
+      "wall_ms": 5697,
+      "llm_ms": 5697,
+      "engine_ms": 0,
+      "llm_calls": 2,
+      "tool_calls": 0,
+      "stopped": "",
+      "note": "towers described 10 wide but only 6 tall \u2014 towers must be taller than wide (P1)"
+     },
+     {
+      "stage": "blocking",
+      "wall_ms": 49541,
+      "llm_ms": 18498,
+      "engine_ms": 72,
+      "llm_calls": 1,
+      "tool_calls": 1,
+      "stopped": "error",
+      "note": "ops 0"
+     },
+     {
+      "stage": "place",
+      "wall_ms": 0,
+      "llm_ms": 0,
+      "engine_ms": 0,
+      "llm_calls": 0,
+      "tool_calls": 1,
+      "stopped": "",
+      "note": "diff"
+     },
+     {
+      "stage": "detailing",
+      "wall_ms": 39963,
+      "llm_ms": 38916,
+      "engine_ms": 1307,
+      "llm_calls": 3,
+      "tool_calls": 4,
+      "stopped": "budget",
+      "note": "ops 0"
+     },
+     {
+      "stage": "place",
+      "wall_ms": 26,
+      "llm_ms": 0,
+      "engine_ms": 26,
+      "llm_calls": 0,
+      "tool_calls": 1,
+      "stopped": "",
+      "note": "diff"
+     },
+     {
+      "stage": "materials",
+      "wall_ms": 34590,
+      "llm_ms": 33957,
+      "engine_ms": 629,
+      "llm_calls": 2,
+      "tool_calls": 2,
+      "stopped": "budget",
+      "note": "ops 0"
+     },
+     {
+      "stage": "decoration",
+      "wall_ms": 26285,
+      "llm_ms": 0,
+      "engine_ms": 58,
+      "llm_calls": 0,
+      "tool_calls": 0,
+      "stopped": "error",
+      "note": "ops 0"
+     },
+     {
+      "stage": "place",
+      "wall_ms": 2274,
+      "llm_ms": 0,
+      "engine_ms": 2274,
+      "llm_calls": 0,
+      "tool_calls": 1,
+      "stopped": "",
+      "note": "diff final"
+     }
+    ]
+   },
+   "skipped": []
+  },
+  {
+   "name": "modern_villa",
+   "prompt": "build a modern two-storey villa with flat roofs, a cantilevered upper floor, floor-to-ceiling glass on the front and an infinity pool",
+   "seconds": 146.9,
+   "tool_calls": 12,
+   "objects": 70,
+   "blocks": 3249,
+   "final_critic": null,
+   "scores": {
+    "silhouette": 7,
+    "detail": 6,
+    "materials": 7,
+    "fidelity": 7,
+    "notes": "The villa reads clearly as a modern two-storey form with a flat roof, strong cantilever, broad front glazing, and a visible pool, but the side volumes feel a bit blocky and under-detailed for the brief.",
+    "mean": 6.75
+   },
+   "reply": "Built villa_modern_v1: villa (modern minimalist), 34x24, 14 tall, facing south: two-storey villa, flat roofs, cantilevered upper floor, floor-to-ceiling glass on the front\n36\u00d730 footprint, 16 tall, 70 objects, 3,249 blocks, in 2:26\nSay `undo`, `export`, or an edit (e.g. \"make the towers taller\", \"co",
+   "png": "/tmp/cp-t4/after/modern_villa.png",
+   "profile": {
+    "wall_ms": 146872,
+    "llm_ms": 145653,
+    "engine_ms": 1324,
+    "llm_calls": 10,
+    "tool_calls": 15,
+    "plan_s": 150.0,
+    "total_s": 300.0,
+    "stages": [
+     {
+      "stage": "interpret",
+      "wall_ms": 3939,
+      "llm_ms": 3939,
+      "engine_ms": 0,
+      "llm_calls": 1,
+      "tool_calls": 0,
+      "stopped": "",
+      "note": ""
+     },
+     {
+      "stage": "blocking",
+      "wall_ms": 48691,
+      "llm_ms": 48224,
+      "engine_ms": 527,
+      "llm_calls": 5,
+      "tool_calls": 7,
+      "stopped": "budget",
+      "note": "ops 0"
+     },
+     {
+      "stage": "place",
+      "wall_ms": 6,
+      "llm_ms": 0,
+      "engine_ms": 6,
+      "llm_calls": 0,
+      "tool_calls": 1,
+      "stopped": "",
+      "note": "diff"
+     },
+     {
+      "stage": "detailing",
+      "wall_ms": 49069,
+      "llm_ms": 48797,
+      "engine_ms": 330,
+      "llm_calls": 2,
+      "tool_calls": 3,
+      "stopped": "budget",
+      "note": "ops 0"
+     },
+     {
+      "stage": "place",
+      "wall_ms": 2,
+      "llm_ms": 0,
+      "engine_ms": 2,
+      "llm_calls": 0,
+      "tool_calls": 1,
+      "stopped": "",
+      "note": "diff"
+     },
+     {
+      "stage": "materials",
+      "wall_ms": 24093,
+      "llm_ms": 23895,
+      "engine_ms": 195,
+      "llm_calls": 1,
+      "tool_calls": 1,
+      "stopped": "budget",
+      "note": "ops 0"
+     },
+     {
+      "stage": "decoration",
+      "wall_ms": 21062,
+      "llm_ms": 20798,
+      "engine_ms": 262,
+      "llm_calls": 1,
+      "tool_calls": 1,
+      "stopped": "budget",
+      "note": "ops 0"
+     },
+     {
+      "stage": "place",
+      "wall_ms": 2,
+      "llm_ms": 0,
+      "engine_ms": 2,
+      "llm_calls": 0,
+      "tool_calls": 1,
+      "stopped": "",
+      "note": "diff final"
+     }
+    ]
+   },
+   "skipped": []
+  },
+  {
+   "name": "japanese_pagoda",
+   "prompt": "build a five-tier Japanese pagoda with sweeping tiered roofs, a central spire and a stone plinth",
+   "seconds": 158.5,
+   "tool_calls": 12,
+   "objects": 36,
+   "blocks": 2791,
+   "final_critic": null,
+   "scores": {
+    "silhouette": 7,
+    "detail": 6,
+    "materials": 6,
+    "fidelity": 7,
+    "notes": "The five tiers, central spire, and stone plinth are all clearly present, but the pagoda reads blocky with weak roof sweep, shallow fa\u00e7ade depth, and a few oversized flat faces.",
+    "mean": 6.5
+   },
+   "reply": "Built pagoda_v1: pagoda (traditional japanese), 18x18, 34 tall, facing south: five-tier Japanese pagoda, sweeping tiered roofs, central spire, stone plinth\n50\u00d720 footprint, 34 tall, 36 objects, 2,791 blocks, in 2:38\nSay `undo`, `export`, or an edit (e.g. \"make the towers taller\", \"copper roofs\").",
+   "png": "/tmp/cp-t4/after/japanese_pagoda.png",
+   "profile": {
+    "wall_ms": 158481,
+    "llm_ms": 156506,
+    "engine_ms": 2026,
+    "llm_calls": 11,
+    "tool_calls": 15,
+    "plan_s": 150.0,
+    "total_s": 300.0,
+    "stages": [
+     {
+      "stage": "interpret",
+      "wall_ms": 3165,
+      "llm_ms": 3165,
+      "engine_ms": 0,
+      "llm_calls": 1,
+      "tool_calls": 0,
+      "stopped": "",
+      "note": ""
+     },
+     {
+      "stage": "blocking",
+      "wall_ms": 74351,
+      "llm_ms": 74075,
+      "engine_ms": 295,
+      "llm_calls": 3,
+      "tool_calls": 4,
+      "stopped": "budget",
+      "note": "ops 0"
+     },
+     {
+      "stage": "place",
+      "wall_ms": 5,
+      "llm_ms": 0,
+      "engine_ms": 5,
+      "llm_calls": 0,
+      "tool_calls": 1,
+      "stopped": "",
+      "note": "diff"
+     },
+     {
+      "stage": "detailing",
+      "wall_ms": 26027,
+      "llm_ms": 25695,
+      "engine_ms": 315,
+      "llm_calls": 4,
+      "tool_calls": 4,
+      "stopped": "budget",
+      "note": "ops 0"
+     },
+     {
+      "stage": "place",
+      "wall_ms": 4,
+      "llm_ms": 0,
+      "engine_ms": 4,
+      "llm_calls": 0,
+      "tool_calls": 1,
+      "stopped": "",
+      "note": "diff"
+     },
+     {
+      "stage": "materials",
+      "wall_ms": 40093,
+      "llm_ms": 39827,
+      "engine_ms": 325,
+      "llm_calls": 2,
+      "tool_calls": 3,
+      "stopped": "budget",
+      "note": "ops 0"
+     },
+     {
+      "stage": "decoration",
+      "wall_ms": 13916,
+      "llm_ms": 13744,
+      "engine_ms": 170,
+      "llm_calls": 1,
+      "tool_calls": 1,
+      "stopped": "budget",
+      "note": "ops 0"
+     },
+     {
+      "stage": "place",
+      "wall_ms": 912,
+      "llm_ms": 0,
+      "engine_ms": 912,
+      "llm_calls": 0,
+      "tool_calls": 1,
+      "stopped": "",
+      "note": "diff final"
+     }
+    ]
+   },
+   "skipped": []
+  },
+  {
+   "name": "lighthouse",
+   "prompt": "build a tall tapered lighthouse with red and white bands, a glass lantern room on top and a small keeper's cottage attached",
+   "seconds": 159.5,
+   "tool_calls": 13,
+   "objects": 33,
+   "blocks": 1228,
+   "final_critic": null,
+   "scores": {
+    "silhouette": 8,
+    "detail": 6,
+    "materials": 7,
+    "fidelity": 8,
+    "notes": "The build clearly hits the tapered striped tower, glass lantern room, and attached cottage, but the cottage reads a bit squat and the tower-to-cottage connection is visually abrupt, with some entrance/trim detailing thin against the tower mass (P1, P2, F).",
+    "mean": 7.25
+   },
+   "reply": "Built lighthouse_v1: lighthouse (coastal maritime), 18x18, 32 tall, facing south: tall tapered lighthouse, red and white bands, glass lantern room on top, small keeper's cottage attached\n18\u00d718 footprint, 36 tall, 33 objects, 1,228 blocks, in 2:39\nSay `undo`, `export`, or an edit (e.g. \"make the towe",
+   "png": "/tmp/cp-t4/after/lighthouse.png",
+   "profile": {
+    "wall_ms": 159469,
+    "llm_ms": 158036,
+    "engine_ms": 1448,
+    "llm_calls": 10,
+    "tool_calls": 16,
+    "plan_s": 150.0,
+    "total_s": 300.0,
+    "stages": [
+     {
+      "stage": "interpret",
+      "wall_ms": 2686,
+      "llm_ms": 2686,
+      "engine_ms": 0,
+      "llm_calls": 1,
+      "tool_calls": 0,
+      "stopped": "",
+      "note": ""
+     },
+     {
+      "stage": "blocking",
+      "wall_ms": 36858,
+      "llm_ms": 36651,
+      "engine_ms": 217,
+      "llm_calls": 4,
+      "tool_calls": 8,
+      "stopped": "finish",
+      "note": "ops 4"
+     },
+     {
+      "stage": "critic:blocking",
+      "wall_ms": 41901,
+      "llm_ms": 41843,
+      "engine_ms": 58,
+      "llm_calls": 1,
+      "tool_calls": 0,
+      "stopped": "",
+      "note": "score 5"
+     },
+     {
+      "stage": "place",
+      "wall_ms": 9,
+      "llm_ms": 0,
+      "engine_ms": 9,
+      "llm_calls": 0,
+      "tool_calls": 1,
+      "stopped": "",
+      "note": "diff"
+     },
+     {
+      "stage": "detailing",
+      "wall_ms": 34306,
+      "llm_ms": 34155,
+      "engine_ms": 148,
+      "llm_calls": 1,
+      "tool_calls": 1,
+      "stopped": "budget",
+      "note": "ops 0"
+     },
+     {
+      "stage": "place",
+      "wall_ms": 1,
+      "llm_ms": 0,
+      "engine_ms": 1,
+      "llm_calls": 0,
+      "tool_calls": 1,
+      "stopped": "",
+      "note": "diff"
+     },
+     {
+      "stage": "materials",
+      "wall_ms": 16714,
+      "llm_ms": 16513,
+      "engine_ms": 221,
+      "llm_calls": 2,
+      "tool_calls": 3,
+      "stopped": "budget",
+      "note": "ops 0"
+     },
+     {
+      "stage": "decoration",
+      "wall_ms": 26370,
+      "llm_ms": 26188,
+      "engine_ms": 180,
+      "llm_calls": 1,
+      "tool_calls": 1,
+      "stopped": "budget",
+      "note": "ops 0"
+     },
+     {
+      "stage": "place",
+      "wall_ms": 614,
+      "llm_ms": 0,
+      "engine_ms": 614,
+      "llm_calls": 0,
+      "tool_calls": 1,
+      "stopped": "",
+      "note": "diff final"
+     }
+    ]
+   },
+   "skipped": []
+  },
+  {
+   "name": "stone_bridge",
+   "prompt": "build a stone arch bridge 40 blocks long with three arches, parapets and lanterns on posts",
+   "seconds": 198.5,
+   "tool_calls": 13,
+   "objects": 53,
+   "blocks": 3229,
+   "final_critic": null,
+   "scores": {
+    "silhouette": 8,
+    "detail": 7,
+    "materials": 7,
+    "fidelity": 8,
+    "notes": "The bridge clearly matches the brief with three arches, parapets, and lantern posts, and the silhouette reads well, though the span is visually a bit blocky and could use more arch refinement and depth in the side fa\u00e7ades.",
+    "mean": 7.5
+   },
+   "reply": "Built stone_arch_bridge_v1: bridge (medieval stone), 40x12, 12 tall, facing south: three arches, parapets, lanterns on posts, stone arch bridge 40 blocks long\n41\u00d714 footprint, 15 tall, 53 objects, 3,229 blocks, in 3:18\nSay `undo`, `export`, or an edit (e.g. \"make the towers taller\", \"copper roofs\").",
+   "png": "/tmp/cp-t4/after/stone_bridge.png",
+   "profile": {
+    "wall_ms": 198466,
+    "llm_ms": 196369,
+    "engine_ms": 2212,
+    "llm_calls": 12,
+    "tool_calls": 16,
+    "plan_s": 150.0,
+    "total_s": 300.0,
+    "stages": [
+     {
+      "stage": "interpret",
+      "wall_ms": 6596,
+      "llm_ms": 6596,
+      "engine_ms": 0,
+      "llm_calls": 1,
+      "tool_calls": 0,
+      "stopped": "",
+      "note": ""
+     },
+     {
+      "stage": "blocking",
+      "wall_ms": 40606,
+      "llm_ms": 40380,
+      "engine_ms": 221,
+      "llm_calls": 2,
+      "tool_calls": 2,
+      "stopped": "budget",
+      "note": "ops 0"
+     },
+     {
+      "stage": "place",
+      "wall_ms": 3,
+      "llm_ms": 0,
+      "engine_ms": 3,
+      "llm_calls": 0,
+      "tool_calls": 1,
+      "stopped": "",
+      "note": "diff"
+     },
+     {
+      "stage": "detailing",
+      "wall_ms": 47676,
+      "llm_ms": 47422,
+      "engine_ms": 298,
+      "llm_calls": 2,
+      "tool_calls": 3,
+      "stopped": "budget",
+      "note": "ops 0"
+     },
+     {
+      "stage": "place",
+      "wall_ms": 1,
+      "llm_ms": 0,
+      "engine_ms": 1,
+      "llm_calls": 0,
+      "tool_calls": 1,
+      "stopped": "",
+      "note": "diff"
+     },
+     {
+      "stage": "materials",
+      "wall_ms": 22015,
+      "llm_ms": 21745,
+      "engine_ms": 312,
+      "llm_calls": 3,
+      "tool_calls": 4,
+      "stopped": "finish",
+      "note": "ops 0"
+     },
+     {
+      "stage": "critic:materials",
+      "wall_ms": 63228,
+      "llm_ms": 63126,
+      "engine_ms": 102,
+      "llm_calls": 1,
+      "tool_calls": 0,
+      "stopped": "",
+      "note": "score 6"
+     },
+     {
+      "stage": "decoration",
+      "wall_ms": 17416,
+      "llm_ms": 17100,
+      "engine_ms": 359,
+      "llm_calls": 3,
+      "tool_calls": 4,
+      "stopped": "budget",
+      "note": "ops 0"
+     },
+     {
+      "stage": "place",
+      "wall_ms": 916,
+      "llm_ms": 0,
+      "engine_ms": 916,
+      "llm_calls": 0,
+      "tool_calls": 1,
+      "stopped": "",
+      "note": "diff final"
+     }
+    ]
+   },
+   "skipped": []
+  },
+  {
+   "name": "cathedral",
+   "prompt": "build a gothic cathedral with a long nave, a transept, twin front towers, a rose window and flying buttresses",
+   "seconds": 174.7,
+   "tool_calls": 14,
+   "objects": 50,
+   "blocks": 22491,
+   "final_critic": null,
+   "scores": {
+    "silhouette": 5,
+    "detail": 4,
+    "materials": 5,
+    "fidelity": 4,
+    "notes": "Twin towers are present via tower_sw/tower_se, but the front mass reads boxy and flat, the rose window is not clearly expressed at the facade cut, and the flying buttresses (fly_buttress_w/e) are too faintly resolved against the nave walls.",
+    "mean": 4.5
+   },
+   "reply": "Built gothic_cathedral_v1: cathedral (gothic stone), 44x56, 34 tall, facing south: long nave, transept, twin front towers, rose window\n46\u00d757 footprint, 38 tall, 50 objects, 22,491 blocks, in 2:54\nSay `undo`, `export`, or an edit (e.g. \"make the towers taller\", \"copper roofs\").",
+   "png": "/tmp/cp-t4/after/cathedral.png",
+   "profile": {
+    "wall_ms": 174665,
+    "llm_ms": 167766,
+    "engine_ms": 7570,
+    "llm_calls": 12,
+    "tool_calls": 17,
+    "plan_s": 150.0,
+    "total_s": 300.0,
+    "stages": [
+     {
+      "stage": "interpret",
+      "wall_ms": 4393,
+      "llm_ms": 4393,
+      "engine_ms": 0,
+      "llm_calls": 1,
+      "tool_calls": 0,
+      "stopped": "",
+      "note": ""
+     },
+     {
+      "stage": "blocking",
+      "wall_ms": 52388,
+      "llm_ms": 51376,
+      "engine_ms": 1173,
+      "llm_calls": 4,
+      "tool_calls": 5,
+      "stopped": "budget",
+      "note": "ops 0"
+     },
+     {
+      "stage": "place",
+      "wall_ms": 79,
+      "llm_ms": 0,
+      "engine_ms": 79,
+      "llm_calls": 0,
+      "tool_calls": 1,
+      "stopped": "",
+      "note": "diff"
+     },
+     {
+      "stage": "detailing",
+      "wall_ms": 70102,
+      "llm_ms": 68923,
+      "engine_ms": 1441,
+      "llm_calls": 3,
+      "tool_calls": 4,
+      "stopped": "budget",
+      "note": "ops 0"
+     },
+     {
+      "stage": "place",
+      "wall_ms": 12,
+      "llm_ms": 0,
+      "engine_ms": 12,
+      "llm_calls": 0,
+      "tool_calls": 1,
+      "stopped": "",
+      "note": "diff"
+     },
+     {
+      "stage": "materials",
+      "wall_ms": 18227,
+      "llm_ms": 17475,
+      "engine_ms": 1012,
+      "llm_calls": 3,
+      "tool_calls": 4,
+      "stopped": "budget",
+      "note": "ops 0"
+     },
+     {
+      "stage": "decoration",
+      "wall_ms": 26213,
+      "llm_ms": 25599,
+      "engine_ms": 611,
+      "llm_calls": 1,
+      "tool_calls": 1,
+      "stopped": "budget",
+      "note": "ops 0"
+     },
+     {
+      "stage": "place",
+      "wall_ms": 3242,
+      "llm_ms": 0,
+      "engine_ms": 3242,
+      "llm_calls": 0,
+      "tool_calls": 1,
+      "stopped": "",
+      "note": "diff final"
+     }
+    ]
+   },
+   "skipped": []
+  },
+  {
+   "name": "desert_temple",
+   "prompt": "build a sandstone desert temple: a stepped pyramid with a columned entrance portico and carved recesses",
+   "seconds": 192.5,
+   "tool_calls": 16,
+   "objects": 53,
+   "blocks": 13792,
+   "final_critic": null,
+   "scores": {
+    "silhouette": 7,
+    "detail": 6,
+    "materials": 5,
+    "fidelity": 7,
+    "notes": "The stepped massing in temple_mass.tier1\u2013tier4 plus shrine_cap reads clearly, and the portico/columns (portico_col_1\u20134, portico_roof, entrance_lintel) satisfy the brief, but the fa\u00e7ades lean flat and monotone so P2/P5/P8 are only partially met; one op to improve it would be to deepen the recessed ba",
+    "mean": 6.25
+   },
+   "reply": "Built desert_temple_v1: temple (sandstone desert temple), 36x36, 24 tall, facing south: stepped pyramid, columned entrance portico, carved recesses\n36\u00d740 footprint, 23 tall, 53 objects, 13,792 blocks, in 3:12\nSay `undo`, `export`, or an edit (e.g. \"make the towers taller\", \"copper roofs\").",
+   "png": "/tmp/cp-t4/after/desert_temple.png",
+   "profile": {
+    "wall_ms": 192526,
+    "llm_ms": 169009,
+    "engine_ms": 4772,
+    "llm_calls": 14,
+    "tool_calls": 19,
+    "plan_s": 150.0,
+    "total_s": 300.0,
+    "stages": [
+     {
+      "stage": "interpret",
+      "wall_ms": 4182,
+      "llm_ms": 4182,
+      "engine_ms": 0,
+      "llm_calls": 1,
+      "tool_calls": 0,
+      "stopped": "",
+      "note": ""
+     },
+     {
+      "stage": "blocking",
+      "wall_ms": 19017,
+      "llm_ms": 0,
+      "engine_ms": 0,
+      "llm_calls": 0,
+      "tool_calls": 0,
+      "stopped": "error",
+      "note": "ops 0"
+     },
+     {
+      "stage": "critic:blocking",
+      "wall_ms": 14540,
+      "llm_ms": 14539,
+      "engine_ms": 1,
+      "llm_calls": 1,
+      "tool_calls": 0,
+      "stopped": "",
+      "note": "score 2"
+     },
+     {
+      "stage": "fix:blocking",
+      "wall_ms": 31068,
+      "llm_ms": 30800,
+      "engine_ms": 265,
+      "llm_calls": 1,
+      "tool_calls": 1,
+      "stopped": "budget",
+      "note": "ops 0"
+     },
+     {
+      "stage": "place",
+      "wall_ms": 14,
+      "llm_ms": 0,
+      "engine_ms": 14,
+      "llm_calls": 0,
+      "tool_calls": 1,
+      "stopped": "",
+      "note": "diff"
+     },
+     {
+      "stage": "detailing",
+      "wall_ms": 67825,
+      "llm_ms": 66722,
+      "engine_ms": 1275,
+      "llm_calls": 7,
+      "tool_calls": 9,
+      "stopped": "budget",
+      "note": "ops 0"
+     },
+     {
+      "stage": "place",
+      "wall_ms": 7,
+      "llm_ms": 0,
+      "engine_ms": 7,
+      "llm_calls": 0,
+      "tool_calls": 1,
+      "stopped": "",
+      "note": "diff"
+     },
+     {
+      "stage": "materials",
+      "wall_ms": 36254,
+      "llm_ms": 35927,
+      "engine_ms": 325,
+      "llm_calls": 1,
+      "tool_calls": 1,
+      "stopped": "budget",
+      "note": "ops 0"
+     },
+     {
+      "stage": "decoration",
+      "wall_ms": 17571,
+      "llm_ms": 16839,
+      "engine_ms": 847,
+      "llm_calls": 3,
+      "tool_calls": 5,
+      "stopped": "budget",
+      "note": "ops 0"
+     },
+     {
+      "stage": "place",
+      "wall_ms": 2038,
+      "llm_ms": 0,
+      "engine_ms": 2038,
+      "llm_calls": 0,
+      "tool_calls": 1,
+      "stopped": "",
+      "note": "diff final"
+     }
+    ]
+   },
+   "skipped": []
+  },
+  {
+   "name": "treehouse",
+   "prompt": "build a treehouse on a giant oak: a big trunk with a leaf canopy, a cabin on a platform with a railing and a spiral stair around the trunk",
+   "seconds": 277.9,
+   "tool_calls": 9,
+   "objects": 31,
+   "blocks": 2549,
+   "final_critic": null,
+   "scores": {
+    "silhouette": 8,
+    "detail": 6,
+    "materials": 6,
+    "fidelity": 8,
+    "notes": "The giant oak silhouette reads well and the cabin-platform-stair composition is present, but the build still feels a bit boxy with flat railing/platform faces and the tree canopy could integrate more naturally with the trunk.",
+    "mean": 7.0
+   },
+   "reply": "Built treehouse_giant_oak_v1: treehouse (rustic oak), 24x24, 24 tall, facing south: giant oak trunk, leaf canopy, cabin on a platform, railing\n21\u00d717 footprint, 27 tall, 31 objects, 2,549 blocks, in 4:37\nSay `undo`, `export`, or an edit (e.g. \"make the towers taller\", \"copper roofs\").",
+   "png": "/tmp/cp-t4/after/treehouse.png",
+   "profile": {
+    "wall_ms": 277890,
+    "llm_ms": 128422,
+    "engine_ms": 2072,
+    "llm_calls": 8,
+    "tool_calls": 12,
+    "plan_s": 150.0,
+    "total_s": 300.0,
+    "stages": [
+     {
+      "stage": "interpret",
+      "wall_ms": 4290,
+      "llm_ms": 4290,
+      "engine_ms": 0,
+      "llm_calls": 1,
+      "tool_calls": 0,
+      "stopped": "",
+      "note": ""
+     },
+     {
+      "stage": "blocking",
+      "wall_ms": 91700,
+      "llm_ms": 39456,
+      "engine_ms": 441,
+      "llm_calls": 5,
+      "tool_calls": 7,
+      "stopped": "error",
+      "note": "ops 0"
+     },
+     {
+      "stage": "place",
+      "wall_ms": 4,
+      "llm_ms": 0,
+      "engine_ms": 4,
+      "llm_calls": 0,
+      "tool_calls": 1,
+      "stopped": "",
+      "note": "diff"
+     },
+     {
+      "stage": "detailing",
+      "wall_ms": 37348,
+      "llm_ms": 0,
+      "engine_ms": 33,
+      "llm_calls": 0,
+      "tool_calls": 0,
+      "stopped": "error",
+      "note": "ops 0"
+     },
+     {
+      "stage": "place",
+      "wall_ms": 1,
+      "llm_ms": 0,
+      "engine_ms": 1,
+      "llm_calls": 0,
+      "tool_calls": 1,
+      "stopped": "",
+      "note": "diff"
+     },
+     {
+      "stage": "materials",
+      "wall_ms": 76541,
+      "llm_ms": 76364,
+      "engine_ms": 175,
+      "llm_calls": 1,
+      "tool_calls": 1,
+      "stopped": "budget",
+      "note": "ops 0"
+     },
+     {
+      "stage": "decoration",
+      "wall_ms": 66773,
+      "llm_ms": 8312,
+      "engine_ms": 193,
+      "llm_calls": 1,
+      "tool_calls": 1,
+      "stopped": "error",
+      "note": "ops 0"
+     },
+     {
+      "stage": "place",
+      "wall_ms": 1225,
+      "llm_ms": 0,
+      "engine_ms": 1225,
+      "llm_calls": 0,
+      "tool_calls": 1,
+      "stopped": "",
+      "note": "diff final"
+     }
+    ]
+   },
+   "skipped": []
+  },
+  {
+   "name": "gothic_tower",
+   "prompt": "build a tall gothic wizard's tower: octagonal, with a spire, pointed-arch windows and a balcony near the top",
+   "seconds": 145.7,
+   "tool_calls": 15,
+   "objects": 69,
+   "blocks": 3082,
+   "final_critic": null,
+   "scores": {
+    "silhouette": 7,
+    "detail": 6,
+    "materials": 7,
+    "fidelity": 7,
+    "notes": "The octagonal massing, spire, and top balcony are clearly present, with pointed-arch openings and decent vertical proportion, but the fa\u00e7ades still read a bit flat and the entrance is small relative to the tower; add deeper window recesses, stronger doorway framing, and a slightly more pronounced ea",
+    "mean": 6.75
+   },
+   "reply": "Built gothic_wizard_tower_v1: wizard tower (gothic medieval stone), 18x18, 34 tall, facing south: octagonal tower, spire, pointed-arch windows, balcony near the top\n17\u00d717 footprint, 34 tall, 69 objects, 3,082 blocks, in 2:25\nSay `undo`, `export`, or an edit (e.g. \"make the towers taller\", \"copper ro",
+   "png": "/tmp/cp-t4/after/gothic_tower.png",
+   "profile": {
+    "wall_ms": 145679,
+    "llm_ms": 144111,
+    "engine_ms": 1618,
+    "llm_calls": 14,
+    "tool_calls": 18,
+    "plan_s": 150.0,
+    "total_s": 300.0,
+    "stages": [
+     {
+      "stage": "interpret",
+      "wall_ms": 4030,
+      "llm_ms": 4030,
+      "engine_ms": 0,
+      "llm_calls": 1,
+      "tool_calls": 0,
+      "stopped": "",
+      "note": ""
+     },
+     {
+      "stage": "blocking",
+      "wall_ms": 47137,
+      "llm_ms": 46637,
+      "engine_ms": 514,
+      "llm_calls": 5,
+      "tool_calls": 6,
+      "stopped": "budget",
+      "note": "ops 0"
+     },
+     {
+      "stage": "place",
+      "wall_ms": 4,
+      "llm_ms": 0,
+      "engine_ms": 4,
+      "llm_calls": 0,
+      "tool_calls": 1,
+      "stopped": "",
+      "note": "diff"
+     },
+     {
+      "stage": "detailing",
+      "wall_ms": 46061,
+      "llm_ms": 45522,
+      "engine_ms": 521,
+      "llm_calls": 5,
+      "tool_calls": 5,
+      "stopped": "budget",
+      "note": "ops 0"
+     },
+     {
+      "stage": "place",
+      "wall_ms": 2,
+      "llm_ms": 0,
+      "engine_ms": 2,
+      "llm_calls": 0,
+      "tool_calls": 1,
+      "stopped": "",
+      "note": "diff"
+     },
+     {
+      "stage": "materials",
+      "wall_ms": 31281,
+      "llm_ms": 31094,
+      "engine_ms": 185,
+      "llm_calls": 1,
+      "tool_calls": 1,
+      "stopped": "budget",
+      "note": "ops 0"
+     },
+     {
+      "stage": "decoration",
+      "wall_ms": 17155,
+      "llm_ms": 16828,
+      "engine_ms": 390,
+      "llm_calls": 2,
+      "tool_calls": 3,
+      "stopped": "budget",
+      "note": "ops 0"
+     },
+     {
+      "stage": "place",
+      "wall_ms": 2,
+      "llm_ms": 0,
+      "engine_ms": 2,
+      "llm_calls": 0,
+      "tool_calls": 1,
+      "stopped": "",
+      "note": "diff final"
+     }
+    ]
+   },
+   "skipped": []
+  },
+  {
+   "name": "greenhouse",
+   "prompt": "build a Victorian greenhouse with a glass barrel-vault roof, white iron frame, a central dome and planting beds inside",
+   "seconds": 153.8,
+   "tool_calls": 20,
+   "objects": 47,
+   "blocks": 18210,
+   "final_critic": null,
+   "scores": {
+    "silhouette": 7,
+    "detail": 6,
+    "materials": 7,
+    "fidelity": 8,
+    "notes": "The glass barrel vault, central dome, and interior planting beds are clearly present, but the greenhouse reads a bit flat in the wall bays and could use stronger depth/lighting rhythm on the iron frame and entrance.",
+    "mean": 7.0
+   },
+   "reply": "Built victorian_greenhouse_v1: greenhouse (victorian iron-and-glass), 32x20, 18 tall, facing south: glass barrel-vault roof, white iron frame, central dome, planting beds inside\n34\u00d723 footprint, 37 tall, 47 objects, 18,210 blocks, in 2:33\nSay `undo`, `export`, or an edit (e.g. \"make the towers talle",
+   "png": "/tmp/cp-t4/after/greenhouse.png",
+   "profile": {
+    "wall_ms": 153745,
+    "llm_ms": 148796,
+    "engine_ms": 5180,
+    "llm_calls": 13,
+    "tool_calls": 23,
+    "plan_s": 150.0,
+    "total_s": 300.0,
+    "stages": [
+     {
+      "stage": "interpret",
+      "wall_ms": 2831,
+      "llm_ms": 2831,
+      "engine_ms": 0,
+      "llm_calls": 1,
+      "tool_calls": 0,
+      "stopped": "",
+      "note": ""
+     },
+     {
+      "stage": "blocking",
+      "wall_ms": 43748,
+      "llm_ms": 43157,
+      "engine_ms": 735,
+      "llm_calls": 4,
+      "tool_calls": 11,
+      "stopped": "budget",
+      "note": "ops 6"
+     },
+     {
+      "stage": "place",
+      "wall_ms": 17,
+      "llm_ms": 0,
+      "engine_ms": 17,
+      "llm_calls": 0,
+      "tool_calls": 1,
+      "stopped": "",
+      "note": "diff"
+     },
+     {
+      "stage": "detailing",
+      "wall_ms": 46588,
+      "llm_ms": 45849,
+      "engine_ms": 723,
+      "llm_calls": 3,
+      "tool_calls": 3,
+      "stopped": "budget",
+      "note": "ops 0"
+     },
+     {
+      "stage": "place",
+      "wall_ms": 10,
+      "llm_ms": 0,
+      "engine_ms": 10,
+      "llm_calls": 0,
+      "tool_calls": 1,
+      "stopped": "",
+      "note": "diff"
+     },
+     {
+      "stage": "materials",
+      "wall_ms": 43229,
+      "llm_ms": 42482,
+      "engine_ms": 861,
+      "llm_calls": 4,
+      "tool_calls": 5,
+      "stopped": "finish",
+      "note": "ops 0"
+     },
+     {
+      "stage": "decoration",
+      "wall_ms": 14874,
+      "llm_ms": 14477,
+      "engine_ms": 394,
+      "llm_calls": 1,
+      "tool_calls": 1,
+      "stopped": "budget",
+      "note": "ops 0"
+     },
+     {
+      "stage": "place",
+      "wall_ms": 2440,
+      "llm_ms": 0,
+      "engine_ms": 2440,
+      "llm_calls": 0,
+      "tool_calls": 1,
+      "stopped": "",
+      "note": "diff final"
+     }
+    ]
+   },
+   "skipped": []
+  },
+  {
+   "name": "windmill",
+   "prompt": "build a Dutch windmill: a tapered octagonal stone base, a wooden cap, four big sails on a hub and a small miller's house beside it",
+   "seconds": 205.3,
+   "tool_calls": 11,
+   "objects": 46,
+   "blocks": 1676,
+   "final_critic": null,
+   "scores": {
+    "silhouette": 7,
+    "detail": 6,
+    "materials": 6,
+    "fidelity": 8,
+    "notes": "The build clearly includes the tapered octagonal stone base, wooden cap, four sails, and attached miller\u2019s house, but the base reads a bit bulky and the house/windmill junction feels slightly compressed and flat in places.",
+    "mean": 6.75
+   },
+   "reply": "Built dutch_windmill_v1: windmill (dutch rural), 24x22, 28 tall, facing south: tapered octagonal stone base, wooden cap, four big sails on a hub, small miller's house beside it\n23\u00d716 footprint, 21 tall, 46 objects, 1,676 blocks, in 3:25\nSay `undo`, `export`, or an edit (e.g. \"make the towers taller\"",
+   "png": "/tmp/cp-t4/after/windmill.png",
+   "profile": {
+    "wall_ms": 205325,
+    "llm_ms": 139485,
+    "engine_ms": 1500,
+    "llm_calls": 10,
+    "tool_calls": 14,
+    "plan_s": 150.0,
+    "total_s": 300.0,
+    "stages": [
+     {
+      "stage": "interpret",
+      "wall_ms": 12440,
+      "llm_ms": 12440,
+      "engine_ms": 0,
+      "llm_calls": 1,
+      "tool_calls": 0,
+      "stopped": "",
+      "note": ""
+     },
+     {
+      "stage": "blocking",
+      "wall_ms": 15886,
+      "llm_ms": 0,
+      "engine_ms": 0,
+      "llm_calls": 0,
+      "tool_calls": 0,
+      "stopped": "error",
+      "note": "ops 0"
+     },
+     {
+      "stage": "critic:blocking",
+      "wall_ms": 11895,
+      "llm_ms": 11894,
+      "engine_ms": 1,
+      "llm_calls": 1,
+      "tool_calls": 0,
+      "stopped": "",
+      "note": "score 2"
+     },
+     {
+      "stage": "fix:blocking",
+      "wall_ms": 42696,
+      "llm_ms": 12196,
+      "engine_ms": 205,
+      "llm_calls": 2,
+      "tool_calls": 3,
+      "stopped": "error",
+      "note": "ops 0"
+     },
+     {
+      "stage": "place",
+      "wall_ms": 2,
+      "llm_ms": 0,
+      "engine_ms": 2,
+      "llm_calls": 0,
+      "tool_calls": 1,
+      "stopped": "",
+      "note": "diff"
+     },
+     {
+      "stage": "detailing",
+      "wall_ms": 60209,
+      "llm_ms": 41756,
+      "engine_ms": 284,
+      "llm_calls": 2,
+      "tool_calls": 3,
+      "stopped": "error",
+      "note": "ops 0"
+     },
+     {
+      "stage": "place",
+      "wall_ms": 1,
+      "llm_ms": 0,
+      "engine_ms": 1,
+      "llm_calls": 0,
+      "tool_calls": 1,
+      "stopped": "",
+      "note": "diff"
+     },
+     {
+      "stage": "materials",
+      "wall_ms": 30192,
+      "llm_ms": 29975,
+      "engine_ms": 237,
+      "llm_calls": 3,
+      "tool_calls": 4,
+      "stopped": "text",
+      "note": "ops 0"
+     },
+     {
+      "stage": "decoration",
+      "wall_ms": 31388,
+      "llm_ms": 31224,
+      "engine_ms": 161,
+      "llm_calls": 1,
+      "tool_calls": 1,
+      "stopped": "budget",
+      "note": "ops 0"
+     },
+     {
+      "stage": "place",
+      "wall_ms": 609,
+      "llm_ms": 0,
+      "engine_ms": 609,
+      "llm_calls": 0,
+      "tool_calls": 1,
+      "stopped": "",
+      "note": "diff final"
+     }
+    ]
+   },
+   "skipped": []
+  },
+  {
+   "name": "viking_longhouse",
+   "prompt": "build a viking longhouse with a long bowed timber hall, a steep turf-covered roof reaching almost to the ground, carved gable ends and a fenced yard",
+   "seconds": 161.0,
+   "tool_calls": 13,
+   "objects": 45,
+   "blocks": 3220,
+   "final_critic": null,
+   "scores": {
+    "silhouette": 7,
+    "detail": 6,
+    "materials": 6,
+    "fidelity": 7,
+    "notes": "The long hall and carved gables read clearly, but the turf roof stops short of the ground and the side massing/yard detailing feels a bit shallow for the Viking longhouse brief.",
+    "mean": 6.5
+   },
+   "reply": "Built viking_longhouse_v1: longhouse (viking timber and turf), 34x18, 15 tall, facing south: long bowed timber hall, steep turf-covered roof, carved gable ends, fenced yard\n36\u00d719 footprint, 16 tall, 45 objects, 3,220 blocks, in 2:41\nSay `undo`, `export`, or an edit (e.g. \"make the towers taller\", \"c",
+   "png": "/tmp/cp-t4/after/viking_longhouse.png",
+   "profile": {
+    "wall_ms": 161029,
+    "llm_ms": 158729,
+    "engine_ms": 2391,
+    "llm_calls": 11,
+    "tool_calls": 16,
+    "plan_s": 150.0,
+    "total_s": 300.0,
+    "stages": [
+     {
+      "stage": "interpret",
+      "wall_ms": 3741,
+      "llm_ms": 3741,
+      "engine_ms": 0,
+      "llm_calls": 1,
+      "tool_calls": 0,
+      "stopped": "",
+      "note": ""
+     },
+     {
+      "stage": "blocking",
+      "wall_ms": 70177,
+      "llm_ms": 69748,
+      "engine_ms": 455,
+      "llm_calls": 3,
+      "tool_calls": 4,
+      "stopped": "budget",
+      "note": "ops 0"
+     },
+     {
+      "stage": "place",
+      "wall_ms": 4,
+      "llm_ms": 0,
+      "engine_ms": 4,
+      "llm_calls": 0,
+      "tool_calls": 1,
+      "stopped": "",
+      "note": "diff"
+     },
+     {
+      "stage": "detailing",
+      "wall_ms": 31574,
+      "llm_ms": 31260,
+      "engine_ms": 354,
+      "llm_calls": 3,
+      "tool_calls": 4,
+      "stopped": "budget",
+      "note": "ops 0"
+     },
+     {
+      "stage": "place",
+      "wall_ms": 3,
+      "llm_ms": 0,
+      "engine_ms": 3,
+      "llm_calls": 0,
+      "tool_calls": 1,
+      "stopped": "",
+      "note": "diff"
+     },
+     {
+      "stage": "materials",
+      "wall_ms": 15601,
+      "llm_ms": 15286,
+      "engine_ms": 311,
+      "llm_calls": 2,
+      "tool_calls": 2,
+      "stopped": "budget",
+      "note": "ops 0"
+     },
+     {
+      "stage": "decoration",
+      "wall_ms": 38989,
+      "llm_ms": 38694,
+      "engine_ms": 330,
+      "llm_calls": 2,
+      "tool_calls": 3,
+      "stopped": "budget",
+      "note": "ops 0"
+     },
+     {
+      "stage": "place",
+      "wall_ms": 934,
+      "llm_ms": 0,
+      "engine_ms": 934,
+      "llm_calls": 0,
+      "tool_calls": 1,
+      "stopped": "",
+      "note": "diff final"
+     }
+    ]
+   },
+   "skipped": []
+  },
+  {
+   "name": "aqueduct",
+   "prompt": "build a Roman aqueduct 60 blocks long with two tiers of arches, a water channel on top and stone piers",
+   "seconds": 147.5,
+   "tool_calls": 15,
+   "objects": 44,
+   "blocks": 7396,
+   "final_critic": null,
+   "scores": {
+    "silhouette": 7,
+    "detail": 5,
+    "materials": 6,
+    "fidelity": 6,
+    "notes": "The 60-block span and top water_channel are clear and the stone piers read well, but the upper_arch_cuts are visually too subtle compared with the lower tier and the long aqueduct_body still feels flat; keep the concept but deepen the second arch tier, add stronger pier breaks/pilasters to aqueduct_",
+    "mean": 6.0
+   },
+   "reply": "Built roman_aqueduct_v1: aqueduct (roman stone), 60x12, 18 tall, facing south: 60-block-long aqueduct, two tiers of arches, water channel on top, stone piers\n62\u00d715 footprint, 19 tall, 44 objects, 7,396 blocks, in 2:27\nSay `undo`, `export`, or an edit (e.g. \"make the towers taller\", \"copper roofs\").",
+   "png": "/tmp/cp-t4/after/aqueduct.png",
+   "profile": {
+    "wall_ms": 147495,
+    "llm_ms": 108653,
+    "engine_ms": 3588,
+    "llm_calls": 12,
+    "tool_calls": 18,
+    "plan_s": 150.0,
+    "total_s": 300.0,
+    "stages": [
+     {
+      "stage": "interpret",
+      "wall_ms": 4802,
+      "llm_ms": 4802,
+      "engine_ms": 0,
+      "llm_calls": 1,
+      "tool_calls": 0,
+      "stopped": "",
+      "note": ""
+     },
+     {
+      "stage": "blocking",
+      "wall_ms": 49704,
+      "llm_ms": 13921,
+      "engine_ms": 222,
+      "llm_calls": 1,
+      "tool_calls": 1,
+      "stopped": "error",
+      "note": "ops 0"
+     },
+     {
+      "stage": "place",
+      "wall_ms": 8,
+      "llm_ms": 0,
+      "engine_ms": 8,
+      "llm_calls": 0,
+      "tool_calls": 1,
+      "stopped": "",
+      "note": "diff"
+     },
+     {
+      "stage": "detailing",
+      "wall_ms": 42148,
+      "llm_ms": 41611,
+      "engine_ms": 651,
+      "llm_calls": 4,
+      "tool_calls": 6,
+      "stopped": "budget",
+      "note": "ops 0"
+     },
+     {
+      "stage": "place",
+      "wall_ms": 9,
+      "llm_ms": 0,
+      "engine_ms": 9,
+      "llm_calls": 0,
+      "tool_calls": 1,
+      "stopped": "",
+      "note": "diff"
+     },
+     {
+      "stage": "materials",
+      "wall_ms": 24659,
+      "llm_ms": 24021,
+      "engine_ms": 748,
+      "llm_calls": 3,
+      "tool_calls": 4,
+      "stopped": "budget",
+      "note": "ops 0"
+     },
+     {
+      "stage": "decoration",
+      "wall_ms": 24617,
+      "llm_ms": 24298,
+      "engine_ms": 411,
+      "llm_calls": 3,
+      "tool_calls": 4,
+      "stopped": "finish",
+      "note": "ops 0"
+     },
+     {
+      "stage": "place",
+      "wall_ms": 1539,
+      "llm_ms": 0,
+      "engine_ms": 1539,
+      "llm_calls": 0,
+      "tool_calls": 1,
+      "stopped": "",
+      "note": "diff final"
+     }
+    ]
+   },
+   "skipped": []
+  },
+  {
+   "name": "wall_watchtower",
+   "prompt": "build a square watchtower on a long defensive wall: the wall has a walkway with battlements, the tower is twice the wall height with a pointed roof and arrow slits",
+   "seconds": 175.8,
+   "tool_calls": 5,
+   "objects": 29,
+   "blocks": 9765,
+   "final_critic": null,
+   "scores": {
+    "silhouette": 7,
+    "detail": 6,
+    "materials": 6,
+    "fidelity": 7,
+    "notes": "The long wall with battlements and walkway reads clearly and the square tower is appropriately taller than the wall with arrow slits and a pointed roof, though the fa\u00e7ades are still fairly flat and could use stronger depth and base grounding.",
+    "mean": 6.5
+   },
+   "reply": "Built tower_v1: tower, 20x20, 12 tall, facing south\n62\u00d736 footprint, 33 tall, 29 objects, 9,765 blocks, in 2:55\nSay `undo`, `export`, or an edit (e.g. \"make the towers taller\", \"copper roofs\").",
+   "png": "/tmp/cp-t4/after/wall_watchtower.png",
+   "profile": {
+    "wall_ms": 175787,
+    "llm_ms": 90511,
+    "engine_ms": 2483,
+    "llm_calls": 5,
+    "tool_calls": 8,
+    "plan_s": 150.0,
+    "total_s": 300.0,
+    "stages": [
+     {
+      "stage": "interpret",
+      "wall_ms": 33454,
+      "llm_ms": 33454,
+      "engine_ms": 0,
+      "llm_calls": 1,
+      "tool_calls": 0,
+      "stopped": "",
+      "note": ""
+     },
+     {
+      "stage": "blocking",
+      "wall_ms": 38674,
+      "llm_ms": 0,
+      "engine_ms": 0,
+      "llm_calls": 0,
+      "tool_calls": 0,
+      "stopped": "error",
+      "note": "ops 0"
+     },
+     {
+      "stage": "place",
+      "wall_ms": 0,
+      "llm_ms": 0,
+      "engine_ms": 0,
+      "llm_calls": 0,
+      "tool_calls": 1,
+      "stopped": "",
+      "note": "diff"
+     },
+     {
+      "stage": "detailing",
+      "wall_ms": 63239,
+      "llm_ms": 18811,
+      "engine_ms": 263,
+      "llm_calls": 1,
+      "tool_calls": 1,
+      "stopped": "error",
+      "note": "ops 0"
+     },
+     {
+      "stage": "place",
+      "wall_ms": 15,
+      "llm_ms": 0,
+      "engine_ms": 15,
+      "llm_calls": 0,
+      "tool_calls": 1,
+      "stopped": "",
+      "note": "diff"
+     },
+     {
+      "stage": "materials",
+      "wall_ms": 18318,
+      "llm_ms": 18035,
+      "engine_ms": 339,
+      "llm_calls": 2,
+      "tool_calls": 3,
+      "stopped": "budget",
+      "note": "ops 0"
+     },
+     {
+      "stage": "decoration",
+      "wall_ms": 20450,
+      "llm_ms": 20211,
+      "engine_ms": 237,
+      "llm_calls": 1,
+      "tool_calls": 1,
+      "stopped": "budget",
+      "note": "ops 0"
+     },
+     {
+      "stage": "place",
+      "wall_ms": 1629,
+      "llm_ms": 0,
+      "engine_ms": 1629,
+      "llm_calls": 0,
+      "tool_calls": 1,
+      "stopped": "",
+      "note": "diff final"
+     }
+    ]
+   },
+   "skipped": []
+  },
+  {
+   "name": "round_library",
+   "prompt": "build a round library with a domed roof, a ring of tall arched windows, a columned entrance porch and bookshelves lining the inside",
+   "seconds": 166.9,
+   "tool_calls": 17,
+   "objects": 41,
+   "blocks": 10273,
+   "final_critic": null,
+   "scores": {
+    "silhouette": 8,
+    "detail": 7,
+    "materials": 7,
+    "fidelity": 8,
+    "notes": "The round massing and dome read clearly and the ring of arched windows, columned porch, and interior bookshelves are all present, though the window rhythm is a bit thin in places and the fa\u00e7ade could use slightly stronger depth and contrast around the entrance.",
+    "mean": 7.5
+   },
+   "reply": "Built round_library_v1: library (medieval stone), 32x32, 22 tall, facing south: round library, domed roof, ring of tall arched windows, columned entrance porch\n28\u00d741 footprint, 29 tall, 41 objects, 10,273 blocks, in 2:46\nSay `undo`, `export`, or an edit (e.g. \"make the towers taller\", \"copper roofs\"",
+   "png": "/tmp/cp-t4/after/round_library.png",
+   "profile": {
+    "wall_ms": 166931,
+    "llm_ms": 162584,
+    "engine_ms": 4669,
+    "llm_calls": 14,
+    "tool_calls": 20,
+    "plan_s": 150.0,
+    "total_s": 300.0,
+    "stages": [
+     {
+      "stage": "interpret",
+      "wall_ms": 3437,
+      "llm_ms": 3437,
+      "engine_ms": 0,
+      "llm_calls": 1,
+      "tool_calls": 0,
+      "stopped": "",
+      "note": ""
+     },
+     {
+      "stage": "blocking",
+      "wall_ms": 47131,
+      "llm_ms": 46522,
+      "engine_ms": 675,
+      "llm_calls": 5,
+      "tool_calls": 6,
+      "stopped": "finish",
+      "note": "ops 0"
+     },
+     {
+      "stage": "place",
+      "wall_ms": 49,
+      "llm_ms": 0,
+      "engine_ms": 49,
+      "llm_calls": 0,
+      "tool_calls": 1,
+      "stopped": "",
+      "note": "diff"
+     },
+     {
+      "stage": "detailing",
+      "wall_ms": 43113,
+      "llm_ms": 42434,
+      "engine_ms": 835,
+      "llm_calls": 5,
+      "tool_calls": 7,
+      "stopped": "budget",
+      "note": "ops 0"
+     },
+     {
+      "stage": "place",
+      "wall_ms": 6,
+      "llm_ms": 0,
+      "engine_ms": 6,
+      "llm_calls": 0,
+      "tool_calls": 1,
+      "stopped": "",
+      "note": "diff"
+     },
+     {
+      "stage": "materials",
+      "wall_ms": 52924,
+      "llm_ms": 52605,
+      "engine_ms": 316,
+      "llm_calls": 1,
+      "tool_calls": 1,
+      "stopped": "budget",
+      "note": "ops 0"
+     },
+     {
+      "stage": "decoration",
+      "wall_ms": 18222,
+      "llm_ms": 17586,
+      "engine_ms": 748,
+      "llm_calls": 2,
+      "tool_calls": 3,
+      "stopped": "budget",
+      "note": "ops 0"
+     },
+     {
+      "stage": "place",
+      "wall_ms": 2040,
+      "llm_ms": 0,
+      "engine_ms": 2040,
+      "llm_calls": 0,
+      "tool_calls": 1,
+      "stopped": "",
+      "note": "diff final"
+     }
+    ]
+   },
+   "skipped": []
+  },
+  {
+   "name": "market_hall",
+   "prompt": "build an open-sided medieval market hall: a timber frame on stone posts, a big pitched roof with a clock gable, stalls underneath",
+   "seconds": 188.0,
+   "tool_calls": 23,
+   "objects": 74,
+   "blocks": 4336,
+   "final_critic": null,
+   "scores": {
+    "silhouette": 8,
+    "detail": 7,
+    "materials": 7,
+    "fidelity": 8,
+    "notes": "The hall reads clearly as an open-sided timber market with a pitched roof, clock gable, and stalls beneath; the main weakness is some broad wall spans and a somewhat heavy frame that could use more depth and rhythm.",
+    "mean": 7.5
+   },
+   "reply": "Built market_hall_v1: market hall (medieval timber-framed stone base), 28x20, 18 tall, facing south: open-sided medieval market hall, timber frame, stone posts, big pitched roof\n30\u00d724 footprint, 24 tall, 74 objects, 4,336 blocks, in 3:08\nSay `undo`, `export`, or an edit (e.g. \"make the towers taller",
+   "png": "/tmp/cp-t4/after/market_hall.png",
+   "profile": {
+    "wall_ms": 188042,
+    "llm_ms": 184757,
+    "engine_ms": 3450,
+    "llm_calls": 17,
+    "tool_calls": 26,
+    "plan_s": 150.0,
+    "total_s": 300.0,
+    "stages": [
+     {
+      "stage": "interpret",
+      "wall_ms": 4256,
+      "llm_ms": 4256,
+      "engine_ms": 0,
+      "llm_calls": 1,
+      "tool_calls": 0,
+      "stopped": "",
+      "note": ""
+     },
+     {
+      "stage": "blocking",
+      "wall_ms": 48632,
+      "llm_ms": 48089,
+      "engine_ms": 526,
+      "llm_calls": 4,
+      "tool_calls": 6,
+      "stopped": "budget",
+      "note": "ops 0"
+     },
+     {
+      "stage": "place",
+      "wall_ms": 7,
+      "llm_ms": 0,
+      "engine_ms": 7,
+      "llm_calls": 0,
+      "tool_calls": 1,
+      "stopped": "",
+      "note": "diff"
+     },
+     {
+      "stage": "detailing",
+      "wall_ms": 44431,
+      "llm_ms": 43939,
+      "engine_ms": 565,
+      "llm_calls": 3,
+      "tool_calls": 4,
+      "stopped": "budget",
+      "note": "ops 0"
+     },
+     {
+      "stage": "place",
+      "wall_ms": 3,
+      "llm_ms": 0,
+      "engine_ms": 3,
+      "llm_calls": 0,
+      "tool_calls": 1,
+      "stopped": "",
+      "note": "diff"
+     },
+     {
+      "stage": "materials",
+      "wall_ms": 20146,
+      "llm_ms": 19832,
+      "engine_ms": 376,
+      "llm_calls": 3,
+      "tool_calls": 4,
+      "stopped": "finish",
+      "note": "ops 0"
+     },
+     {
+      "stage": "critic:materials",
+      "wall_ms": 11874,
+      "llm_ms": 11760,
+      "engine_ms": 114,
+      "llm_calls": 1,
+      "tool_calls": 0,
+      "stopped": "",
+      "note": "score 5"
+     },
+     {
+      "stage": "fix:materials",
+      "wall_ms": 29751,
+      "llm_ms": 29426,
+      "engine_ms": 383,
+      "llm_calls": 4,
+      "tool_calls": 8,
+      "stopped": "finish",
+      "note": "ops 5"
+     },
+     {
+      "stage": "decoration",
+      "wall_ms": 27704,
+      "llm_ms": 27455,
+      "engine_ms": 248,
+      "llm_calls": 1,
+      "tool_calls": 1,
+      "stopped": "budget",
+      "note": "ops 0"
+     },
+     {
+      "stage": "place",
+      "wall_ms": 1228,
+      "llm_ms": 0,
+      "engine_ms": 1228,
+      "llm_calls": 0,
+      "tool_calls": 1,
+      "stopped": "",
+      "note": "diff final"
+     }
+    ]
+   },
+   "skipped": []
+  },
+  {
+   "name": "ship",
+   "prompt": "build a wooden sailing ship on the ground: a curved hull with a raised stern castle, two masts with sails and a bowsprit",
+   "seconds": 189.9,
+   "tool_calls": 6,
+   "objects": 23,
+   "blocks": 1965,
+   "final_critic": null,
+   "scores": {
+    "silhouette": 7,
+    "detail": 6,
+    "materials": 6,
+    "fidelity": 7,
+    "notes": "The ship clearly reads as a wooden sailing vessel with a curved hull, two sail-bearing masts, and a raised stern castle, but the hull is still a bit boxy and the bowsprit/sail arrangement feels underscaled relative to the body.",
+    "mean": 6.5
+   },
+   "reply": "Built wooden_sailing_ship_v1: ship (wooden sailing ship), 34x14, 16 tall, facing south: curved hull, raised stern castle, two masts with sails, bowsprit\n37\u00d723 footprint, 15 tall, 23 objects, 1,965 blocks, in 3:09\nSay `undo`, `export`, or an edit (e.g. \"make the towers taller\", \"copper roofs\").",
+   "png": "/tmp/cp-t4/after/ship.png",
+   "profile": {
+    "wall_ms": 189887,
+    "llm_ms": 149599,
+    "engine_ms": 1543,
+    "llm_calls": 6,
+    "tool_calls": 9,
+    "plan_s": 150.0,
+    "total_s": 300.0,
+    "stages": [
+     {
+      "stage": "interpret",
+      "wall_ms": 31116,
+      "llm_ms": 31116,
+      "engine_ms": 0,
+      "llm_calls": 1,
+      "tool_calls": 0,
+      "stopped": "",
+      "note": ""
+     },
+     {
+      "stage": "blocking",
+      "wall_ms": 38630,
+      "llm_ms": 15811,
+      "engine_ms": 140,
+      "llm_calls": 1,
+      "tool_calls": 1,
+      "stopped": "error",
+      "note": "ops 0"
+     },
+     {
+      "stage": "place",
+      "wall_ms": 4,
+      "llm_ms": 0,
+      "engine_ms": 4,
+      "llm_calls": 0,
+      "tool_calls": 1,
+      "stopped": "",
+      "note": "diff"
+     },
+     {
+      "stage": "detailing",
+      "wall_ms": 66989,
+      "llm_ms": 66828,
+      "engine_ms": 159,
+      "llm_calls": 1,
+      "tool_calls": 1,
+      "stopped": "budget",
+      "note": "ops 0"
+     },
+     {
+      "stage": "place",
+      "wall_ms": 1,
+      "llm_ms": 0,
+      "engine_ms": 1,
+      "llm_calls": 0,
+      "tool_calls": 1,
+      "stopped": "",
+      "note": "diff"
+     },
+     {
+      "stage": "materials",
+      "wall_ms": 36116,
+      "llm_ms": 35844,
+      "engine_ms": 299,
+      "llm_calls": 3,
+      "tool_calls": 4,
+      "stopped": "budget",
+      "note": "ops 0"
+     },
+     {
+      "stage": "decoration",
+      "wall_ms": 16107,
+      "llm_ms": 0,
+      "engine_ms": 24,
+      "llm_calls": 0,
+      "tool_calls": 0,
+      "stopped": "error",
+      "note": "ops 0"
+     },
+     {
+      "stage": "place",
+      "wall_ms": 916,
+      "llm_ms": 0,
+      "engine_ms": 916,
+      "llm_calls": 0,
+      "tool_calls": 1,
+      "stopped": "",
+      "note": "diff final"
+     }
+    ]
+   },
+   "skipped": []
+  },
+  {
+   "name": "chapel_bell_tower",
+   "prompt": "build a small stone chapel with a pitched roof, arched windows, and a separate bell tower with an open belfry and a bell",
+   "seconds": 152.9,
+   "tool_calls": 11,
+   "objects": 39,
+   "blocks": 2082,
+   "final_critic": null,
+   "scores": {
+    "silhouette": 7,
+    "detail": 6,
+    "materials": 6,
+    "fidelity": 7,
+    "notes": "The chapel clearly reads as a small pitched-roof stone chapel with a separate bell tower and open belfry, but the fa\u00e7ades are still quite plain and the tower/chapel relationship feels a bit boxy rather than fully articulated.",
+    "mean": 6.5
+   },
+   "reply": "Built stone_chapel_v1: chapel (small medieval stone), 24x18, 18 tall, facing south: small stone chapel, pitched roof, arched windows, separate bell tower\n25\u00d720 footprint, 20 tall, 39 objects, 2,082 blocks, in 2:32\nSay `undo`, `export`, or an edit (e.g. \"make the towers taller\", \"copper roofs\").",
+   "png": "/tmp/cp-t4/after/chapel_bell_tower.png",
+   "profile": {
+    "wall_ms": 152860,
+    "llm_ms": 134678,
+    "engine_ms": 1935,
+    "llm_calls": 11,
+    "tool_calls": 14,
+    "plan_s": 150.0,
+    "total_s": 300.0,
+    "stages": [
+     {
+      "stage": "interpret",
+      "wall_ms": 5196,
+      "llm_ms": 5196,
+      "engine_ms": 0,
+      "llm_calls": 1,
+      "tool_calls": 0,
+      "stopped": "",
+      "note": ""
+     },
+     {
+      "stage": "blocking",
+      "wall_ms": 45355,
+      "llm_ms": 28915,
+      "engine_ms": 199,
+      "llm_calls": 3,
+      "tool_calls": 3,
+      "stopped": "error",
+      "note": "ops 0"
+     },
+     {
+      "stage": "place",
+      "wall_ms": 2,
+      "llm_ms": 0,
+      "engine_ms": 2,
+      "llm_calls": 0,
+      "tool_calls": 1,
+      "stopped": "",
+      "note": "diff"
+     },
+     {
+      "stage": "detailing",
+      "wall_ms": 59151,
+      "llm_ms": 58813,
+      "engine_ms": 321,
+      "llm_calls": 3,
+      "tool_calls": 3,
+      "stopped": "budget",
+      "note": "ops 0"
+     },
+     {
+      "stage": "place",
+      "wall_ms": 1,
+      "llm_ms": 0,
+      "engine_ms": 1,
+      "llm_calls": 0,
+      "tool_calls": 1,
+      "stopped": "",
+      "note": "diff"
+     },
+     {
+      "stage": "materials",
+      "wall_ms": 27192,
+      "llm_ms": 26903,
+      "engine_ms": 311,
+      "llm_calls": 3,
+      "tool_calls": 4,
+      "stopped": "budget",
+      "note": "ops 0"
+     },
+     {
+      "stage": "decoration",
+      "wall_ms": 15024,
+      "llm_ms": 14851,
+      "engine_ms": 171,
+      "llm_calls": 1,
+      "tool_calls": 1,
+      "stopped": "budget",
+      "note": "ops 0"
+     },
+     {
+      "stage": "place",
+      "wall_ms": 930,
+      "llm_ms": 0,
+      "engine_ms": 930,
+      "llm_calls": 0,
+      "tool_calls": 1,
+      "stopped": "",
+      "note": "diff final"
+     }
+    ]
+   },
+   "skipped": []
+  },
+  {
+   "name": "hexagonal_keep",
+   "prompt": "build a hexagonal keep: six-sided stone tower 24 tall with a battlemented parapet, corner turrets and a single arched gate",
+   "seconds": 144.8,
+   "tool_calls": 10,
+   "objects": 43,
+   "blocks": 3851,
+   "final_critic": null,
+   "scores": {
+    "silhouette": 7,
+    "detail": 6,
+    "materials": 6,
+    "fidelity": 7,
+    "notes": "The six-sided keep silhouette, corner turrets, and arched gate are all clearly present, but the tower reads a bit squat and the fa\u00e7ades rely on heavy repetition with limited depth variation, especially around the upper walls and gate surround.",
+    "mean": 6.5
+   },
+   "reply": "Built hex_keep_v1: castle (medieval stone), 30x30, 24 tall, facing south: hexagonal keep, six-sided stone tower, battlemented parapet, corner turrets\n22\u00d726 footprint, 27 tall, 43 objects, 3,851 blocks, in 2:24\nSay `undo`, `export`, or an edit (e.g. \"make the towers taller\", \"copper roofs\").",
+   "png": "/tmp/cp-t4/after/hexagonal_keep.png",
+   "profile": {
+    "wall_ms": 144827,
+    "llm_ms": 127342,
+    "engine_ms": 1226,
+    "llm_calls": 9,
+    "tool_calls": 13,
+    "plan_s": 150.0,
+    "total_s": 300.0,
+    "stages": [
+     {
+      "stage": "interpret",
+      "wall_ms": 9987,
+      "llm_ms": 9987,
+      "engine_ms": 0,
+      "llm_calls": 2,
+      "tool_calls": 0,
+      "stopped": "",
+      "note": ""
+     },
+     {
+      "stage": "blocking",
+      "wall_ms": 42417,
+      "llm_ms": 41948,
+      "engine_ms": 571,
+      "llm_calls": 4,
+      "tool_calls": 6,
+      "stopped": "budget",
+      "note": "ops 0"
+     },
+     {
+      "stage": "place",
+      "wall_ms": 6,
+      "llm_ms": 0,
+      "engine_ms": 6,
+      "llm_calls": 0,
+      "tool_calls": 1,
+      "stopped": "",
+      "note": "diff"
+     },
+     {
+      "stage": "detailing",
+      "wall_ms": 64910,
+      "llm_ms": 64693,
+      "engine_ms": 214,
+      "llm_calls": 1,
+      "tool_calls": 1,
+      "stopped": "budget",
+      "note": "ops 0"
+     },
+     {
+      "stage": "place",
+      "wall_ms": 3,
+      "llm_ms": 0,
+      "engine_ms": 3,
+      "llm_calls": 0,
+      "tool_calls": 1,
+      "stopped": "",
+      "note": "diff"
+     },
+     {
+      "stage": "materials",
+      "wall_ms": 16448,
+      "llm_ms": 0,
+      "engine_ms": 41,
+      "llm_calls": 0,
+      "tool_calls": 0,
+      "stopped": "error",
+      "note": "ops 0"
+     },
+     {
+      "stage": "decoration",
+      "wall_ms": 11048,
+      "llm_ms": 10714,
+      "engine_ms": 389,
+      "llm_calls": 2,
+      "tool_calls": 3,
+      "stopped": "budget",
+      "note": "ops 0"
+     },
+     {
+      "stage": "place",
+      "wall_ms": 2,
+      "llm_ms": 0,
+      "engine_ms": 2,
+      "llm_calls": 0,
+      "tool_calls": 1,
+      "stopped": "",
+      "note": "diff final"
+     }
+    ]
+   },
+   "skipped": []
+  },
+  {
+   "name": "ruined_tower",
+   "prompt": "build a ruined round tower: half the wall collapsed on one side, rubble at the base, mossy and cracked stone, ivy and a broken staircase inside",
+   "seconds": 141.6,
+   "tool_calls": 16,
+   "objects": 39,
+   "blocks": 1508,
+   "final_critic": null,
+   "scores": {
+    "silhouette": 7,
+    "detail": 7,
+    "materials": 7,
+    "fidelity": 7,
+    "notes": "The tower reads clearly as a ruined round keep with a visible collapsed side, rubble spill, and mossy/cracked stone, but the breach feels a bit regular and the fa\u00e7ade could use more varied depth and stronger ground-darkening (P2, P4, P8).",
+    "mean": 7.0
+   },
+   "reply": "Built ruined_round_tower_v1: tower ruin (medieval stone ruin), 16x16, 20 tall, facing south: ruined round tower, half the wall collapsed on one side, rubble at the base, mossy and cracked stone\n16\u00d721 footprint, 20 tall, 39 objects, 1,508 blocks, in 2:21\nSay `undo`, `export`, or an edit (e.g. \"make t",
+   "png": "/tmp/cp-t4/after/ruined_tower.png",
+   "profile": {
+    "wall_ms": 141619,
+    "llm_ms": 139368,
+    "engine_ms": 2250,
+    "llm_calls": 14,
+    "tool_calls": 19,
+    "plan_s": 150.0,
+    "total_s": 300.0,
+    "stages": [
+     {
+      "stage": "interpret",
+      "wall_ms": 3727,
+      "llm_ms": 3727,
+      "engine_ms": 0,
+      "llm_calls": 1,
+      "tool_calls": 0,
+      "stopped": "",
+      "note": ""
+     },
+     {
+      "stage": "blocking",
+      "wall_ms": 41491,
+      "llm_ms": 41250,
+      "engine_ms": 236,
+      "llm_calls": 3,
+      "tool_calls": 4,
+      "stopped": "budget",
+      "note": "ops 0"
+     },
+     {
+      "stage": "place",
+      "wall_ms": 45,
+      "llm_ms": 0,
+      "engine_ms": 45,
+      "llm_calls": 0,
+      "tool_calls": 1,
+      "stopped": "",
+      "note": "diff"
+     },
+     {
+      "stage": "detailing",
+      "wall_ms": 54733,
+      "llm_ms": 54134,
+      "engine_ms": 630,
+      "llm_calls": 6,
+      "tool_calls": 8,
+      "stopped": "budget",
+      "note": "ops 0"
+     },
+     {
+      "stage": "place",
+      "wall_ms": 1,
+      "llm_ms": 0,
+      "engine_ms": 1,
+      "llm_calls": 0,
+      "tool_calls": 1,
+      "stopped": "",
+      "note": "diff"
+     },
+     {
+      "stage": "materials",
+      "wall_ms": 25362,
+      "llm_ms": 25084,
+      "engine_ms": 260,
+      "llm_calls": 3,
+      "tool_calls": 3,
+      "stopped": "budget",
+      "note": "ops 0"
+     },
+     {
+      "stage": "decoration",
+      "wall_ms": 15337,
+      "llm_ms": 15173,
+      "engine_ms": 163,
+      "llm_calls": 1,
+      "tool_calls": 1,
+      "stopped": "budget",
+      "note": "ops 0"
+     },
+     {
+      "stage": "place",
+      "wall_ms": 915,
+      "llm_ms": 0,
+      "engine_ms": 915,
+      "llm_calls": 0,
+      "tool_calls": 1,
+      "stopped": "",
+      "note": "diff final"
+     }
+    ]
+   },
+   "skipped": []
+  }
+ ]
+}

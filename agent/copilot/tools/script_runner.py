@@ -3,16 +3,21 @@
 Reads {"scene": <scene json>, "script": <python>} from stdin, runs the script with a restricted
 set of builtins against a SceneEditor, and prints {"ops": [[name, kwargs, message], ...],
 "output": <captured prints>, "error": <str|null>} as JSON on stdout. No file or network access:
-`open`, `__import__`, `exec`, `eval`, `compile`, `globals`, `getattr` and friends are absent.
+`open`, `exec`, `eval`, `compile`, `globals`, `getattr` and friends are absent; `__import__` only
+resolves the pure-Python helpers already in the namespace (`math`, `random`, `json`, `itertools`), so
+`import math` / `from math import pi` work and everything else raises ImportError.
 """
 from __future__ import annotations
 
 import io
+import itertools
 import json
 import math
 import random
 import sys
 import traceback
+
+SAFE_MODULES = {"math": math, "random": random, "json": json, "itertools": itertools}
 
 MAX_OPS = 2000
 
@@ -33,6 +38,14 @@ def _safe_builtins(out: io.StringIO):
         out.write(sep.join(str(a) for a in args) + end)
 
     safe["print"] = _print
+    safe["ImportError"] = ImportError
+
+    def _import(name, globals=None, locals=None, fromlist=(), level=0):  # noqa: A002 — builtin signature
+        if level == 0 and name in SAFE_MODULES:
+            return SAFE_MODULES[name]
+        raise ImportError(f"scripts may only import {', '.join(sorted(SAFE_MODULES))} — {name!r} is not available")
+
+    safe["__import__"] = _import
     return safe
 
 

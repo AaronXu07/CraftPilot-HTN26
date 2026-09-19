@@ -226,7 +226,7 @@ Previews place diffs so blocking+detailing previews cost one extra `/setblocks` 
 - Live preview is on by default (`LIVE_PREVIEW=false` or `/cp preview off` to disable). The preview shows the
   build in the blocking stage's single material — expected; the palette lands with the final placement.
 
-## T4 — Build quality via the bench [in progress]
+## T4 — Build quality via the bench [done]
 
 **Bench**: `agent/bench/prompts.json` expanded 10 → 20 (added windmill, viking_longhouse, aqueduct,
 wall_watchtower, round_library, market_hall, ship, chapel_bell_tower, hexagonal_keep, ruined_tower; the
@@ -256,3 +256,79 @@ One broken prompt no longer kills the run (`run_one` catches). A full run at 2 j
    (or `add`/`run_script` something new); prose fixes and invented ids are dropped; cap 3. Second final
    critic/fix round only when the first final score < 7 (`SECOND_ROUND_BELOW`). Critic prompt states the
    contract. Chat lines show an op gist (`fixing: add hall_win on hall`) — the raw op leaked braces.
+
+**Iteration 6 — the A/B, two bench-driven bug fixes, and the verdict.** Iteration 5 hit its turn cap after
+writing the levers above (auto-committed as `2372632`); it had started the 20-prompt baseline at 05:04 from
+the *live* working tree, so the baseline process ran with T3 modules plus whatever `interpret.py`/`critic.py`
+were at 05:02–05:03 (its logs show 2 interpret retries, so the brief validator was already partly in), and
+with the **pre-T4 detailing/materials/critic prompts** (prompts are `lru_cache`d on first use at ~05:05,
+before those files were rewritten at 05:06–05:08). So the A/B below is "T3 + partial lever 1/5" vs
+"all five levers". Both runs: `--profile --jobs 2`, `gpt-5.4-mini`, same 20 prompts, same judge.
+
+**Numbers (full bench, 20 prompts, `agent/bench/results/t4_after/compare.md` has the per-prompt table)**
+
+| | baseline (`bench/results/t4_baseline`, = `bench/results/baseline.json`) | after (`bench/results/t4_after`) |
+|---|---|---|
+| mean score (20/20 scored after `--rescore`) | **6.81** | **6.66** (Δ −0.15) |
+| silhouette / detail / materials / fidelity | 7.25 / 6.35 / 6.40 / 7.25 | 7.15 / 6.05 / 6.30 / 7.15 |
+| wall s median / max / mean | 165 / 316 / 181 | 160 / 278 / 172 |
+| LLM calls total; critic rounds; fix rounds | 199; 4; 4 | 194; 5; 3 |
+| prompts with ≥ 1 stage killed by a 429 (16 `__llm_error__` each) | 11 | 9 |
+| script errors (run_script) | 25 in 12 prompts | 33 in 16 prompts |
+
+Per prompt: improved round_library +1.25, stone_bridge +1.0, greenhouse +0.5, villa/windmill/hex keep
++0.25; unchanged ×6; down lighthouse/treehouse/gothic −0.5, desert_temple −1.25 (blocking killed by a
+429), aqueduct −1.25 (blocking 429), **cathedral −2.0** (no 429: the model spent two blocking calls on
+`set_shape(id=…, params={…})` errors, then a 44×56 dark plaza + `dark_oak_planks` roof; judge 4.5).
+Contact sheets of the 3 most-improved (before+after) and 3 worst are in `bench/results/t4_after/sheets/`.
+
+**Verdict: the five levers did not move the full-bench mean (−0.15, inside the noise).** Evidence that it
+is noise rather than a regression: the detailing stage is statistically identical in both runs (median
+43 vs 47 s, 2.5 vs 3 LLM calls, 36 vs 38 scripts, **25 % vs 24 % of scripts erroring**, 442 vs 460 ops);
+the judge is one vision call per build on a rate-limited deployment; 9–11 of 20 builds in each run lost
+a stage to a 429. The per-lever read:
+1. Brief validator: fired on 2/20 (`towers described 10 wide but only 6 tall`); cheap (one extra ~5 s
+   call), no measurable effect. Keep.
+2. Detailing checklist: no change in stage behaviour or detail score. Neutral; kept because the prompt is
+   clearer, but it is not why anything improved.
+3. R9 (≥ 3 materials + gradient): fired in 12 lint calls in the after run; materials score flat (6.40 →
+   6.30). The cathedral shows the failure mode — a huge dark ground slab satisfies "gradient on the
+   main grounded volume". **Suggest** R9 should score the largest *wall-like* solid (height > 3) rather
+   than the largest grounded volume, and cap ground plates in the prompt.
+4. Goldens: unchanged, green.
+5. Vetted critic fixes + second round only < 7: 5 critic / 3 fix rounds vs 4 / 4 — neutral on score;
+   chat lines are cleaner. Keep.
+
+**What the logs did show (fixed this iteration, tested, no bench needed — they turn errors into the
+documented behaviour)**
+- `copilot/engine/scene.py`: `set_shape`/`set_modifier` accept `params={…}` (and `shape={…}`) — the form
+  the **tool schema itself documents**. The dispatcher unpacked it, but `scene.set_shape(id=…, params=…)`
+  inside `run_script` forwarded `params` as a shape key → `pyramid has no parameter 'params'`. It hit
+  **15 (baseline) / 18 (after) of 20 builds**, each wasting a ~15 s stage call (≈ 45 % of all script
+  errors). `tests/test_tools.py::test_set_shape_accepts_params_dict_in_scripts_and_ops`.
+- `copilot/tools/script_runner.py`: `import math` / `from math import pi` / `import itertools` now work
+  (restricted `__import__` over `math`, `random`, `json`, `itertools`; anything else → clear ImportError).
+  `math` was in the namespace but the import statement failed (`__import__ not found`, 3 builds per run).
+  `tests/test_tools.py::test_run_script_can_import_math_but_nothing_else`.
+- `bench/run.py --rescore DIR` (re-judge rows whose scoring call hit a 429 from the saved PNG + scene,
+  no rebuild — 3 rows across the two runs) and `--compare A B` (per-prompt Δ table, medians).
+  `tests/test_quality.py` +2. README/CONTRACTS/bench docstring updated.
+
+**Quick bench after the two fixes** (`--quick --profile --jobs 2`, `bench/results/t4_fix_quick/`):
+mean **6.35** (castle 5.5, villa 6.75, pagoda 7.75, lighthouse 6.75, bridge 5.0); the same 5 prompts scored
+6.75 in the baseline and 6.90 in the after-run. Median wall 153 s, max 180 s. **`params` errors 0 (was 15–18/20),
+import errors 0 (was 3/20), script errors 4 in 5 builds (was 1.3–1.7 per build)** — the fixes do what
+they say. The lower mean is not the fixes: 3 of the 5 builds lost a stage to a 429 (castle: blocking
+73 s `[error]`, judge 5.5), and the bridge spent 22 s in interpret (lever-1 retry, two ~11 s calls) so
+blocking was cut at 27 s (judge 5.0, fidelity 4). n = 5 with a ±0.5 judge cannot resolve this; the
+error counts can, and they are what the fixes target. Kept.
+
+**Verification**: `cd agent && ../.venv/bin/pytest -q` → 259 passed, 9 s; `ruff check .` clean.
+
+**For the morning**
+- Quality is now bounded by (a) the deployment's 429s at 2 concurrent builds (use `--jobs 1` for a clean
+  measurement; ~55 min for 20 prompts) and (b) script errors: the remaining ones after this fix are
+  `pyramid`/`cone` param names, snake_case ids and duplicate ids — a `--errors DIR` summary would be the
+  next bench feature. The judge's ±0.5 per-prompt noise means a single full run cannot resolve < 0.3.
+- The five levers are kept (no drop, cleaner prompts/lines); the R9 change above is the one to revisit.
+- `MORNING_CHECKLIST.md` "T4" gained the `set_shape(params=…)` script check.

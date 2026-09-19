@@ -31,7 +31,7 @@ Player chat  ──/cp──▶  Fabric mod (thin bridge, 7 HTTP endpoints)   mo
 | `agent/copilot/prompts/` | System, stage, critic and router prompts (design principles P1–P8, worked op sequences). |
 | `agent/copilot/server.py` | FastAPI `POST /chat` that the mod talks to. |
 | `agent/mock_mod/` | In-memory fake of the mod; `python -m mock_mod` serves the same 7 endpoints over HTTP. |
-| `agent/bench/` | 10 prompts + headless build/score harness (`--every 4` re-runs every 4 h). |
+| `agent/bench/` | 20 prompts + headless build/score harness (`--every 4` re-runs every 4 h). |
 | `agent/tests/` | 213 pytest tests: engine goldens, tools, placement, bridge, mock-LLM pipeline. |
 | `mod/` | Fabric client mod (Java 21, Minecraft 1.21.1, Fabric API 0.116): `/cp` + 7 endpoints. Prebuilt jar in `mod/build/libs/` after `./gradlew build`. |
 | `scripts/` | `demo.py` (headless castle), `verify_bridge.py`, `calibrate_facing.py`, `gen_block_fallback.py`. |
@@ -47,7 +47,9 @@ COPILOT_LLM=mock ../.venv/bin/python -m copilot.server --port 8000 --bridge mock
 curl -X POST localhost:8000/chat -H 'content-type: application/json' -d '{"player":"me","text":"build a hall"}'   # → {"job_id":1,...}; reply via /say, or curl localhost:8000/jobs/1
 ../.venv/bin/python -m bench.run --mock --fast     # bench smoke run → bench/out/<ts>/report.md
 ../.venv/bin/python -m bench.run --quick --profile  # 5 prompts against Azure + per-stage latency table
-../.venv/bin/python -m bench.run --jobs 2 --profile # all 20 prompts, two at a time (~25 min; 4 jobs hits 429s)
+../.venv/bin/python -m bench.run --jobs 2 --profile # all 20 prompts, two at a time (~30 min; 4 jobs hits 429s)
+../.venv/bin/python -m bench.run --rescore DIR       # re-judge rows whose scoring call hit a 429 (no rebuild)
+../.venv/bin/python -m bench.run --compare A B       # per-prompt A/B table (score Δ, wall s) of two run dirs
 ```
 
 ## Running the real thing
