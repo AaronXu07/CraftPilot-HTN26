@@ -1,0 +1,473 @@
+{
+ "timestamp": "2026-09-19 04:26:03",
+ "fast": false,
+ "mock": false,
+ "mean": 6.75,
+ "results": [
+  {
+   "name": "medieval_castle",
+   "prompt": "build a medieval castle with an L-shaped keep, four round corner towers with cone roofs, curtain walls and a gatehouse facing me",
+   "seconds": 142.2,
+   "tool_calls": 28,
+   "objects": 46,
+   "blocks": 13155,
+   "final_critic": null,
+   "scores": {
+    "silhouette": 7,
+    "detail": 6,
+    "materials": 6,
+    "fidelity": 7,
+    "notes": "The castle reads correctly with four round corner towers, a front-facing gatehouse, and an L-shaped keep, but the keep mass is visually weak, the walls are fairly flat, and the materials/grounding stay too uniform for a stronger medieval silhouette.",
+    "mean": 6.5
+   },
+   "reply": "Built castle_v1: castle (medieval stone), 40x32, 26 tall, facing south: L-shaped keep, four round corner towers, curtain walls, gatehouse facing me. 46 objects, 13,155 blocks. stopped after 3 tool calls: stage time budget reached Say what to change (e.g. \"make the towers taller\", \"copper roofs\") or ",
+   "png": "bench/out/t2_after_quick/medieval_castle.png",
+   "profile": {
+    "wall_ms": 142214,
+    "llm_ms": 139023,
+    "engine_ms": 3965,
+    "llm_calls": 16,
+    "tool_calls": 29,
+    "plan_s": 150.0,
+    "total_s": 300.0,
+    "stages": [
+     {
+      "stage": "interpret",
+      "wall_ms": 3102,
+      "llm_ms": 3102,
+      "engine_ms": 0,
+      "llm_calls": 1,
+      "tool_calls": 0,
+      "stopped": "",
+      "note": ""
+     },
+     {
+      "stage": "blocking",
+      "wall_ms": 50899,
+      "llm_ms": 50113,
+      "engine_ms": 963,
+      "llm_calls": 6,
+      "tool_calls": 13,
+      "stopped": "finish",
+      "note": "ops 7"
+     },
+     {
+      "stage": "detailing",
+      "wall_ms": 39750,
+      "llm_ms": 38853,
+      "engine_ms": 1078,
+      "llm_calls": 3,
+      "tool_calls": 4,
+      "stopped": "budget",
+      "note": "ops 0"
+     },
+     {
+      "stage": "materials",
+      "wall_ms": 29525,
+      "llm_ms": 28922,
+      "engine_ms": 814,
+      "llm_calls": 4,
+      "tool_calls": 8,
+      "stopped": "budget",
+      "note": "ops 0"
+     },
+     {
+      "stage": "decoration",
+      "wall_ms": 18911,
+      "llm_ms": 18033,
+      "engine_ms": 1088,
+      "llm_calls": 2,
+      "tool_calls": 3,
+      "stopped": "budget",
+      "note": "ops 0"
+     },
+     {
+      "stage": "place",
+      "wall_ms": 22,
+      "llm_ms": 0,
+      "engine_ms": 22,
+      "llm_calls": 0,
+      "tool_calls": 1,
+      "stopped": "",
+      "note": "diff"
+     }
+    ]
+   },
+   "skipped": []
+  },
+  {
+   "name": "modern_villa",
+   "prompt": "build a modern two-storey villa with flat roofs, a cantilevered upper floor, floor-to-ceiling glass on the front and an infinity pool",
+   "seconds": 149.6,
+   "tool_calls": 21,
+   "objects": 35,
+   "blocks": 3307,
+   "final_critic": null,
+   "scores": {
+    "silhouette": 8,
+    "detail": 7,
+    "materials": 7,
+    "fidelity": 8,
+    "notes": "The villa reads clearly as a modern two-storey cantilevered build with flat roofs, a strong glass front, and a visible pool, but the fa\u00e7ades are still fairly sparse and the pool reads more as a simple basin than a fully developed infinity edge.",
+    "mean": 7.5
+   },
+   "reply": "Built modern_villa_v1: villa (modern minimalism), 34x28, 14 tall, facing south: two-storey villa, flat roofs, cantilevered upper floor, floor-to-ceiling glass on the front. 35 objects, 3,307 blocks. stopped after 4 tool calls: stage time budget reached Say what to change (e.g. \"make the towers talle",
+   "png": "bench/out/t2_after_quick/modern_villa.png",
+   "profile": {
+    "wall_ms": 149630,
+    "llm_ms": 148167,
+    "engine_ms": 1440,
+    "llm_calls": 18,
+    "tool_calls": 22,
+    "plan_s": 150.0,
+    "total_s": 300.0,
+    "stages": [
+     {
+      "stage": "interpret",
+      "wall_ms": 4203,
+      "llm_ms": 4203,
+      "engine_ms": 0,
+      "llm_calls": 1,
+      "tool_calls": 0,
+      "stopped": "",
+      "note": ""
+     },
+     {
+      "stage": "blocking",
+      "wall_ms": 49489,
+      "llm_ms": 49147,
+      "engine_ms": 331,
+      "llm_calls": 6,
+      "tool_calls": 9,
+      "stopped": "finish",
+      "note": "ops 3"
+     },
+     {
+      "stage": "detailing",
+      "wall_ms": 49833,
+      "llm_ms": 49474,
+      "engine_ms": 341,
+      "llm_calls": 4,
+      "tool_calls": 4,
+      "stopped": "budget",
+      "note": "ops 0"
+     },
+     {
+      "stage": "materials",
+      "wall_ms": 29943,
+      "llm_ms": 29538,
+      "engine_ms": 387,
+      "llm_calls": 4,
+      "tool_calls": 4,
+      "stopped": "budget",
+      "note": "ops 0"
+     },
+     {
+      "stage": "decoration",
+      "wall_ms": 16153,
+      "llm_ms": 15805,
+      "engine_ms": 377,
+      "llm_calls": 3,
+      "tool_calls": 4,
+      "stopped": "budget",
+      "note": "ops 0"
+     },
+     {
+      "stage": "place",
+      "wall_ms": 4,
+      "llm_ms": 0,
+      "engine_ms": 4,
+      "llm_calls": 0,
+      "tool_calls": 1,
+      "stopped": "",
+      "note": "diff"
+     }
+    ]
+   },
+   "skipped": []
+  },
+  {
+   "name": "japanese_pagoda",
+   "prompt": "build a five-tier Japanese pagoda with sweeping tiered roofs, a central spire and a stone plinth",
+   "seconds": 150.8,
+   "tool_calls": 20,
+   "objects": 75,
+   "blocks": 4346,
+   "final_critic": null,
+   "scores": {
+    "silhouette": 8,
+    "detail": 7,
+    "materials": 7,
+    "fidelity": 8,
+    "notes": "The five-tier silhouette, central spire, and stone plinth are clearly present and readable, with good roof stepping and entrance lanterning, though the tiers feel a bit blocky and the fa\u00e7ade rhythm/overhangs could be more refined.",
+    "mean": 7.5
+   },
+   "reply": "Built five_tier_japanese_pagoda: pagoda (Japanese pagoda), 18x18, 34 tall, facing south: five tiers, sweeping tiered roofs, central spire, stone plinth. 75 objects, 4,346 blocks. stopped after 4 tool calls: stage time budget reached Say what to change (e.g. \"make the towers taller\", \"copper roofs\") ",
+   "png": "bench/out/t2_after_quick/japanese_pagoda.png",
+   "profile": {
+    "wall_ms": 150819,
+    "llm_ms": 148761,
+    "engine_ms": 2216,
+    "llm_calls": 17,
+    "tool_calls": 21,
+    "plan_s": 150.0,
+    "total_s": 300.0,
+    "stages": [
+     {
+      "stage": "interpret",
+      "wall_ms": 2914,
+      "llm_ms": 2914,
+      "engine_ms": 0,
+      "llm_calls": 1,
+      "tool_calls": 0,
+      "stopped": "",
+      "note": ""
+     },
+     {
+      "stage": "blocking",
+      "wall_ms": 50238,
+      "llm_ms": 49617,
+      "engine_ms": 657,
+      "llm_calls": 7,
+      "tool_calls": 9,
+      "stopped": "budget",
+      "note": "ops 0"
+     },
+     {
+      "stage": "detailing",
+      "wall_ms": 37599,
+      "llm_ms": 37020,
+      "engine_ms": 646,
+      "llm_calls": 4,
+      "tool_calls": 5,
+      "stopped": "budget",
+      "note": "ops 0"
+     },
+     {
+      "stage": "materials",
+      "wall_ms": 32777,
+      "llm_ms": 32434,
+      "engine_ms": 337,
+      "llm_calls": 2,
+      "tool_calls": 2,
+      "stopped": "budget",
+      "note": "ops 0"
+     },
+     {
+      "stage": "decoration",
+      "wall_ms": 27279,
+      "llm_ms": 26776,
+      "engine_ms": 569,
+      "llm_calls": 3,
+      "tool_calls": 4,
+      "stopped": "budget",
+      "note": "ops 0"
+     },
+     {
+      "stage": "place",
+      "wall_ms": 7,
+      "llm_ms": 0,
+      "engine_ms": 7,
+      "llm_calls": 0,
+      "tool_calls": 1,
+      "stopped": "",
+      "note": "diff"
+     }
+    ]
+   },
+   "skipped": []
+  },
+  {
+   "name": "lighthouse",
+   "prompt": "build a tall tapered lighthouse with red and white bands, a glass lantern room on top and a small keeper's cottage attached",
+   "seconds": 164.1,
+   "tool_calls": 27,
+   "objects": 41,
+   "blocks": 2683,
+   "final_critic": null,
+   "scores": {
+    "silhouette": 7,
+    "detail": 6,
+    "materials": 6,
+    "fidelity": 5,
+    "notes": "Readable tapered lighthouse with the glass lantern room and attached cottage present, but the cottage reads undersized/awkwardly attached and the tower proportions and entrance detailing are only partly convincing; P1/P6/P5 are serviceable, while F is limited by the weak cottage integration and simp",
+    "mean": 6.0
+   },
+   "reply": "Built lighthouse_v1: lighthouse (coastal medieval stone), 18x18, 30 tall, facing south: tall tapered lighthouse, red and white bands, glass lantern room on top, small keeper's cottage attached. 41 objects, 2,683 blocks. stopped after 2 tool calls: stage time budget reached Say what to change (e.g. \"",
+   "png": "bench/out/t2_after_quick/lighthouse.png",
+   "profile": {
+    "wall_ms": 164075,
+    "llm_ms": 162654,
+    "engine_ms": 1440,
+    "llm_calls": 18,
+    "tool_calls": 28,
+    "plan_s": 150.0,
+    "total_s": 300.0,
+    "stages": [
+     {
+      "stage": "interpret",
+      "wall_ms": 3353,
+      "llm_ms": 3353,
+      "engine_ms": 0,
+      "llm_calls": 1,
+      "tool_calls": 0,
+      "stopped": "",
+      "note": ""
+     },
+     {
+      "stage": "blocking",
+      "wall_ms": 39846,
+      "llm_ms": 39507,
+      "engine_ms": 356,
+      "llm_calls": 6,
+      "tool_calls": 14,
+      "stopped": "finish",
+      "note": "ops 7"
+     },
+     {
+      "stage": "critic:blocking",
+      "wall_ms": 35052,
+      "llm_ms": 34985,
+      "engine_ms": 67,
+      "llm_calls": 1,
+      "tool_calls": 0,
+      "stopped": "",
+      "note": "score 6"
+     },
+     {
+      "stage": "detailing",
+      "wall_ms": 23196,
+      "llm_ms": 22793,
+      "engine_ms": 388,
+      "llm_calls": 5,
+      "tool_calls": 6,
+      "stopped": "budget",
+      "note": "ops 0"
+     },
+     {
+      "stage": "materials",
+      "wall_ms": 33332,
+      "llm_ms": 32910,
+      "engine_ms": 447,
+      "llm_calls": 4,
+      "tool_calls": 5,
+      "stopped": "budget",
+      "note": "ops 0"
+     },
+     {
+      "stage": "decoration",
+      "wall_ms": 29286,
+      "llm_ms": 29106,
+      "engine_ms": 178,
+      "llm_calls": 1,
+      "tool_calls": 2,
+      "stopped": "budget",
+      "note": "ops 0"
+     },
+     {
+      "stage": "place",
+      "wall_ms": 4,
+      "llm_ms": 0,
+      "engine_ms": 4,
+      "llm_calls": 0,
+      "tool_calls": 1,
+      "stopped": "",
+      "note": "diff"
+     }
+    ]
+   },
+   "skipped": []
+  },
+  {
+   "name": "stone_bridge",
+   "prompt": "build a stone arch bridge 40 blocks long with three arches, parapets and lanterns on posts",
+   "seconds": 147.2,
+   "tool_calls": 20,
+   "objects": 58,
+   "blocks": 2722,
+   "final_critic": null,
+   "scores": {
+    "silhouette": 7,
+    "detail": 6,
+    "materials": 6,
+    "fidelity": 6,
+    "notes": "The bridge reads clearly with three arches and parapets, but the lanterns are mounted flat on the parapet rather than on visible posts, so a required key feature is missing.",
+    "mean": 6.25
+   },
+   "reply": "Built stone_arch_bridge_v1: bridge (medieval stone), 40x14, 12 tall, facing south: three arches, parapets, lanterns on posts. 58 objects, 2,722 blocks. stopped after 4 tool calls: stage time budget reached Say what to change (e.g. \"make the towers taller\", \"copper roofs\") or `undo`.",
+   "png": "bench/out/t2_after_quick/stone_bridge.png",
+   "profile": {
+    "wall_ms": 147238,
+    "llm_ms": 145508,
+    "engine_ms": 1803,
+    "llm_calls": 17,
+    "tool_calls": 21,
+    "plan_s": 150.0,
+    "total_s": 300.0,
+    "stages": [
+     {
+      "stage": "interpret",
+      "wall_ms": 3085,
+      "llm_ms": 3085,
+      "engine_ms": 0,
+      "llm_calls": 1,
+      "tool_calls": 0,
+      "stopped": "",
+      "note": ""
+     },
+     {
+      "stage": "blocking",
+      "wall_ms": 42185,
+      "llm_ms": 41770,
+      "engine_ms": 404,
+      "llm_calls": 5,
+      "tool_calls": 6,
+      "stopped": "budget",
+      "note": "ops 0"
+     },
+     {
+      "stage": "detailing",
+      "wall_ms": 47249,
+      "llm_ms": 46522,
+      "engine_ms": 767,
+      "llm_calls": 7,
+      "tool_calls": 9,
+      "stopped": "budget",
+      "note": "ops 0"
+     },
+     {
+      "stage": "materials",
+      "wall_ms": 34577,
+      "llm_ms": 34397,
+      "engine_ms": 177,
+      "llm_calls": 1,
+      "tool_calls": 1,
+      "stopped": "budget",
+      "note": "ops 0"
+     },
+     {
+      "stage": "decoration",
+      "wall_ms": 20134,
+      "llm_ms": 19734,
+      "engine_ms": 451,
+      "llm_calls": 3,
+      "tool_calls": 4,
+      "stopped": "budget",
+      "note": "ops 0"
+     },
+     {
+      "stage": "place",
+      "wall_ms": 4,
+      "llm_ms": 0,
+      "engine_ms": 4,
+      "llm_calls": 0,
+      "tool_calls": 1,
+      "stopped": "",
+      "note": "diff"
+     }
+    ]
+   },
+   "skipped": []
+  }
+ ]
+}

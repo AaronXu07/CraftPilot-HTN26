@@ -12,3 +12,4 @@ mod/run/
 mod/.idea/
 *.litematic
 /out/
+agent/bench/out/

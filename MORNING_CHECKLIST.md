@@ -23,7 +23,7 @@ Start the agent first: `cd agent && ../.venv/bin/python -m copilot.server --port
   reply within about 2–3 minutes (hard stop at 5 min), and `/cp status` mid-run to show the stage advancing
   roughly every 30–45 s (`blocking` → `detailing` → `materials` → `decoration`).
 - Agent log (`runs/<player>_<stamp>/turn_NNN.jsonl`, last `__summary__` line): expect `wall …s llm …s (N calls)`
-  with N in the 12–25 range for a build (was 90+), and per-stage entries like `blocking 31.0[budget]` when a
+  with N in the 15–20 range for a build (bench measured 16–18; was 26–36 on the same prompts, 90+ on the first real build), and per-stage entries like `blocking 31.0[budget]` when a
   stage was cut at its deadline.
 - In-game: if a build reply ends with `(skipped decoration: out of time — say "add decoration" to continue)`,
   type `/cp add lanterns at the entrance and along the walls`; expect an edit turn that places lanterns.

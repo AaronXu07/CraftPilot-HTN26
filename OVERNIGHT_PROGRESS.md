@@ -54,7 +54,7 @@ All later work continues on `overnight/20260919-0339` (history was not rewritten
 restyle the progress lines. Cancel is cooperative: a job stops after its current LLM/tool call
 (≤ 120 s worst case on a slow Azure call); the watchdog is the hard stop.
 
-## T2 — Latency: 5 min hard cap, ≤ 2 min target [in progress]
+## T2 — Latency: 5 min hard cap, ≤ 2 min target [done]
 
 **Where the time went (instrumented first)**: the one real full build in `runs/` before T1 took 2025 s:
 94 stage LLM calls (blocking 30, detailing 24, materials 13, decoration 27) averaging 6–23 s each, two Azure
@@ -108,3 +108,49 @@ stages that ran until their 40-call cap.
   ordered results, timeout capping, profile rows & `__summary__`, behind-schedule skips critics, router/fix
   rounds on the fast model, `AzureLLM.fast()`, JPEG/640 px/2-image payloads, critic single sheet, bench
   table incl. legacy logs); `tests/test_llm.py` +1 (429 retries + timeout forwarding).
+
+**Iteration 3 (this session) — verification of the iteration-2 work above.** The code was in place but
+unverified (iteration 2 hit its turn cap and was auto-committed as `b3de611`; it had also left a baseline
+bench of the T1 code running in `/tmp/cp-baseline`, which finished at 04:12). This iteration let that
+baseline finish, ran the same 5 prompts on the current code, and recorded both. Also: `agent/bench/out/`
+is now gitignored (raw runs); curated copies live in `agent/bench/results/`.
+
+**Verification**
+- `cd agent && ../.venv/bin/pytest -q` → 240 passed, 5.3 s. `../.venv/bin/ruff check .` clean.
+- `python -m bench.run --mock --profile --quick` (scripted builder) → 5/5 in ~0.4 s each, table prints.
+- Real bench, `python -m bench.run --profile --quick` on `gpt-5.4-mini` (Azure), same 5 prompts as the
+  baseline. Zero `__llm_error__` records in the 5 run logs (the baseline hit 429s on every prompt).
+- Engine re-checked: the 37-object baseline castle rasterizes in 9 ms cold / 3 ms warm (37 per-object
+  cache hits); renders are keyed by scene hash. Engine time is 1–4 s of a 150 s turn — nothing to cut.
+
+**Numbers (quick bench, 5 prompts, wall seconds)** — `agent/bench/results/t2_{before,after}_quick/`
+(report.json/md, profile.md, contact-sheet PNGs):
+
+| build | before (T1 code) | after | LLM calls before → after | tool calls before → after | score before → after |
+|---|---|---|---|---|---|
+| medieval_castle | 309 | 142 | 36 → 16 | 70 → 29 | (429 on scoring) → 6.5 |
+| modern_villa | 257 | 150 | 26 → 18 | 78 → 22 | 7.5 → 7.5 |
+| japanese_pagoda | 301 | 151 | 33 → 17 | 82 → 21 | 6.0 → 7.5 |
+| lighthouse | 153 | 164 | 18 → 18 | 54 → 28 | 6.5 → 6.0 |
+| stone_bridge | 230 | 147 | 24 → 17 | 56 → 21 | 6.25 → 6.25 |
+| **median / max / mean** | **257 / 309 / 250** | **149.6 / 164 / 151** | | | **6.56 → 6.75** |
+
+Target was median ≤ 150 s and max ≤ 300 s: met (median 149.6 s, printed as 150 in the table). The
+150 s plan is now what sets the latency: every stage runs to its deadline (`stops` column shows
+`detailing:budget materials:budget decoration:budget` on all five) and ends after its current call, so
+builds land at plan + one LLM call (~5–15 s on this deployment). The lighthouse is the outlier because
+its blocking critic ran (the turn was on schedule): one critic vision call took **35 s** on
+`gpt-5.4-mini`, which then squeezed detailing to 23 s. LLM time is 97–99 % of wall in every run.
+
+**For the morning**
+- To trade quality for speed, `COPILOT_PLAN_BUDGET_S` is the single knob (stage allotments scale with
+  it); `COPILOT_HARD_BUDGET_S` is the safety stop. The mod's job watchdog and the pipeline budget are
+  aligned (`new_budget` clamps to the job deadline).
+- T4 should look at the critic cost first: a single critic call ≈ 35 s here, more than the 10 s
+  allotment. Options: run the critic on `MODEL_FAST`, or drop the blocking-stage critic and keep only the
+  final one when `plan_s` ≤ 150.
+- The bench's median sits right at the target; if the morning run comes in at 152–155 s that is the
+  "+ one call" overshoot, not a regression. `COPILOT_PLAN_BUDGET_S=135` gives ~15 s of margin.
+- `MORNING_CHECKLIST.md` "T2" is unchanged except the expected LLM call count (16–18 per build measured).
+- T2 spans two commits on this branch: `b3de611` (iteration 2 auto safety commit, the code) and this
+  iteration's commit (results, notes, gitignore). History was not rewritten.

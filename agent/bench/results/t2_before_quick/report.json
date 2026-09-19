@@ -1,0 +1,103 @@
+{
+ "timestamp": "2026-09-19 04:12:55",
+ "fast": false,
+ "mock": false,
+ "mean": 6.56,
+ "results": [
+  {
+   "name": "medieval_castle",
+   "prompt": "build a medieval castle with an L-shaped keep, four round corner towers with cone roofs, curtain walls and a gatehouse facing me",
+   "seconds": 308.6,
+   "tool_calls": 70,
+   "objects": 37,
+   "blocks": 12800,
+   "final_critic": 5,
+   "scores": {
+    "silhouette": null,
+    "detail": null,
+    "materials": null,
+    "fidelity": null,
+    "notes": "scoring failed: Azure OpenAI (responses) failed after 2 attempts: Error code: 429 - {'error': {'message': 'Your requests to gpt-5.4-mini for gpt-5.4-mini in eastus have exceeded rate limit.', 'type': 'too_many_requests', 'param': None, 'code': 'rate_limit_exceeded'}}",
+    "mean": null
+   },
+   "reply": "Built castle_v1: castle (medieval stone), 40x32, 26 tall, facing south: L-shaped keep, four round corner towers, curtain walls, gatehouse facing the player. 37 objects, 12,800 blocks; critic 5/10. Blocking pass completed for the medieval castle: L-shaped keep, four round towers with cone roofs, curt",
+   "png": "/tmp/cp-baseline/out/medieval_castle.png"
+  },
+  {
+   "name": "modern_villa",
+   "prompt": "build a modern two-storey villa with flat roofs, a cantilevered upper floor, floor-to-ceiling glass on the front and an infinity pool",
+   "seconds": 257.2,
+   "tool_calls": 78,
+   "objects": 45,
+   "blocks": 2832,
+   "final_critic": 6,
+   "scores": {
+    "silhouette": 8,
+    "detail": 7,
+    "materials": 7,
+    "fidelity": 8,
+    "notes": "The villa clearly reads as a modern two-storey build with a proper cantilever, floor-to-ceiling front glass, and an infinity pool, though the flat-roof massing is a bit boxy and some fa\u00e7ades still feel heavy on trim over depth.",
+    "mean": 7.5
+   },
+   "reply": "Built villa_modern_v1: villa (modern minimalist), 28x22, 12 tall, facing south: two-storey villa, flat roofs, cantilevered upper floor, floor-to-ceiling glass on the front. 45 objects, 2,832 blocks; critic 6/10. LLM error: Azure OpenAI (responses) failed after 2 attempts: Error code: 429 - {'error':",
+   "png": "/tmp/cp-baseline/out/modern_villa.png"
+  },
+  {
+   "name": "japanese_pagoda",
+   "prompt": "build a five-tier Japanese pagoda with sweeping tiered roofs, a central spire and a stone plinth",
+   "seconds": 301.1,
+   "tool_calls": 82,
+   "objects": 34,
+   "blocks": 3042,
+   "final_critic": 6,
+   "scores": {
+    "silhouette": 6,
+    "detail": 5,
+    "materials": 6,
+    "fidelity": 7,
+    "notes": "The build clearly has five stacked tiers, a central spire, and a stone plinth, but the roofs read a bit blocky and the fa\u00e7ades feel too flat and repetitive for a polished pagoda.",
+    "mean": 6.0
+   },
+   "reply": "Built pagoda_v1: pagoda (japanese pagoda), 18x18, 34 tall, facing south: five-tier pagoda, sweeping tiered roofs, central spire, stone plinth. 34 objects, 3,042 blocks; critic 6/10. LLM error: Azure OpenAI (responses) failed after 2 attempts: Error code: 429 - {'error': {'message': 'Your requests to",
+   "png": "/tmp/cp-baseline/out/japanese_pagoda.png"
+  },
+  {
+   "name": "lighthouse",
+   "prompt": "build a tall tapered lighthouse with red and white bands, a glass lantern room on top and a small keeper's cottage attached",
+   "seconds": 152.6,
+   "tool_calls": 54,
+   "objects": 21,
+   "blocks": 1067,
+   "final_critic": null,
+   "scores": {
+    "silhouette": 7,
+    "detail": 6,
+    "materials": 6,
+    "fidelity": 7,
+    "notes": "Recognisable lighthouse with attached cottage and a glass lantern room, but the tower reads only mildly tapered and the trim/grounding are a bit flat, so P1, P4, and P5 could use refinement.",
+    "mean": 6.5
+   },
+   "reply": "Built lighthouse_v1: lighthouse (coastal maritime), 16x16, 30 tall, facing south: tall tapered lighthouse, red and white horizontal bands, glass lantern room on top, small keeper's cottage attached. 21 objects, 1,067 blocks. Added a ground-level cottage entrance, lit the lighthouse with lanterns, an",
+   "png": "/tmp/cp-baseline/out/lighthouse.png"
+  },
+  {
+   "name": "stone_bridge",
+   "prompt": "build a stone arch bridge 40 blocks long with three arches, parapets and lanterns on posts",
+   "seconds": 229.9,
+   "tool_calls": 56,
+   "objects": 23,
+   "blocks": 2463,
+   "final_critic": 5,
+   "scores": {
+    "silhouette": 6,
+    "detail": 6,
+    "materials": 6,
+    "fidelity": 7,
+    "notes": "The bridge reads correctly as a 40-block three-arch stone span with parapets and lantern posts, but the profile is boxy with limited arch depth and only modest material separation.",
+    "mean": 6.25
+   },
+   "reply": "Built stone_arch_bridge_v1: bridge (medieval stone), 40x12, 12 tall, facing south: stone arch bridge, three arches, parapets, lanterns on posts. 23 objects, 2,463 blocks; critic 5/10. LLM error: Azure OpenAI (responses) failed after 2 attempts: Error code: 429 - {'error': {'message': 'Your requests ",
+   "png": "/tmp/cp-baseline/out/stone_bridge.png"
+  }
+ ]
+}
