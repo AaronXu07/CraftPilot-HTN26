@@ -389,3 +389,53 @@ try-with-resources. `BlockPlacer` places on the server tick (T3) — no world ac
   would track its frequency.
 - `session.cache` also stores the raster cache under a plain-string key (`RASTER_CACHE_KEY`) — works, but the
   tuple annotation is loose for that entry (untyped call site; mypy does not flag it).
+
+## T6 — More tests [done]
+
+**Result**: `pytest -q` 267 → **361 passed in 11.4 s** (target < 60 s); `ruff check .` clean. No production
+code changed — every new test passed against the existing engine/pipeline (no bugs surfaced). Five new
+files under `agent/tests/`:
+
+- **`test_fit_goldens.py`** (7) — cone / half-sphere dome / torus are exactly mirror-symmetric in x and z
+  (same kind+half at the reflected voxel, stair facing flipped along the mirror axis); torus golden
+  (major 6 / minor 2: sits on y=0, spans x −8..7, hollow centre, ≥ 16 slab/stair voxels, bottom-half slabs
+  on the top rim / top-half slabs on the underside); wedge stairs face uphill for `slope_axis` x (east)
+  and z (south), all bottom-half; carved arch (subtract cylinder) is symmetric with top-half stairs at the
+  crown inside the wall thickness; dome crown ring has slabs, nothing upside-down, and every stair's full
+  side faces the axis. (`test_fit.py` keeps the original cone/dome/arch/wedge goldens.)
+- **`test_resolver_families.py`** (49) — resolver on **every wood family** (`WOODS`, 11) and **37 stone
+  families** from the registry (`default_registry()` reads `copilot/data/cache/blocks_live.json`, the last
+  mod dump, else the bundled fallback — the work order's `agent/.cache/blocks.json` path does not exist):
+  slab(top) / stairs(east,bottom) / wall voxels resolve to the family's `*_slab[type=top]`,
+  `*_stairs[facing=east,half=bottom]`, `*_wall` (or stay a full block when the family has no wall form),
+  and every produced state passes `registry.validate_state`. Plus a log-based material (`spruce_log`)
+  getting plank stairs/slabs.
+- **`test_edit_flows.py`** (5) — `set_shape` on a tower: the diff is additions only, every setblock lies
+  inside `changed_bbox` (+1 pad) and none inside the untouched keep/shed, a repeat build diffs empty;
+  `move` of a **group** shifts exactly the members' voxels (`bm2 == bm1 + delta`), leaves the ungrouped
+  shed untouched, diff bounded by the old∪new bbox; moving a deleted group fails with "unknown object or
+  group"; **`mirror_copy`** of a box + wedge across x=0: bboxes reflect exactly, the mirrored half's voxel
+  set equals the reflection of the original, wedge stairs face the opposite way; mirror across z=10 with a
+  custom suffix is voxel-symmetric about z=9.5.
+- **`test_router_phrasings.py`** (17) — **15 edit phrasings** ("8 blocks taller", "copper roof", "move
+  10 east", "shift the keep 4 south", "delete the gatehouse", "make the keep hexagonal", "arrow slits",
+  "swap walls to deepslate", "add lanterns", "more detailed", "widen to 24×24", "paint the roofs dark",
+  "mirror the tower", "how tall?", "build a lighthouse") through the real `route()` with a MockLLM
+  answering in the varied shapes real replies take (fenced JSON, prose prefix, `op`/`tool`/`arguments`
+  keys, `"true"` strings): asserts intent/stages/selection/ops/needs_place, that the phrase is the user
+  message at temperature 0 with the outline in the system prompt, and **applies every direct op to the
+  scene** and checks the effect (height 28 + roof moved up 8, prism sides 6, material swapped, mirrored
+  ids exist…). Also: unknown tools dropped but stage kept; LLM exception → detailing/all fallback.
+- **`test_jobs_and_animation.py`** (16) — `JobManager` unit level: done + per-line `/say` push +
+  `to_dict`; ids increase / `active_for`; cooperative cancel through `check_cancel` (status `cancelled`,
+  `[cp] stopped: player asked`, re-cancel is a no-op, unknown id → None); cancel while queued never runs;
+  runner exception → `failed` with traceback; watchdog `timeout` at the budget and the late result is
+  dropped; `wait_inline` returns the reply without `/say`; inline timeout falls back to push; `stage_fn`
+  only while running; deadline/elapsed. Animation: `layer_chunks` never emits a lower layer after a
+  higher one and respects the chunk size; chunk count/delay for 1/12/13 blocks at chunk 4; progress
+  callback hits 25/50/75/100 in four batches, bottom-up, polling `setblocks_status`; silent placement
+  uses 1500-block chunks with delay 0.
+
+**Note for the morning**: `wait_inline` has a benign race — if a job finishes in the µs between
+`submit()` and `wait_inline()`, the reply goes out via `/say` instead of inline (the player still sees it,
+after the "working (job N)…" line). The tests gate the runner so they don't depend on the timing.
