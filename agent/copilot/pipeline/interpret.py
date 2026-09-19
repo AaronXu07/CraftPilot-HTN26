@@ -1,9 +1,8 @@
 """Stage 0 — Interpret: player request → design brief (plan §7.2 step 0)."""
 from __future__ import annotations
 
-import json
 import re
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, Optional
 
 from ..llm import extract_json, single_call
 from .common import get_tools

@@ -11,12 +11,11 @@ from __future__ import annotations
 import hashlib
 import io
 import json
-import math
 import os
 import re
 import zipfile
 from dataclasses import dataclass, field
-from typing import Any, Dict, Iterable, List, Optional, Sequence, Set, Tuple
+from typing import Any, Dict, List, Optional, Sequence, Set, Tuple
 
 from .coretypes import format_state, normalize_id, parse_state, short_id
 

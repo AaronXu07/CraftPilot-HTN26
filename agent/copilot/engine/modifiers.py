@@ -10,8 +10,7 @@ Evaluation order for `build_object_sdf(scene, obj)(P)`:
 """
 from __future__ import annotations
 
-import math
-from typing import Callable, Dict, List, Optional, Tuple
+from typing import Callable, Dict, List, Tuple
 
 import numpy as np
 

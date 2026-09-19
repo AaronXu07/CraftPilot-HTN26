@@ -7,8 +7,7 @@ import os
 from PIL import Image
 
 from copilot import llm as L
-from copilot.session import Session
-from tests.fakes import FakeCtx, FakeToolResult
+from tests.fakes import FakeCtx
 
 
 def _ctx(tmp_path=None, **kw):
@@ -121,7 +120,8 @@ def test_extract_json_and_parse_args():
 def test_image_content_downscales():
     part = L.image_content(Image.new("RGB", (2048, 1024)), max_px=512)
     assert part["type"] == "image_url" and part["image_url"]["detail"] == "high"
-    import base64, io
+    import base64
+    import io
 
     data = base64.b64decode(part["image_url"]["url"].split(",", 1)[1])
     im = Image.open(io.BytesIO(data))

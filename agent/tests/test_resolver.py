@@ -1,7 +1,7 @@
 import numpy as np
 import pytest
 
-from copilot.engine.coretypes import FACING_NAMES, Facing, FitResult, Half, Kind, RasterResult, parse_state
+from copilot.engine.coretypes import Facing, FitResult, Half, Kind, RasterResult, parse_state
 from copilot.engine.registry import default_registry
 from copilot.engine.resolver import resolve
 from copilot.engine.scene import Scene, apply_op

@@ -2,7 +2,7 @@ import pytest
 
 from copilot.engine.scene import OPS
 from copilot.session import Session
-from copilot.tools.dispatch import ToolContext, ToolResult, build_all, dispatch, truncate
+from copilot.tools.dispatch import ToolContext, ToolResult, dispatch, truncate
 from copilot.tools.schemas import TOOL_SCHEMAS, TOOLS_BY_NAME, scene_op_names, tool_subset
 from mock_mod import MockBridge
 

@@ -1,5 +1,4 @@
 import numpy as np
-import pytest
 
 from copilot.engine.coretypes import FitResult, RasterResult
 from copilot.engine.lint import findings_text, lint, lint_scene_only

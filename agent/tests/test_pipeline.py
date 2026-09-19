@@ -1,13 +1,10 @@
 """Pipeline tests with a scripted LLM and a fake dispatcher (no game, no Azure)."""
 from __future__ import annotations
 
-import json
-
 from bench.mock_builder import ScriptedBuilderLLM
 from copilot import llm as L
 from copilot.pipeline import (
     STAGE_BY_NAME,
-    Critique,
     brief_to_text,
     critique,
     fixes_text,

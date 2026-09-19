@@ -16,7 +16,7 @@ from .common import call_tool, env_flag, outline
 from .critic import Critique, critique, fixes_text
 from .interpret import DEFAULT_STAGES, brief_to_text, interpret
 from .router import Route, route
-from .stages import FIX_STAGE, STAGE_BY_NAME, Stage, StageResult, run_stage, stage_for_rule, system_prompt
+from .stages import FIX_STAGE, STAGE_BY_NAME, StageResult, run_stage, stage_for_rule
 
 CRITIC_PASS = 8
 MAX_FINAL_FIX_ROUNDS = 2

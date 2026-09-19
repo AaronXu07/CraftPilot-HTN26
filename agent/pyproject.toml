@@ -32,3 +32,12 @@ copilot = ["prompts/*.md", "data/*.json"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["."]
+
+[tool.ruff]
+line-length = 200
+target-version = "py311"
+extend-exclude = ["out", "runs", ".cache"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B"]
+ignore = ["E501", "E741", "B007", "B008", "B904", "B905"]

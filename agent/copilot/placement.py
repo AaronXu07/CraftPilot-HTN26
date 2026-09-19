@@ -17,7 +17,7 @@ Conventions
 from __future__ import annotations
 
 import math
-from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
+from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 from .engine.coretypes import BlockMap, IVec3, format_state, parse_state
 
@@ -202,7 +202,7 @@ def _touched(session) -> set:
     t = getattr(session.world, "touched", None)
     if t is None:
         t = set()
-        setattr(session.world, "touched", t)
+        session.world.touched = t
     return t
 
 

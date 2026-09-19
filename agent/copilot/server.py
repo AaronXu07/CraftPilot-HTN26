@@ -21,7 +21,7 @@ from fastapi.responses import JSONResponse, Response
 
 from .bridge import BridgeError, get_bridge
 from .session import Session, SessionStore
-from .tools.dispatch import ToolContext, build_all, dispatch
+from .tools.dispatch import ToolContext, dispatch
 
 
 @dataclass

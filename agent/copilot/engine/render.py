@@ -6,7 +6,7 @@ drawn with their real half/step geometry so the critic sees the sub-voxel smooth
 from __future__ import annotations
 
 import math
-from typing import Callable, Dict, Iterable, List, Optional, Sequence, Tuple
+from typing import Callable, Dict, List, Optional, Sequence, Tuple
 
 import numpy as np
 from PIL import Image, ImageDraw

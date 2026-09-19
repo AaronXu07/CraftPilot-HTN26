@@ -2,7 +2,7 @@ import os
 
 import pytest
 
-from copilot.engine.registry import COLORS, WOODS, Registry, default_registry
+from copilot.engine.registry import WOODS, Registry, default_registry
 
 
 @pytest.fixture(scope="module")

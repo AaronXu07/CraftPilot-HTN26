@@ -5,7 +5,7 @@ Rotation R = Rz(rz) · Ry(ry) · Rx(rx) (X applied first). Angles in degrees.
 """
 from __future__ import annotations
 
-from typing import Iterable, Sequence, Tuple
+from typing import Sequence, Tuple
 
 import numpy as np
 

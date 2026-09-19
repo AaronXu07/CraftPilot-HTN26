@@ -12,13 +12,12 @@ import hashlib
 import json
 import re
 from dataclasses import dataclass, field
-from typing import Any, Callable, Dict, Iterable, List, Optional, Sequence, Tuple, Union
+from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple, Union
 
 import numpy as np
 
 from .coretypes import Bbox
 from .shapes import (
-    MODIFIER_TYPES,
     ShapeError,
     modifier_summary,
     shape_local_bbox,
