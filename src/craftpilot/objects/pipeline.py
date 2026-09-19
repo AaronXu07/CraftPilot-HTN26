@@ -6,6 +6,7 @@ image the reconstructor saw, the mesh, the preview and the schematic. Timings pe
 from __future__ import annotations
 
 import time
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -13,7 +14,13 @@ from craftpilot.config import SETTINGS
 from craftpilot.grid.semantic import SemanticGrid
 from craftpilot.objects import imagegen, recon
 from craftpilot.objects.brief import ObjectBrief, compose_brief
-from craftpilot.objects.voxelize import flatness, load_mesh, to_grid, voxelize_mesh
+from craftpilot.objects.voxelize import (
+    flatness,
+    load_mesh,
+    relief_like,
+    to_grid,
+    voxelize_mesh,
+)
 
 
 @dataclass
@@ -42,20 +49,29 @@ class ObjectResult:
         }
 
 
-MIN_FLATNESS = 0.32  # thinnest/largest extent below this = relief, not a body (a car is ~0.4, a statue ~0.5+)
+# A pancake mesh (thin along up, square footprint) means the view confused the reconstructor; see
+# voxelize.relief_like. Plain flatness is not the test: a horse in profile is 0.31 and perfectly fine.
 
 
 def build_object(text: str, out_dir: Path | None = None, height: int | None = None, use_llm: bool = True,
                  preview: bool = True, schematic: bool = True, resolution: int = 256, seed: int = 0,
-                 yaw_deg: float = 0.0, max_types: int = 6, max_recon_tries: int = 2) -> ObjectResult:
-    """The whole object path. Raises `recon.ReconUnavailable` when the local 3D worker is missing."""
+                 yaw_deg: float = 0.0, max_types: int = 6, max_recon_tries: int = 2,
+                 on_stage: Callable[[str, str], None] | None = None) -> ObjectResult:
+    """The whole object path. Raises `recon.ReconUnavailable` when the local 3D worker is missing.
+    `on_stage(name, text)` is called as each stage completes (brief, image, mesh, voxel) for live progress."""
     timings: dict = {}
     notes: list[str] = []
+
+    def stage(name: str, msg: str) -> None:
+        if on_stage is not None:
+            on_stage(name, msg)
+
     t = time.time()
     brief, meta = compose_brief(text, use_llm=use_llm, height=height)
     timings["brief_s"] = round(time.time() - t, 1)
     if meta.get("error"):
         notes.append(f"brief: LLM failed ({meta['error']}); used the keyword fallback")
+    stage("brief", f"{brief.label}: {brief.subject} ({brief.height} tall, {brief.palette}{', plinth' if brief.plinth else ''})")
 
     stamp = time.strftime("%Y%m%d_%H%M%S")
     work = (out_dir or SETTINGS.schematics_dir / "objects") / f"{brief.label}_{stamp}"
@@ -64,7 +80,7 @@ def build_object(text: str, out_dir: Path | None = None, height: int | None = No
 
     # image -> mesh, with a degeneracy gate: a relief-like mesh (flatness < MIN_FLATNESS) means the view
     # confused the reconstructor; try again with the next camera phrasing and keep the best of the tries.
-    best: tuple[float, Path, Path] | None = None
+    best: tuple[tuple[int, float], Path, Path] | None = None
     timings["image_s"] = 0.0
     timings["mesh_s"] = 0.0
     for cam in range(max_recon_tries):
@@ -74,6 +90,7 @@ def build_object(text: str, out_dir: Path | None = None, height: int | None = No
         mesh_path = work / ("mesh.ply" if cam == 0 else f"mesh_{cam}.ply")
         img = imagegen.generate(attempts[0], img_path, attempts=attempts[1:])
         timings["image_s"] = round(timings["image_s"] + img["seconds"], 1)
+        stage("image", "reference image drawn" + (" (retry with another camera)" if cam else ""))
         if cam == 0:
             (work / "prompt.txt").write_text(img["prompt"])
             if img.get("attempt"):
@@ -81,15 +98,19 @@ def build_object(text: str, out_dir: Path | None = None, height: int | None = No
         t = time.time()
         rep = recon.reconstruct(img_path, mesh_path, resolution=resolution)
         timings["mesh_s"] = round(timings["mesh_s"] + rep["wall_seconds"], 1)
-        flat = flatness(load_mesh(mesh_path))
-        notes.append(f"mesh{'' if cam == 0 else ' ' + str(cam)}: {rep.get('vertices')} vertices, infer {rep.get('infer_s')}s, flatness {flat:.2f}")
-        if best is None or flat > best[0]:
-            best = (flat, img_path, mesh_path)
-        if flat >= MIN_FLATNESS:
+        mesh_obj = load_mesh(mesh_path)
+        flat = flatness(mesh_obj)
+        relief = relief_like(mesh_obj)
+        notes.append(f"mesh{'' if cam == 0 else ' ' + str(cam)}: {rep.get('vertices')} vertices, infer {rep.get('infer_s')}s, flatness {flat:.2f}" + (" relief" if relief else ""))
+        score = (0 if relief else 1, flat)
+        if best is None or score > best[0]:
+            best = (score, img_path, mesh_path)
+        stage("mesh", f"{rep.get('faces', '?')} faces reconstructed" + (" — came out flat, trying another view" if relief else ""))
+        if not relief:
             break
     assert best is not None
-    if best[0] < MIN_FLATNESS:
-        notes.append(f"warning: every reconstruction came out flat (best {best[0]:.2f}); the result is a relief, try rephrasing")
+    if best[0][0] == 0:
+        notes.append("warning: every reconstruction came out as a flat relief; try rephrasing (a compact pose helps)")
     image_path, mesh_path = best[1], best[2]
 
     t = time.time()
@@ -97,6 +118,7 @@ def build_object(text: str, out_dir: Path | None = None, height: int | None = No
     grid = to_grid(obj, allowed=brief.allowed_blocks, seed=seed, max_types=max_types)
     timings["voxel_s"] = round(time.time() - t, 1)
     notes.extend(grid.report.get("notes", []))
+    stage("voxel", f"{obj.size[0]}x{obj.size[1]}x{obj.size[2]}, {obj.block_count} blocks, {len(grid.palette)} block types")
 
     result = ObjectResult(brief=brief, grid=grid, work_dir=work, image=image_path, mesh=mesh_path,
                           blocks=obj.block_count, size=obj.size, timings=timings, notes=notes)

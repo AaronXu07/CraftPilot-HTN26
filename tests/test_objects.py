@@ -64,9 +64,14 @@ def test_clamp_chroma_uses_high_percentile():
     assert red.min() > 40  # the red 40% keeps its chroma
 
 
-def test_flatness_detects_relief_meshes():
+def test_relief_gate_distinguishes_pancakes_from_narrow_objects():
+    from craftpilot.objects.voxelize import relief_like
+
     assert flatness(_colored_box(size=(1, 1, 1))) == 1.0
-    assert flatness(_colored_box(size=(1, 1, 0.2))) < 0.32
+    assert relief_like(_colored_box(size=(0.96, 0.93, 0.30)))  # the failed car: thin along up (z), square footprint
+    assert not relief_like(_colored_box(size=(0.31, 0.71, 1.0)))  # a rearing horse: thin sideways
+    assert not relief_like(_colored_box(size=(1.0, 0.45, 0.30)))  # a real low car: thin up but 2:1 footprint
+    assert not relief_like(_colored_box(size=(0.5, 0.5, 1.0)))  # an upright statue
 
 
 def test_palette_only_has_full_opaque_blocks():

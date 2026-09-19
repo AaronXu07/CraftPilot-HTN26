@@ -98,10 +98,20 @@ def _srgb_to_lab(rgb: np.ndarray) -> np.ndarray:
 
 
 def flatness(mesh: trimesh.Trimesh) -> float:
-    """Thinnest extent over the largest: ~1 for a compact object, < 0.3 means the reconstructor returned a
-    relief/billboard instead of a body (a known single-image failure when the view is from above)."""
+    """Thinnest extent over the largest: ~1 for a compact object, ~0.3 for a horse in profile or a low car."""
     ext = np.sort(mesh.bounds[1] - mesh.bounds[0])
     return float(ext[0] / max(ext[2], 1e-6))
+
+
+def relief_like(mesh: trimesh.Trimesh, up_axis: int = 2, max_flat: float = 0.35, min_square: float = 0.75) -> bool:
+    """True for the single-image failure mode where the reconstructor returns a pancake instead of a body:
+    thin along the UP axis (TripoSR frame: z) with a near-square footprint. A rearing horse (thin sideways)
+    or a low car (thin up, but 2:1 footprint) is not a relief."""
+    ext = mesh.bounds[1] - mesh.bounds[0]
+    up = float(ext[up_axis])
+    others = sorted(float(v) for i, v in enumerate(ext) if i != up_axis)
+    largest = max(others[1], 1e-6)
+    return up / largest < max_flat and others[0] / largest > min_square
 
 
 def load_mesh(path: Path | str) -> trimesh.Trimesh:

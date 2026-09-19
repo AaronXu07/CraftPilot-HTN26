@@ -16,7 +16,9 @@ from ..llm import JsonlLogger, MockLLM, _emit, single_call
 from .budget import Budget, get_budget, new_budget, profile_row
 from .common import call_tool, env_flag, fast_llm, outline
 from .critic import Critique, critique, fixes_text
-from .interpret import DEFAULT_STAGES, brief_to_text, interpret
+from .interpret import DEFAULT_STAGES, brief_to_text, guess_kind, interpret
+from .objects import ObjectPathUnavailable, run_object_build
+from .objects import available as object_path_available
 from .progress import Progress, fmt_elapsed, get_progress, live_preview_enabled, new_progress, one_line, scene_snapshot, summarize_delta
 from .router import Route, route
 from .stages import FIX_STAGE, STAGE_BY_NAME, StageResult, run_stage, stage_for_rule
@@ -309,6 +311,21 @@ class BuildReport:
         }
 
 
+def _try_object_path(ctx: Any, request: str, progress: Progress) -> "Optional[tuple[ChatResult, BuildReport]]":
+    """Run the image-to-3D object path; on an unavailable/rejected result say why and return None so the
+    caller continues with the staged pipeline."""
+    try:
+        out = run_object_build(ctx, request, place=True)
+    except ObjectPathUnavailable as e:
+        progress.say("plan", f"object path unavailable ({one_line(str(e), 100)}); building it from primitives instead")
+        return None
+    result = ChatResult(reply=out["reply"], brief=out["brief"], placed=out["placed"], data=out["data"])
+    report = BuildReport(brief=out["brief"] or {})
+    report.seconds = float(out["data"].get("seconds", 0.0))
+    report.blocks = int((out["data"].get("object") or {}).get("blocks", 0) or 0)
+    return result, report
+
+
 def run_build(ctx: Any, llm: Any, request: str, fast: bool = False, place: bool = True) -> "tuple[ChatResult, BuildReport]":
     """Interpret → (blocking → critic → fix)* … → final critique → place. Returns the reply + report.
 
@@ -320,6 +337,12 @@ def run_build(ctx: Any, llm: Any, request: str, fast: bool = False, place: bool 
     budget = _budget(ctx)
     progress = _progress(ctx)
     t0 = time.time()
+    # Objects (statues, creatures, vehicles, props): the image-to-3D path when it is installed. A keyword
+    # match goes straight there (its own brief replaces interpret); otherwise interpret decides below.
+    if place and guess_kind(request) == "object" and object_path_available()[0]:
+        r = _try_object_path(ctx, request, progress)
+        if r is not None:
+            return r
     budget.start_stage("interpret")
     brief = interpret(llm, ctx, request)
     budget.end_stage()
@@ -327,6 +350,10 @@ def run_build(ctx: Any, llm: Any, request: str, fast: bool = False, place: bool 
     progress.say("interpret", one_line(brief.get("silhouette_plan") or "", 150) or brief_to_text(brief))
     stage_names = [s for s in brief.get("stages", DEFAULT_STAGES) if s in STAGE_BY_NAME] or list(DEFAULT_STAGES)
     is_object = brief.get("kind") == "object"
+    if is_object and place and object_path_available()[0]:
+        r = _try_object_path(ctx, request, progress)
+        if r is not None:
+            return r
     carry: Optional[str] = None
     images: List[Any] = []
     skipped: List[str] = []

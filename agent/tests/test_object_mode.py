@@ -179,3 +179,61 @@ def test_object_build_critiques_blocking_and_final_only(tmp_path):
     llm2 = ScriptedBuilderLLM(critic_responses=[low] * 8)
     handle_chat(ctx2, "build a stone hall", llm=llm2, fast=False)
     assert ctx2.session.brief["kind"] == "building" and llm2.roles.count("critic") == 6
+
+
+def test_object_requests_route_to_the_image_path_when_available(tmp_path, monkeypatch):
+    """A statue request skips interpret and the staged pipeline entirely when the object path is up."""
+    from bench.mock_builder import ScriptedBuilderLLM
+    from copilot.pipeline import handle_chat, orchestrator
+
+    calls = []
+
+    def fake_run_object_build(ctx, request, place=True, height=None):
+        calls.append(request)
+        ctx.session.brief = {"kind": "object", "name": "dragon_statue"}
+        return {"reply": "Built dragon_statue: a dragon\n24×30 footprint, 40 tall, 7,375 blocks, 6 block types, in 0:27\nSay `undo` to remove it.",
+                "brief": ctx.session.brief, "placed": True, "data": {"kind": "object", "seconds": 27.0, "object": {"blocks": 7375}}}
+
+    monkeypatch.setattr(orchestrator, "object_path_available", lambda: (True, ""))
+    monkeypatch.setattr(orchestrator, "run_object_build", fake_run_object_build)
+    ctx = FakeCtx(run_dir=str(tmp_path))
+    llm = ScriptedBuilderLLM()
+    r = handle_chat(ctx, "build a dragon statue on a plinth", llm=llm, fast=False)
+    assert calls == ["build a dragon statue on a plinth"]
+    assert r.placed and r.reply.startswith("Built dragon_statue") and r.data["kind"] == "object"
+    assert not llm.requests  # no interpret, no stages, no critic
+    # a building request still goes through the staged pipeline
+    ctx2 = FakeCtx(run_dir=str(tmp_path / "b"))
+    llm2 = ScriptedBuilderLLM()
+    r2 = handle_chat(ctx2, "build a stone hall", llm=llm2, fast=True)
+    assert calls == ["build a dragon statue on a plinth"] and r2.placed and llm2.requests
+
+
+def test_object_path_falls_back_to_the_staged_pipeline(tmp_path, monkeypatch):
+    """Image rejected / worker missing: one chat line, then the primitives pipeline builds it anyway."""
+    from bench.mock_builder import ScriptedBuilderLLM
+    from copilot.pipeline import handle_chat, orchestrator
+    from copilot.pipeline.objects import ObjectPathUnavailable
+
+    def boom(ctx, request, place=True, height=None):
+        raise ObjectPathUnavailable("the image was rejected by Azure's content filter")
+
+    monkeypatch.setattr(orchestrator, "object_path_available", lambda: (True, ""))
+    monkeypatch.setattr(orchestrator, "run_object_build", boom)
+    ctx = FakeCtx(run_dir=str(tmp_path))
+    llm = ScriptedBuilderLLM()
+    r = handle_chat(ctx, "build a dragon statue on a plinth", llm=llm, fast=True)
+    assert r.placed and llm.requests  # the staged pipeline ran
+    said = [c[1].get("text", "") for c in ctx.calls if c[0] == "say"] if hasattr(ctx, "calls") else []
+    lines = getattr(ctx, "progress", None).lines if getattr(ctx, "progress", None) else said
+    assert any("object path unavailable" in ln and "content filter" in ln for ln in lines), lines
+
+
+def test_object_path_available_respects_the_switch(monkeypatch):
+    from copilot.pipeline import objects
+
+    monkeypatch.setenv("COPILOT_OBJECT_PATH", "0")
+    assert objects.available() == (False, "COPILOT_OBJECT_PATH is off")
+    monkeypatch.setenv("COPILOT_OBJECT_PATH", "1")
+    ok, why = objects.available()
+    assert ok or "not importable" in why or "3D worker" in why
