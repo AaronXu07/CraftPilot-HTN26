@@ -1,0 +1,12 @@
+[
+  {"name": "medieval_castle", "prompt": "build a medieval castle with an L-shaped keep, four round corner towers with cone roofs, curtain walls and a gatehouse facing me", "must_have": ["L-shaped keep", "four round towers", "gatehouse on the facing side"]},
+  {"name": "modern_villa", "prompt": "build a modern two-storey villa with flat roofs, a cantilevered upper floor, floor-to-ceiling glass on the front and an infinity pool", "must_have": ["cantilevered upper floor", "large glass front", "pool"]},
+  {"name": "japanese_pagoda", "prompt": "build a five-tier Japanese pagoda with sweeping tiered roofs, a central spire and a stone plinth", "must_have": ["five tiers", "tiered roofs wider than each tier", "spire"]},
+  {"name": "lighthouse", "prompt": "build a tall tapered lighthouse with red and white bands, a glass lantern room on top and a small keeper's cottage attached", "must_have": ["tapered tower", "glass lantern room", "attached cottage"]},
+  {"name": "stone_bridge", "prompt": "build a stone arch bridge 40 blocks long with three arches, parapets and lanterns on posts", "must_have": ["three arches", "parapets", "lantern posts"]},
+  {"name": "cathedral", "prompt": "build a gothic cathedral with a long nave, a transept, twin front towers, a rose window and flying buttresses", "must_have": ["twin towers", "rose window", "buttresses"]},
+  {"name": "desert_temple", "prompt": "build a sandstone desert temple: a stepped pyramid with a columned entrance portico and carved recesses", "must_have": ["stepped pyramid", "columned portico", "sandstone"]},
+  {"name": "treehouse", "prompt": "build a treehouse on a giant oak: a big trunk with a leaf canopy, a cabin on a platform with a railing and a spiral stair around the trunk", "must_have": ["trunk and canopy", "cabin on a platform", "stair around the trunk"]},
+  {"name": "gothic_tower", "prompt": "build a tall gothic wizard's tower: octagonal, with a spire, pointed-arch windows and a balcony near the top", "must_have": ["octagonal", "spire", "balcony"]},
+  {"name": "greenhouse", "prompt": "build a Victorian greenhouse with a glass barrel-vault roof, white iron frame, a central dome and planting beds inside", "must_have": ["glass barrel vault", "central dome", "planting beds"]}
+]

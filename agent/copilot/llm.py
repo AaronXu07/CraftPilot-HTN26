@@ -1,0 +1,639 @@
+"""LLM layer: Azure OpenAI client, scripted mock, tool-calling loop, JSON helpers, run logging.
+
+See plan.md §7.6. The model is an OpenAI chat model on Azure with function calling; vision is used
+by the critic when the deployment supports it (`LLM.supports_vision`).
+"""
+from __future__ import annotations
+
+import base64
+import io
+import json
+import os
+import re
+import time
+from dataclasses import dataclass, field
+from typing import Any, Callable, Dict, List, Optional, Protocol, Sequence, Tuple
+
+try:  # optional: .env support
+    from dotenv import load_dotenv
+
+    load_dotenv()
+except Exception:  # noqa: BLE001
+    pass
+
+
+# ----------------------------------------------------------------------------------------------
+# Data types
+# ----------------------------------------------------------------------------------------------
+@dataclass
+class ToolCall:
+    id: str
+    name: str
+    args: Dict[str, Any]
+
+
+@dataclass
+class LLMResponse:
+    text: Optional[str]
+    tool_calls: List[ToolCall] = field(default_factory=list)
+    usage: Dict[str, int] = field(default_factory=dict)
+    raw: Any = None
+
+    @property
+    def has_tool_calls(self) -> bool:
+        return bool(self.tool_calls)
+
+
+class LLM(Protocol):
+    """Anything with a `chat` method and a `supports_vision` flag."""
+
+    supports_vision: bool
+
+    def chat(
+        self,
+        messages: List[Dict[str, Any]],
+        tools: Optional[List[Dict[str, Any]]] = None,
+        temperature: float = 0.2,
+        tool_choice: Any = "auto",
+        max_tokens: int = 4000,
+    ) -> LLMResponse: ...
+
+
+# ----------------------------------------------------------------------------------------------
+# Helpers
+# ----------------------------------------------------------------------------------------------
+def image_content(pil_image, detail: str = "high", max_px: int = 1024) -> Dict[str, Any]:
+    """A chat-completions `image_url` content part with a PNG data URI (downscaled to <= max_px)."""
+    img = pil_image
+    w, h = img.size
+    if max(w, h) > max_px:
+        s = max_px / float(max(w, h))
+        img = img.resize((max(1, int(w * s)), max(1, int(h * s))))
+    if img.mode not in ("RGB", "RGBA"):
+        img = img.convert("RGB")
+    buf = io.BytesIO()
+    img.save(buf, format="PNG", optimize=True)
+    b64 = base64.b64encode(buf.getvalue()).decode("ascii")
+    return {"type": "image_url", "image_url": {"url": f"data:image/png;base64,{b64}", "detail": detail}}
+
+
+def text_content(text: str) -> Dict[str, Any]:
+    return {"type": "text", "text": text}
+
+
+def approx_tokens(text: str) -> int:
+    return max(1, len(text) // 4)
+
+
+def parse_args(raw: Any) -> Dict[str, Any]:
+    """Tool-call arguments as a dict; tolerant of bad JSON from the model."""
+    if raw is None:
+        return {}
+    if isinstance(raw, dict):
+        return raw
+    if isinstance(raw, str):
+        raw = raw.strip()
+        if not raw:
+            return {}
+        try:
+            v = json.loads(raw)
+            return v if isinstance(v, dict) else {"value": v}
+        except json.JSONDecodeError:
+            v = extract_json(raw)
+            return v if isinstance(v, dict) else {"_raw": raw}
+    return {"value": raw}
+
+
+_FENCE_RE = re.compile(r"```(?:json)?\s*(.*?)```", re.DOTALL | re.IGNORECASE)
+
+
+def extract_json(text: Any) -> Optional[Any]:
+    """Best-effort JSON extraction from model text: raw JSON, fenced block, or first balanced {...}/[...]."""
+    if text is None:
+        return None
+    if isinstance(text, (dict, list)):
+        return text
+    s = str(text).strip()
+    if not s:
+        return None
+    candidates: List[str] = [s]
+    candidates += [m.strip() for m in _FENCE_RE.findall(s)]
+    for opener, closer in (("{", "}"), ("[", "]")):
+        start = s.find(opener)
+        while start != -1:
+            depth = 0
+            in_str = False
+            esc = False
+            for i in range(start, len(s)):
+                ch = s[i]
+                if in_str:
+                    if esc:
+                        esc = False
+                    elif ch == "\\":
+                        esc = True
+                    elif ch == '"':
+                        in_str = False
+                    continue
+                if ch == '"':
+                    in_str = True
+                elif ch == opener:
+                    depth += 1
+                elif ch == closer:
+                    depth -= 1
+                    if depth == 0:
+                        candidates.append(s[start : i + 1])
+                        break
+            start = s.find(opener, start + 1)
+            if len(candidates) > 12:
+                break
+    for c in candidates:
+        for attempt in (c, _clean_json(c), _balance(_clean_json(c))):
+            try:
+                return json.loads(attempt)
+            except (json.JSONDecodeError, TypeError):
+                continue
+    return None
+
+
+def _balance(s: str) -> str:
+    """Append missing closers for truncated JSON (e.g. a cut-off tool argument string)."""
+    stack: List[str] = []
+    in_str = False
+    esc = False
+    for ch in s:
+        if in_str:
+            if esc:
+                esc = False
+            elif ch == "\\":
+                esc = True
+            elif ch == '"':
+                in_str = False
+            continue
+        if ch == '"':
+            in_str = True
+        elif ch in "{[":
+            stack.append("}" if ch == "{" else "]")
+        elif ch in "}]" and stack:
+            stack.pop()
+    if in_str:
+        s += '"'
+    return s + "".join(reversed(stack))
+
+
+def _clean_json(s: str) -> str:
+    s = re.sub(r",\s*([}\]])", r"\1", s)  # trailing commas
+    s = re.sub(r"(?m)^\s*//.*$", "", s)  # line comments
+    s = s.replace("“", '"').replace("”", '"').replace("‘", "'").replace("’", "'")
+    return s
+
+
+class JsonlLogger:
+    """Append-only JSON-lines logger (one file per turn: runs/<session>/<turn>.jsonl)."""
+
+    def __init__(self, path: Optional[str]):
+        self.path = path
+        self.records: List[Dict[str, Any]] = []
+        if path:
+            os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
+
+    def log(self, **rec: Any) -> None:
+        rec.setdefault("t", time.time())
+        self.records.append(rec)
+        if not self.path:
+            return
+        try:
+            with open(self.path, "a") as f:
+                f.write(json.dumps(rec, default=_json_default) + "\n")
+        except OSError:
+            pass
+
+    def event(self, name: str, **fields: Any) -> None:
+        self.log(event=name, **fields)
+
+
+def _json_default(o: Any) -> Any:
+    if hasattr(o, "tolist"):
+        return o.tolist()
+    if hasattr(o, "to_dict"):
+        return o.to_dict()
+    return str(o)[:200]
+
+
+def _preview(s: Any, n: int = 200) -> str:
+    s = str(s)
+    return s if len(s) <= n else s[: n - 3] + "..."
+
+
+# ----------------------------------------------------------------------------------------------
+# Azure OpenAI
+# ----------------------------------------------------------------------------------------------
+class AzureLLM:
+    """Azure OpenAI chat completions with function calling and (optional) vision.
+
+    Env: AZURE_OPENAI_ENDPOINT, AZURE_OPENAI_API_KEY, AZURE_OPENAI_DEPLOYMENT,
+    AZURE_OPENAI_VISION_DEPLOYMENT (defaults to the chat deployment), AZURE_OPENAI_API_VERSION
+    (default 2024-10-21), AZURE_OPENAI_VISION ("0" disables image input).
+    """
+
+    def __init__(
+        self,
+        deployment: Optional[str] = None,
+        vision_deployment: Optional[str] = None,
+        endpoint: Optional[str] = None,
+        api_key: Optional[str] = None,
+        api_version: Optional[str] = None,
+        timeout: float = 120.0,
+        max_attempts: int = 3,
+    ):
+        self.endpoint = endpoint or os.environ.get("AZURE_OPENAI_ENDPOINT", "")
+        self.api_key = api_key or os.environ.get("AZURE_OPENAI_API_KEY", "")
+        self.api_version = api_version or os.environ.get("AZURE_OPENAI_API_VERSION", "2024-10-21")
+        self.deployment = deployment or os.environ.get("AZURE_OPENAI_DEPLOYMENT", "")
+        self.vision_deployment = vision_deployment or os.environ.get("AZURE_OPENAI_VISION_DEPLOYMENT") or self.deployment
+        self.supports_vision = os.environ.get("AZURE_OPENAI_VISION", "1").lower() not in ("0", "false", "no")
+        self.timeout = timeout
+        self.max_attempts = max_attempts
+        self.total_usage: Dict[str, int] = {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
+        self.calls = 0
+        self._client = None
+        if not (self.endpoint and self.api_key and self.deployment):
+            raise RuntimeError(
+                "Azure OpenAI is not configured: set AZURE_OPENAI_ENDPOINT, AZURE_OPENAI_API_KEY and "
+                "AZURE_OPENAI_DEPLOYMENT (or COPILOT_LLM=mock for tests)"
+            )
+
+    @property
+    def client(self):
+        if self._client is None:
+            from openai import AzureOpenAI
+
+            self._client = AzureOpenAI(
+                azure_endpoint=self.endpoint, api_key=self.api_key, api_version=self.api_version, timeout=self.timeout
+            )
+        return self._client
+
+    def chat(
+        self,
+        messages: List[Dict[str, Any]],
+        tools: Optional[List[Dict[str, Any]]] = None,
+        temperature: float = 0.2,
+        tool_choice: Any = "auto",
+        max_tokens: int = 4000,
+    ) -> LLMResponse:
+        import openai
+
+        has_images = _messages_have_images(messages)
+        if has_images and not self.supports_vision:
+            messages = strip_images(messages)
+            has_images = False
+        model = self.vision_deployment if has_images else self.deployment
+        kwargs: Dict[str, Any] = {
+            "model": model,
+            "messages": messages,
+            "temperature": temperature,
+            "max_tokens": max_tokens,
+        }
+        if tools:
+            kwargs["tools"] = tools
+            kwargs["tool_choice"] = tool_choice
+            kwargs["parallel_tool_calls"] = True
+        delay = 1.0
+        last_err: Optional[Exception] = None
+        for attempt in range(self.max_attempts):
+            try:
+                resp = self.client.chat.completions.create(**kwargs)
+                self.calls += 1
+                return self._parse(resp)
+            except openai.BadRequestError as e:
+                if has_images and "image" in str(e).lower():
+                    # deployment without vision: degrade gracefully and remember it
+                    self.supports_vision = False
+                    kwargs["messages"] = strip_images(messages)
+                    kwargs["model"] = self.deployment
+                    has_images = False
+                    continue
+                if "parallel_tool_calls" in str(e) and "parallel_tool_calls" in kwargs:
+                    kwargs.pop("parallel_tool_calls")
+                    continue
+                raise
+            except (openai.RateLimitError, openai.APIConnectionError, openai.APITimeoutError) as e:
+                last_err = e
+            except openai.APIStatusError as e:
+                if e.status_code and e.status_code >= 500:
+                    last_err = e
+                else:
+                    raise
+            time.sleep(delay)
+            delay *= 2
+        raise RuntimeError(f"Azure OpenAI failed after {self.max_attempts} attempts: {last_err}")
+
+    def _parse(self, resp: Any) -> LLMResponse:
+        choice = resp.choices[0]
+        msg = choice.message
+        calls: List[ToolCall] = []
+        for i, tc in enumerate(getattr(msg, "tool_calls", None) or []):
+            fn = getattr(tc, "function", None)
+            if fn is None:
+                continue
+            calls.append(ToolCall(id=tc.id or f"call_{i}", name=fn.name, args=parse_args(fn.arguments)))
+        usage: Dict[str, int] = {}
+        if getattr(resp, "usage", None):
+            usage = {
+                "prompt_tokens": int(getattr(resp.usage, "prompt_tokens", 0) or 0),
+                "completion_tokens": int(getattr(resp.usage, "completion_tokens", 0) or 0),
+                "total_tokens": int(getattr(resp.usage, "total_tokens", 0) or 0),
+            }
+            for k, v in usage.items():
+                self.total_usage[k] = self.total_usage.get(k, 0) + v
+        return LLMResponse(text=msg.content, tool_calls=calls, usage=usage, raw=resp)
+
+
+def _messages_have_images(messages: Sequence[Dict[str, Any]]) -> bool:
+    for m in messages:
+        c = m.get("content")
+        if isinstance(c, list) and any(isinstance(p, dict) and p.get("type") == "image_url" for p in c):
+            return True
+    return False
+
+
+def strip_images(messages: Sequence[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """Replace image parts with a text note (for deployments without vision)."""
+    out: List[Dict[str, Any]] = []
+    for m in messages:
+        c = m.get("content")
+        if isinstance(c, list):
+            parts = []
+            n_img = 0
+            for p in c:
+                if isinstance(p, dict) and p.get("type") == "image_url":
+                    n_img += 1
+                else:
+                    parts.append(p)
+            if n_img:
+                parts.append(text_content(f"[{n_img} image(s) omitted: this model has no vision; rely on the text summaries]"))
+            m = dict(m)
+            m["content"] = parts
+        out.append(m)
+    return out
+
+
+# ----------------------------------------------------------------------------------------------
+# Scripted mock
+# ----------------------------------------------------------------------------------------------
+class MockLLM:
+    """Returns scripted responses in order and records every request.
+
+    Script steps: `{"tool_calls": [{"name": ..., "args": {...}}, ...]}`, `{"text": "..."}`, a step with
+    both, or a callable `(messages, tools) -> step`. When the script is exhausted the mock returns a
+    plain text response (so loops terminate).
+    """
+
+    def __init__(self, script: Optional[List[Any]] = None, supports_vision: bool = True, exhausted_text: str = "(mock script exhausted)"):
+        self.script: List[Any] = list(script or [])
+        self.supports_vision = supports_vision
+        self.exhausted_text = exhausted_text
+        self.requests: List[Dict[str, Any]] = []
+        self.calls = 0
+        self.total_usage: Dict[str, int] = {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
+        self._i = 0
+
+    def extend(self, steps: List[Any]) -> None:
+        self.script.extend(steps)
+
+    @property
+    def remaining(self) -> int:
+        return max(0, len(self.script) - self._i)
+
+    def chat(
+        self,
+        messages: List[Dict[str, Any]],
+        tools: Optional[List[Dict[str, Any]]] = None,
+        temperature: float = 0.2,
+        tool_choice: Any = "auto",
+        max_tokens: int = 4000,
+    ) -> LLMResponse:
+        self.calls += 1
+        self.requests.append(
+            {
+                "messages": [dict(m) for m in messages],
+                "tools": [t.get("function", {}).get("name", t.get("name")) for t in (tools or [])],
+                "temperature": temperature,
+                "tool_choice": tool_choice,
+                "has_images": _messages_have_images(messages),
+            }
+        )
+        if self._i >= len(self.script):
+            return LLMResponse(text=self.exhausted_text, tool_calls=[], usage={})
+        step = self.script[self._i]
+        self._i += 1
+        if callable(step):
+            step = step(messages, tools)
+        if isinstance(step, str):
+            step = {"text": step}
+        calls = []
+        for j, tc in enumerate(step.get("tool_calls", []) or []):
+            calls.append(ToolCall(id=tc.get("id") or f"mock_call_{self.calls}_{j}", name=tc["name"], args=dict(tc.get("args", {}))))
+        usage = {"prompt_tokens": sum(approx_tokens(str(m.get("content", ""))) for m in messages), "completion_tokens": 50}
+        usage["total_tokens"] = usage["prompt_tokens"] + usage["completion_tokens"]
+        return LLMResponse(text=step.get("text"), tool_calls=calls, usage=usage, raw=step)
+
+
+# ----------------------------------------------------------------------------------------------
+# Tool loop
+# ----------------------------------------------------------------------------------------------
+@dataclass
+class LoopResult:
+    text: str
+    calls: List[Tuple[str, Dict[str, Any], str]] = field(default_factory=list)
+    images_shown: int = 0
+    stopped_reason: str = "text"  # text | finish | max_calls | error
+    messages: List[Dict[str, Any]] = field(default_factory=list)
+    usage: Dict[str, int] = field(default_factory=dict)
+    llm_calls: int = 0
+
+    @property
+    def tool_calls(self) -> int:
+        return len(self.calls)
+
+    def call_names(self) -> List[str]:
+        return [c[0] for c in self.calls]
+
+
+def get_logger(ctx: Any) -> Any:
+    """ctx.log if it has .log(**rec), else a JsonlLogger under runs/<session>/<turn>.jsonl."""
+    log = getattr(ctx, "log", None)
+    if log is not None and (hasattr(log, "log") or callable(log)):
+        return log
+    session = getattr(ctx, "session", None)
+    run_dir = getattr(ctx, "run_dir", None) or getattr(session, "run_dir", None) or "runs/anon"
+    turn = getattr(session, "turn", 0)
+    logger = JsonlLogger(os.path.join(run_dir, f"{turn}.jsonl"))
+    try:
+        ctx.log = logger
+    except Exception:  # noqa: BLE001
+        pass
+    return logger
+
+
+def _emit(log: Any, **rec: Any) -> None:
+    if log is None:
+        return
+    try:
+        if hasattr(log, "log"):
+            log.log(**rec)
+        elif callable(log):
+            log(rec)
+    except Exception:  # noqa: BLE001
+        pass
+
+
+def run_tool_loop(
+    llm: Any,
+    ctx: Any,
+    system_prompt: str,
+    messages: List[Dict[str, Any]],
+    tools: Optional[List[Dict[str, Any]]],
+    dispatch_fn: Callable[[Any, str, Dict[str, Any]], Any],
+    max_calls: int = 40,
+    temperature: float = 0.2,
+    on_tool: Optional[Callable[[str, Dict[str, Any], Any], None]] = None,
+    log: Any = None,
+    tool_choice: Any = "auto",
+    max_llm_calls: Optional[int] = None,
+) -> LoopResult:
+    """OpenAI tool-calling loop.
+
+    * All tool calls in one response are executed in order; results are appended as `tool` messages.
+    * Images returned by tools (ToolResult.images) are attached to the next user message when the
+      model supports vision, otherwise only the tool text is used.
+    * Stops on a plain text response, on a `finish` tool call, or when `max_calls` tool calls have
+      been made (a system nudge is inserted when 5 calls remain).
+    * Every call is logged with timing as {t, stage, name, args, result_preview, ms}.
+    """
+    log = log or get_logger(ctx)
+    session = getattr(ctx, "session", None)
+    stage = getattr(session, "stage", None)
+    full: List[Dict[str, Any]] = [{"role": "system", "content": system_prompt}] + list(messages)
+    result = LoopResult(text="", messages=full)
+    usage: Dict[str, int] = {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
+    pending_images: List[Any] = []
+    nudged = False
+    n_calls = 0
+    max_llm = max_llm_calls or (max_calls * 2 + 4)
+    supports_vision = bool(getattr(llm, "supports_vision", False))
+    last_text = ""
+    while True:
+        if result.llm_calls >= max_llm:
+            result.stopped_reason = "max_calls"
+            break
+        t0 = time.time()
+        try:
+            resp: LLMResponse = llm.chat(full, tools, temperature, tool_choice)
+        except Exception as e:  # noqa: BLE001
+            _emit(log, stage=stage, name="__llm_error__", args={}, result_preview=_preview(e), ms=int((time.time() - t0) * 1000))
+            result.stopped_reason = "error"
+            result.text = last_text or f"LLM error: {e}"
+            break
+        result.llm_calls += 1
+        for k, v in (resp.usage or {}).items():
+            usage[k] = usage.get(k, 0) + int(v or 0)
+        _emit(log, stage=stage, name="__llm__", args={"tools": len(tools or [])}, result_preview=_preview(resp.text or f"{len(resp.tool_calls)} tool calls"), ms=int((time.time() - t0) * 1000))
+        if resp.text:
+            last_text = resp.text
+        if not resp.tool_calls:
+            result.text = resp.text or ""
+            result.stopped_reason = "text"
+            full.append({"role": "assistant", "content": resp.text or ""})
+            break
+        # assistant message with tool calls (OpenAI format)
+        full.append(
+            {
+                "role": "assistant",
+                "content": resp.text,
+                "tool_calls": [
+                    {"id": tc.id, "type": "function", "function": {"name": tc.name, "arguments": json.dumps(tc.args, default=_json_default)}}
+                    for tc in resp.tool_calls
+                ],
+            }
+        )
+        finished = False
+        for tc in resp.tool_calls:
+            n_calls += 1
+            if session is not None:
+                try:
+                    session.tool_calls_this_stage = getattr(session, "tool_calls_this_stage", 0) + 1
+                except Exception:  # noqa: BLE001
+                    pass
+            t1 = time.time()
+            if tc.name == "finish":
+                text = str(tc.args.get("summary") or tc.args.get("text") or "done")
+                full.append({"role": "tool", "tool_call_id": tc.id, "content": "ok"})
+                result.calls.append((tc.name, tc.args, text))
+                result.text = text
+                finished = True
+                _emit(log, stage=stage, name="finish", args=tc.args, result_preview=_preview(text), ms=0)
+                if on_tool:
+                    on_tool(tc.name, tc.args, text)
+                continue
+            try:
+                tr = dispatch_fn(ctx, tc.name, tc.args)
+                text = getattr(tr, "text", None)
+                if text is None:
+                    text = str(tr)
+                images = list(getattr(tr, "images", None) or [])
+            except Exception as e:  # noqa: BLE001
+                text = f"ERROR in {tc.name}: {e}"
+                images = []
+            ms = int((time.time() - t1) * 1000)
+            _emit(log, stage=stage, name=tc.name, args=tc.args, result_preview=_preview(text), ms=ms)
+            full.append({"role": "tool", "tool_call_id": tc.id, "content": str(text)})
+            result.calls.append((tc.name, tc.args, str(text)))
+            if images:
+                pending_images.extend(images)
+            if on_tool:
+                on_tool(tc.name, tc.args, text)
+        if finished:
+            result.stopped_reason = "finish"
+            break
+        if pending_images:
+            if supports_vision:
+                parts: List[Dict[str, Any]] = [text_content(f"Rendered view(s) from your last render call ({len(pending_images)} image(s)). Check silhouette, proportions and detail before continuing.")]
+                parts += [image_content(im) for im in pending_images]
+                full.append({"role": "user", "content": parts})
+                result.images_shown += len(pending_images)
+            pending_images = []
+        remaining = max_calls - n_calls
+        if remaining <= 0:
+            result.stopped_reason = "max_calls"
+            result.text = last_text or f"stopped after {n_calls} tool calls"
+            break
+        if remaining <= 5 and not nudged:
+            nudged = True
+            full.append({"role": "system", "content": f"You have {remaining} tool calls left in this stage. Finish the essentials and call finish with a one-line summary."})
+    result.usage = usage
+    result.messages = full
+    return result
+
+
+def single_call(llm: Any, system_prompt: str, user_content: Any, temperature: float = 0.2, tools: Optional[List[Dict[str, Any]]] = None, tool_choice: Any = "auto", max_tokens: int = 2000) -> LLMResponse:
+    """One chat call with a system prompt and a user message (string or content parts)."""
+    return llm.chat(
+        [{"role": "system", "content": system_prompt}, {"role": "user", "content": user_content}],
+        tools,
+        temperature,
+        tool_choice,
+        max_tokens,
+    )
+
+
+def make_llm(kind: Optional[str] = None) -> Any:
+    """Factory: COPILOT_LLM=mock → MockLLM([]), else AzureLLM()."""
+    kind = (kind or os.environ.get("COPILOT_LLM", "azure")).lower()
+    if kind == "mock":
+        try:
+            from bench.mock_builder import ScriptedBuilderLLM  # role-aware scripted builder
+
+            return ScriptedBuilderLLM()
+        except Exception:  # noqa: BLE001
+            return MockLLM([])
+    return AzureLLM()

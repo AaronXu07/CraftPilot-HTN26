@@ -1,0 +1,78 @@
+package dev.craftpilot.copilot;
+
+import com.mojang.brigadier.arguments.StringArgumentType;
+import net.fabricmc.api.ClientModInitializer;
+import net.fabricmc.fabric.api.client.command.v2.ClientCommandManager;
+import net.fabricmc.fabric.api.client.command.v2.ClientCommandRegistrationCallback;
+import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientLifecycleEvents;
+import net.minecraft.client.MinecraftClient;
+import net.minecraft.text.Text;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+/**
+ * Client entrypoint. Starts the HTTP bridge on 127.0.0.1:7777, registers the {@code /cp <text>}
+ * client command that forwards chat to the Python agent, and hooks the tick-driven helpers
+ * ({@link BlockPlacer} for animated placement, {@link CameraOrbit} for the demo camera).
+ *
+ * <p>No build logic lives in Java: the mod is a thin bridge (plan.md §10).
+ */
+public class CopilotClientMod implements ClientModInitializer {
+    public static final String MOD_ID = "copilot";
+    public static final String MOD_VERSION = "0.1.0";
+    public static final Logger LOGGER = LoggerFactory.getLogger(MOD_ID);
+
+    /** Where the mod listens (the agent talks to this). */
+    public static final String BRIDGE_HOST = "127.0.0.1";
+    public static final int BRIDGE_PORT = 7777;
+    /** Where the Python agent listens (the /cp command talks to this). */
+    public static final String AGENT_CHAT_URL = System.getProperty("copilot.agent", "http://127.0.0.1:8000/chat");
+
+    private static HttpBridgeServer bridge;
+
+    @Override
+    public void onInitializeClient() {
+        BlockPlacer.register();
+        CameraOrbit.register();
+
+        try {
+            bridge = new HttpBridgeServer(BRIDGE_HOST, BRIDGE_PORT);
+            bridge.start();
+            LOGGER.info("[copilot] bridge listening on http://{}:{}", BRIDGE_HOST, BRIDGE_PORT);
+        } catch (Exception e) {
+            LOGGER.error("[copilot] failed to start bridge server", e);
+        }
+
+        ClientLifecycleEvents.CLIENT_STOPPING.register(client -> {
+            if (bridge != null) {
+                bridge.stop();
+            }
+        });
+
+        ClientCommandRegistrationCallback.EVENT.register((dispatcher, registryAccess) -> dispatcher.register(
+                ClientCommandManager.literal("cp")
+                        .executes(ctx -> {
+                            ctx.getSource().sendFeedback(Text.literal(
+                                    "§6[copilot]§r usage: /cp <what to build or change>  e.g. /cp build a castle with four towers"));
+                            return 1;
+                        })
+                        .then(ClientCommandManager.argument("text", StringArgumentType.greedyString())
+                                .executes(ctx -> {
+                                    String text = StringArgumentType.getString(ctx, "text");
+                                    String player = ctx.getSource().getPlayer().getGameProfile().getName();
+                                    ctx.getSource().sendFeedback(Text.literal("§6[copilot]§7 thinking..."));
+                                    AgentChatClient.sendAsync(player, text);
+                                    return 1;
+                                }))));
+    }
+
+    /** Print a line in the player's chat, from any thread. */
+    public static void chat(String text) {
+        MinecraftClient client = MinecraftClient.getInstance();
+        client.execute(() -> {
+            if (client.inGameHud != null) {
+                client.inGameHud.getChatHud().addMessage(Text.literal("§6[copilot]§r " + text));
+            }
+        });
+    }
+}
