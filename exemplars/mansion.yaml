@@ -1,0 +1,73 @@
+description: >
+  A grand symmetric brick mansion. A three storey central block with a hip roof and a cupola,
+  two lower wings on either side with their own hip roofs, tall windows with sills, dark oak
+  framing at every bay, dormers across the roof, a balcony over the entrance, a porch with
+  posts, and brick walls on a stone brick base.
+tags: [mansion, manor, estate, grand, victorian, georgian, brick, wings, symmetric, large, house]
+program:
+  label: mansion
+  bounds: {width: 45, height: 30, depth: 25}
+  parts:
+    - name: center
+      shape: rect
+      size: {width: 0.5, depth: 1.0}
+      floors: 3
+      floor_height: 4
+      roof: {type: hip, pitch: 1.0, overhang: 1}
+    - name: west_wing
+      shape: rect
+      size: {width: 0.5, depth: 0.75}
+      floors: 2
+      floor_height: 4
+      roof: {type: hip, pitch: 1.0, overhang: 1}
+      attach: {to: center, side: west, align: center, overlap: 1}
+    - name: east_wing
+      shape: rect
+      size: {width: 0.5, depth: 0.75}
+      floors: 2
+      floor_height: 4
+      roof: {type: hip, pitch: 1.0, overhang: 1}
+      attach: {to: center, side: east, align: center, overlap: 1}
+  facade:
+    bay_width: {min: 3, max: 4}
+    window: tall
+    window_width: 1
+    window_height: 3
+    shutters: 0.0
+    sills: true
+    framing: bays
+    symmetry: true
+    max_flat_run: 5
+  depth:
+    frame_protrude: 1
+    window_inset: 1
+    eave_trim: true
+    foundation_rise: 1
+    foundation_outset: 1
+    corbels: true
+  attachments:
+    - {kind: cupola, count: 1}
+    - {kind: balcony, count: 1, params: {width: 3, depth: 2}}
+    - {kind: dormer, count: 4, spacing: regular}
+    - {kind: chimney, count: 2}
+    - {kind: porch, params: {width: 5, depth: 2}}
+  palette:
+    primary:
+      families: [{family: bricks, weight: 1.0}]
+      texture_rate: 0.0
+    framing:
+      families: [{family: dark_oak, weight: 1.0}]
+    roof:
+      families: [{family: deepslate_tiles, weight: 1.0}]
+      texture_rate: 0.1
+    trim:
+      families: [{family: stone_bricks, weight: 1.0}]
+    foundation:
+      families: [{family: stone_bricks, weight: 1.0}]
+      weathering: 0.5
+      texture_rate: 0.25
+    secondary:
+      families: [{family: stone_bricks, weight: 1.0}]
+      texture_rate: 0.2
+    glass:
+      families: [{family: glass, weight: 1.0}]

@@ -1,0 +1,62 @@
+description: >
+  A modern minimalist house. Two offset stacked boxes with flat parapet roofs, the upper box
+  cantilevered past the lower one, floor to ceiling glass walls, white and gray concrete with
+  dark oak accents, thin slab lips at the storey line, no framing and deliberate asymmetry.
+tags: [modern, contemporary, minimalist, villa, flat, roof, glass, concrete, house, mansion]
+program:
+  label: modern house
+  bounds: {width: 27, height: 16, depth: 21}
+  parts:
+    - name: ground
+      shape: rect
+      size: {width: 1.0, depth: 0.7}
+      floors: 1
+      floor_height: 5
+      odd_dims: false
+      roof: {type: flat, overhang: 0}
+    - name: upper
+      shape: rect
+      size: {width: 0.65, depth: 0.8}
+      floors: 1
+      floor_height: 4
+      odd_dims: false
+      roof: {type: parapet, overhang: 1}
+      attach: {to: ground, side: top, align: end, offset: 0, offset_z: 3}
+  facade:
+    bay_width: {min: 4, max: 6}
+    window: wall
+    window_width: 3
+    window_height: 3
+    shutters: 0.0
+    sills: false
+    framing: none
+    symmetry: false
+    max_flat_run: 9
+  depth:
+    frame_protrude: 0
+    window_inset: 0
+    eave_trim: false
+    foundation_rise: 1
+    foundation_outset: 0
+    floor_lips: true
+    corbels: false
+  attachments: []
+  palette:
+    primary:
+      families: [{family: white_concrete, weight: 1.0}]
+      texture_rate: 0.0
+    secondary:
+      families: [{family: gray_concrete, weight: 1.0}]
+      texture_rate: 0.0
+    roof:
+      families: [{family: polished_deepslate, weight: 1.0}]
+      texture_rate: 0.0
+    trim:
+      families: [{family: dark_oak, weight: 1.0}]
+    framing:
+      families: [{family: dark_oak, weight: 1.0}]
+    foundation:
+      families: [{family: gray_concrete, weight: 1.0}]
+      texture_rate: 0.0
+    glass:
+      families: [{family: glass, weight: 1.0}]
