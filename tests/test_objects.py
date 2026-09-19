@@ -93,3 +93,30 @@ def test_prompt_attempts_cascade_and_cameras():
     p1 = compose_prompt("a cat", plinth=True, camera=1)
     assert p1.startswith(CAMERAS[1]) and "plinth" in p1
     assert len({compose_prompt("x", False, camera=i) for i in range(len(CAMERAS))}) == len(CAMERAS)
+
+
+def test_placement_geometry_faces_the_player():
+    from craftpilot.objects import place as P
+    from craftpilot.objects.voxelize import to_grid
+
+    # an L-shaped object: a tall column plus a foot sticking out toward +x in the mesh frame (the presented side)
+    m = trimesh.util.concatenate([
+        _colored_box(size=(2, 2, 8)).apply_translation([0, 0, 4]),          # column (z-up frame)
+        _colored_box(size=(4, 2, 2)).apply_translation([3, 0, 1]),          # foot toward +x
+    ])
+    grid = to_grid(voxelize_mesh(m, height=8))
+    blocks = P.grid_blocks(grid)
+    xs = [b[0] for b in blocks]; zs = [b[2] for b in blocks]
+    # after the presentation turn the foot (mesh +x) points to +z (south, toward the player)
+    foot = [b for b in blocks if b[1] == 0]
+    assert max(z for _, _, z, _ in foot) > max(zs) - 2 and min(xs) < 0 < max(xs)
+    # player standing north of the origin looking south: the object goes south of them, foot pointing back at them
+    anchor, k = P.plan_anchor({"pos": [10.5, 64.0, 10.5], "yaw": 0.0}, blocks, gap=2)
+    assert k == P.FACING_TURNS["south"]
+    world = P.to_world(blocks, anchor, k)
+    assert min(w[2] for w in world) == 10 + 1 + 2  # 2 air blocks in front of the player
+    assert min(w[1] for w in world) == 64  # ground at the player's feet
+    ws = sorted(world, key=lambda b: b[2])
+    assert ws[0][1] == 0 + 64 and any(b[1] == 64 for b in ws[:4])  # the foot is the nearest part
+    chunks = P.layer_chunks(world, 5)
+    assert all(c[0][1] <= c[-1][1] for c in chunks) and chunks[0][0][1] == 64

@@ -109,6 +109,7 @@ class ObjectRequest(BaseModel):
     use_llm: bool = True
     preview: bool = True
     yaw: float = 0.0
+    place: bool = False  # also place it in the running game through the Fabric mod bridge
 
 
 @app.post("/object")
@@ -128,6 +129,15 @@ def build_object_endpoint(req: ObjectRequest) -> dict:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     out = r.to_dict()
     out["source"] = "object"
+    if req.place:
+        from craftpilot.objects import place as P
+
+        try:
+            pl = P.place(r.grid, undo_dir=r.work_dir)
+            out["placed"] = {"anchor": list(pl.anchor), "blocks": pl.blocks, "chunks": pl.chunks,
+                             "estimated_seconds": pl.estimated_seconds, "undo_file": str(pl.undo_file)}
+        except P.ModUnavailable as exc:
+            out["placed"] = {"error": str(exc)}
     return out
 
 

@@ -156,6 +156,7 @@ def object_(
     yaw: float = typer.Option(0.0, "--yaw", help="Rotate the object about the vertical axis (degrees)"),
     types: int = typer.Option(6, "--types", help="Max distinct block types on the surface"),
     resolution: int = typer.Option(256, "--resolution", help="Reconstruction marching-cubes resolution"),
+    place_now: bool = typer.Option(False, "--place", help="Also place it in the running game, in front of the player (needs the Fabric mod)"),
 ) -> None:
     """Text -> reference image (FLUX) -> mesh (TripoSR, local) -> coloured voxels -> .litematic (+ preview)."""
     from craftpilot.objects.imagegen import ImageRejected
@@ -168,6 +169,14 @@ def object_(
     except (ReconUnavailable, ImageRejected) as exc:
         typer.echo(f"error: {exc}", err=True)
         raise typer.Exit(2) from exc
+    if place_now:
+        from craftpilot.objects import place as P
+
+        try:
+            pl = P.place(r.grid, undo_dir=r.work_dir)
+            typer.echo(f"  placed    {pl.blocks} blocks in {pl.chunks} chunks at {pl.anchor} (undo: craftpilot object-undo {pl.undo_file})")
+        except P.ModUnavailable as exc:
+            typer.echo(f"  not placed: {exc}", err=True)
     b = r.brief
     typer.echo(f"{b.label}: {b.subject}")
     typer.echo(f"  {r.size[0]}x{r.size[1]}x{r.size[2]}, {r.blocks} blocks, palette {b.palette}, plinth {b.plinth} "
@@ -180,6 +189,19 @@ def object_(
     if r.litematic:
         typer.echo(f"  litematic {r.litematic}")
     typer.echo(f"  work dir  {r.work_dir}")
+
+
+@app.command("object-undo")
+def object_undo(undo_file: Path = typer.Argument(..., help="placed.json written by `craftpilot object --place`")) -> None:
+    """Remove a placed object from the world (sets every recorded position to air)."""
+    from craftpilot.objects import place as P
+
+    try:
+        n = P.undo(undo_file)
+    except P.ModUnavailable as exc:
+        typer.echo(f"error: {exc}", err=True)
+        raise typer.Exit(2) from exc
+    typer.echo(f"removed {n} blocks")
 
 
 @app.command()
