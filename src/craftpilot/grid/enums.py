@@ -35,6 +35,7 @@ class Role(IntEnum):
     STAIRCASE = 26      # interior stairs between floors
     PARTITION = 27      # interior wall
     FOLIAGE = 28        # vines and leaves
+    DETAIL = 29         # small protruding textures: buttons, trapdoors, lichen
 
 
 class BShape(IntEnum):
@@ -59,6 +60,10 @@ class BShape(IntEnum):
     CAMPFIRE = 16
     BANNER = 17         # wall banner, facing from normal
     LADDER = 18         # facing from normal (the side you climb from)
+    BUTTON = 21         # wall button, facing = outward normal
+    LICHEN = 22         # glow lichen on the wall face
+    BARS = 23           # iron bars
+    FENCE_GATE = 24     # facing from normal
     VINE = 19           # attached to the wall in direction OPPOSITE[normal]... normal = wall's outward side
     LEAVES = 20
 
@@ -115,3 +120,4 @@ class Flag(IntEnum):
     NO_TEXTURE = 16
     OVERHANG = 32
     PERIMETER = 64
+    FIXED_SHAPE = 128   # stairs that must stay straight (slits, wall details)

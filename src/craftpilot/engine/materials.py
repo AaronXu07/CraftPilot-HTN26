@@ -6,6 +6,7 @@ import numpy as np
 
 from craftpilot.blocks import catalog
 from craftpilot.blocks.catalog import Family
+from craftpilot.blocks.palette_data import WEATHERED_COMPANIONS, closest_family_with_shape
 from craftpilot.blocks.state import BlockRef
 from craftpilot.engine.noise import clustered
 from craftpilot.grid.enums import OPPOSITE, DIR_NAME, DIR_VEC, HORIZONTAL, BShape, Dir, Flag, Role
@@ -23,9 +24,9 @@ ROLE_PALETTE: dict[int, list[str]] = {
     Role.ROOF_FILL: ["roof"],
     Role.ROOF_TRIM: ["roof"],
     Role.WINDOW: ["glass"],
-    Role.DOOR: ["framing", "primary"],
+    Role.DOOR: ["accent", "framing", "primary"],
     Role.SILL: ["trim", "roof"],
-    Role.SHUTTER: ["trim", "framing", "primary"],
+    Role.SHUTTER: ["accent", "trim", "framing", "primary"],
     Role.TRIM: ["trim", "roof"],
     Role.PILLAR: ["framing", "primary"],
     Role.RAILING: ["trim", "framing", "primary"],
@@ -39,6 +40,7 @@ ROLE_PALETTE: dict[int, list[str]] = {
     Role.FLOOR_LIP: ["trim", "primary"],
     Role.STAIRCASE: ["primary"],
     Role.PARTITION: ["primary"],
+    Role.DETAIL: ["primary"],
 }
 
 BANNER = "minecraft:red_wall_banner"
@@ -63,11 +65,16 @@ SHAPE_NAME: dict[int, str] = {
 DEFAULT_GLASS = RolePalette(families=[{"family": "glass", "weight": 1.0}])  # type: ignore[list-item]
 
 
-def _role_palette(spec: PaletteSpec, chain: list[str]) -> RolePalette | None:
+def _role_palette(spec: PaletteSpec, chain: list[str], shape: str | None = None) -> RolePalette | None:
     for name in chain:
         rp = getattr(spec, name, None)
         if rp is not None and rp.families:
-            return rp
+            if shape is None:
+                return rp
+            dom = max(rp.families, key=lambda f: f.weight).family
+            fam = catalog.family(dom)
+            if fam is not None and fam.has(shape):
+                return rp
     if "glass" in chain:
         return DEFAULT_GLASS
     return spec.primary
@@ -137,9 +144,19 @@ class _Resolver:
 
     def pick_variant(self, fam: Family, rp: RolePalette, x: int, y: int, z: int) -> str:
         base = fam.shapes["full"]
-        if not fam.variants or rp.texture_rate <= 0:
+        if rp.texture_rate <= 0:
             return base
         hn = float(self.grid.h_norm[x, y, z])
+        if not fam.variants:
+            # No cracked or mossy variant exists: weather with a kindred block, mostly near the ground.
+            comps = [c for c in WEATHERED_COMPANIONS.get(fam.name, []) if catalog.family(c)]
+            if not comps or rp.weathering <= 0:
+                return base
+            p = 0.5 * rp.texture_rate * rp.weathering * (1.5 - hn)
+            u = 0.6 * float(self.n_tex[x, y, z]) + 0.4 * float(self.u_tex[x, y, z])
+            if u < p:
+                return catalog.family(comps[0]).shapes["full"]
+            return base
         p = rp.texture_rate * (1.0 + rp.weathering * (1.0 - hn))
         # Mix clustered and per-block randomness so wear comes in patches with speckle.
         u = 0.6 * float(self.n_tex[x, y, z]) + 0.4 * float(self.u_tex[x, y, z])
@@ -157,6 +174,44 @@ class _Resolver:
         cdf = np.cumsum(w) / w.sum()
         i = int(np.searchsorted(cdf, float(self.u_var[x, y, z]), side="right"))
         return fam.variants[min(i, len(fam.variants) - 1)].block_id
+
+
+_BLOCK_TO_FAMILY: dict[str, Family] = {}
+_WOOD_MATERIALS = {"wood"}
+
+
+def _piece_family(spec: PaletteSpec, wall_fam: Family, want: str) -> Family | None:
+    """Which family supplies a button, trapdoor or gate on this wall.
+
+    Wood walls take the wood closest in colour. Stone, brick, plaster and terracotta walls take the
+    palette's trim or framing wood (what builders do), except buttons, which come in stone."""
+    from craftpilot.blocks.palette_data import info as _info
+
+    wall_info = _info(wall_fam.name, wall_fam.tone)
+    if wall_info.material in _WOOD_MATERIALS or want == "button" and wall_fam.has("button"):
+        match = closest_family_with_shape(wall_fam.name, want) if wall_info.material in _WOOD_MATERIALS else wall_fam.name
+        fam = catalog.family(match) if match else None
+        if fam is not None and fam.has(want):
+            return fam
+    for role in ("trim", "framing", "accent"):
+        rp = getattr(spec, role)
+        if rp is None:
+            continue
+        for fw in rp.families:
+            fam = catalog.family(fw.family)
+            if fam is not None and fam.has(want) and _info(fam.name, fam.tone).material in _WOOD_MATERIALS:
+                return fam
+    match = closest_family_with_shape(wall_fam.name, want)
+    return catalog.family(match) if match else None
+
+
+def _family_of_block(block_id: str) -> Family | None:
+    """Family whose full block or variant is this block id."""
+    if not _BLOCK_TO_FAMILY:
+        for fam in catalog.FAMILIES.values():
+            for bid in list(fam.shapes.values()) + [v.block_id for v in fam.variants]:
+                _BLOCK_TO_FAMILY.setdefault(bid, fam)
+    return _BLOCK_TO_FAMILY.get(block_id)
 
 
 def _connections(grid: SemanticGrid, x: int, y: int, z: int, kind: str) -> dict[str, str]:
@@ -209,6 +264,50 @@ def _block_for(res: _Resolver, grid: SemanticGrid, x: int, y: int, z: int) -> Bl
             elif colour == "red" and tone in ("teal", "copper"):
                 colour = "cyan"
         return BlockRef.make(f"minecraft:{colour}_wall_banner", facing=facing)
+    if shape == BShape.BARS:
+        return BlockRef.make("minecraft:iron_bars", **_connections(grid, x, y, z, "pane"))
+    if shape == BShape.LICHEN:
+        attach = DIR_NAME.get(OPPOSITE.get(normal, Dir.NORTH), "north")
+        props = {d: "false" for d in ("down", "up", "north", "east", "south", "west")}
+        props[attach] = "true"
+        return BlockRef.make("minecraft:glow_lichen", waterlogged="false", **props)
+    if shape in (BShape.BUTTON, BShape.TRAPDOOR, BShape.FENCE_GATE) and role in (Role.DETAIL, Role.SILL, Role.WINDOW):
+        # The wall block this piece belongs to: behind a detail or sill, or the wall around a window.
+        vx, _, vz = DIR_VEC[normal] if normal in HORIZONTAL else (0, 0, 0)
+        wx, wz = (x - vx, z - vz) if role in (Role.DETAIL, Role.SILL) else (x, z)
+        wall_fam = None
+        if role == Role.WINDOW:
+            # Look at a wall block beside the window for its family.
+            ax, az = (1, 0) if normal in (Dir.NORTH, Dir.SOUTH) else (0, 1)
+            for o in (-1, 1, -2, 2):
+                px, pz = x + ax * o, z + az * o
+                if grid.in_bounds(px, y, pz) and grid.role[px, y, pz] == Role.WALL and grid.block[px, y, pz] >= 0:
+                    wall_fam = _family_of_block(grid.palette[int(grid.block[px, y, pz])].block_id)
+                    if wall_fam:
+                        break
+        elif grid.in_bounds(wx, y, wz) and grid.block[wx, y, wz] >= 0:
+            wall_fam = _family_of_block(grid.palette[int(grid.block[wx, y, wz])].block_id)
+        if wall_fam is None:
+            wall_fam = res.pick_family(_role_palette(res.spec, ["primary"]), wx, y, wz)
+        want = {BShape.BUTTON: "button", BShape.TRAPDOOR: "trapdoor", BShape.FENCE_GATE: "fence_gate"}[shape]
+        fam = _piece_family(res.spec, wall_fam, want)
+        block_id = fam.shapes.get(want) if fam else None
+        facing = DIR_NAME.get(normal if normal in HORIZONTAL else Dir.NORTH, "north")
+        if shape == BShape.BUTTON:
+            return BlockRef.make(block_id or "minecraft:stone_button", face="wall", facing=facing, powered="false")
+        if shape == BShape.FENCE_GATE:
+            return BlockRef.make(block_id or "minecraft:oak_fence_gate", facing=facing, in_wall="false", open="false",
+                                 powered="false")
+        if role == Role.SILL:
+            return BlockRef.make(block_id or "minecraft:spruce_trapdoor", facing=facing, half="top", open="false",
+                                 powered="false", waterlogged="false")
+        if role == Role.WINDOW:
+            # Boarded window: the panel stands in the opening flush with the outer face.
+            inward = DIR_NAME.get(OPPOSITE.get(normal, Dir.NORTH), "north")
+            return BlockRef.make(block_id or "minecraft:spruce_trapdoor", facing=inward, half="bottom", open="true",
+                                 powered="false", waterlogged="false")
+        return BlockRef.make(block_id or "minecraft:spruce_trapdoor", facing=facing, half="top", open="true",
+                             powered="false", waterlogged="false")
     if shape == BShape.LEAVES:
         return BlockRef.make(grid.leaf_block, distance="7", persistent="true", waterlogged="false")
     if shape == BShape.VINE:
@@ -224,9 +323,10 @@ def _block_for(res: _Resolver, grid: SemanticGrid, x: int, y: int, z: int) -> Bl
         return BlockRef.make(catalog.CAMPFIRE, lit="true", signal_fire="false", waterlogged="false",
                              facing="north")
     chain = ROLE_PALETTE.get(role, ["primary"])
-    rp = _role_palette(res.spec, chain)
-    fam = res.pick_family(rp, x, y, z)
     shape_name = SHAPE_NAME.get(shape, "full")
+    need = shape_name if role in (Role.DOOR, Role.SHUTTER) else None
+    rp = _role_palette(res.spec, chain, need)
+    fam = res.pick_family(rp, x, y, z)
     flags = int(grid.flags[x, y, z])
 
     if shape == BShape.FULL:
@@ -271,7 +371,9 @@ def _block_for(res: _Resolver, grid: SemanticGrid, x: int, y: int, z: int) -> Bl
 
 def materials(grid: SemanticGrid, program: BuildProgram) -> None:
     res = _Resolver(grid, program.palette)
-    xs, ys, zs = np.nonzero(grid.role != Role.EMPTY)
+    xs, ys, zs = np.nonzero((grid.role != Role.EMPTY) & (grid.role != Role.DETAIL))
+    dx, dy, dz = np.nonzero(grid.role == Role.DETAIL)
+    xs, ys, zs = np.concatenate([xs, dx]), np.concatenate([ys, dy]), np.concatenate([zs, dz])
     count = 0
     for x, y, z in zip(xs, ys, zs):
         ref = _block_for(res, grid, int(x), int(y), int(z))

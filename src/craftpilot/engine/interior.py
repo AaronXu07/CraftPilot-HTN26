@@ -20,61 +20,207 @@ def _interior_cells(grid: SemanticGrid, part: LayoutPart, y: int) -> np.ndarray:
 
 
 def _try_stairs(grid: SemanticGrid, part: LayoutPart, k: int, x0: int, z0: int, dx: int, dz: int) -> bool:
-    """A straight run of stairs from floor k up to k + 1 starting at (x0, z0), ascending along (dx, dz)."""
+    """A straight run from floor k up to k + 1 starting at (x0, z0), ascending along (dx, dz).
+
+    A storey of height fh needs fh stair blocks: steps at fy+1 .. fy+fh, the last one set into the
+    floor row of the storey above, then a solid landing cell. The floor above the middle steps opens
+    for head room; a player standing on step y needs y+1 and y+2 clear.
+    """
     fy = part.floor_block_y(k)
     fh = part.floor_heights[k]
     fy_next = part.floor_block_y(k + 1)
-    steps = fh - 1
+    steps = fh
     cells = [(x0 + dx * i, z0 + dz * i) for i in range(steps + 1)]   # last one is the landing
+    # A floor cell to step onto the run from.
+    ax, az = x0 - dx, z0 - dz
+    if not grid.in_bounds(ax, fy + 2, az) or not part.mask[ax, az] or grid.role[ax, fy + 1, az] != Role.INTERIOR \
+            or grid.role[ax, fy + 2, az] != Role.INTERIOR or grid.role[ax, fy, az] not in (Role.FLOOR, Role.FOUNDATION, Role.PARTITION):
+        return False
     for i, (x, z) in enumerate(cells):
-        y = fy + 1 + i
-        if not grid.in_bounds(x, y, z) or not part.mask[x, z]:
+        if not grid.in_bounds(x, fy_next + 2, z) or not part.mask[x, z]:
             return False
-        # The step cell and the head room above it must be free interior.
-        for yy in range(fy + 1, min(fy_next, y + 3)):
-            if grid.role[x, yy, z] != Role.INTERIOR:
+        # Never build over another run's head room or through its opening.
+        if grid.reserved[x, fy + 1:fy_next + 3, z].any():
+            return False
+        if i < steps:
+            y = fy + 1 + i
+            # The step cell, and three cells of head room: moving onto the next step's front half
+            # lifts the head a block higher than standing still.
+            for yy in range(fy + 1, y + 4):
+                r = int(grid.role[x, yy, z])
+                if yy == fy_next:
+                    if r not in (Role.FLOOR, Role.INTERIOR):
+                        return False
+                elif yy > fy_next:
+                    if r not in (Role.INTERIOR, Role.EMPTY):
+                        return False
+                elif r != Role.INTERIOR:
+                    return False
+        else:
+            # Landing on the upper floor with head room.
+            if int(grid.role[x, fy_next, z]) not in (Role.FLOOR, Role.INTERIOR):
                 return False
-        if i >= steps - 2 and grid.role[x, fy_next, z] not in (Role.FLOOR, Role.INTERIOR):
-            return False
+            if any(int(grid.role[x, yy, z]) != Role.INTERIOR for yy in (fy_next + 1, fy_next + 2)):
+                return False
     facing = Dir.EAST if dx > 0 else Dir.WEST if dx < 0 else Dir.SOUTH if dz > 0 else Dir.NORTH
     for i, (x, z) in enumerate(cells[:-1]):
         y = fy + 1 + i
         grid.set(x, y, z, Role.STAIRCASE, BShape.STAIR, facing, part.index, 0.0)
         for yy in range(fy + 1, y):
             grid.set(x, yy, z, Role.PARTITION, BShape.FULL, Dir.NONE, part.index, 0.0)
-        # Head room: open the floor above the top steps.
-        if i >= steps - 2:
+        # Head room through the floor above (the last step sits in that row itself).
+        if y + 3 >= fy_next and y < fy_next:
             grid.set(x, fy_next, z, Role.INTERIOR, BShape.FULL, Dir.NONE, part.index, 0.0)
     lx, lz = cells[-1]
-    grid.set(lx, fy_next, lz, Role.INTERIOR, BShape.FULL, Dir.NONE, part.index, 0.0)
-    # Guard rail around the opening on the upper floor where the hole meets open floor.
+    grid.set(lx, fy_next, lz, Role.FLOOR, BShape.FULL, Dir.UP, part.index, 0.0)
+    # Reserve the run, its head room and the opening so the next storey's run goes elsewhere.
+    for (x, z) in cells + [(ax, az)]:
+        grid.reserved[x, fy + 1:fy_next + 4, z] = True
+    return True
+
+
+_RING2 = [(0, 0), (1, 0), (1, 1), (0, 1)]                                   # 2x2, clockwise from above
+_RING3 = [(0, 0), (1, 0), (2, 0), (2, 1), (2, 2), (1, 2), (0, 2), (0, 1)]   # 3x3 around a centre post
+
+
+def _free_column(grid: SemanticGrid, part: LayoutPart, x: int, z: int, y_from: int, fy_next: int, y_to: int) -> bool:
+    if not grid.in_bounds(x, y_to, z) or not part.mask[x, z] or grid.reserved[x, y_from:y_to + 1, z].any():
+        return False
+    for yy in range(y_from, y_to + 1):
+        r = int(grid.role[x, yy, z])
+        if yy == fy_next:
+            if r not in (Role.FLOOR, Role.INTERIOR):
+                return False
+        elif yy > fy_next:
+            if r not in (Role.INTERIOR, Role.EMPTY):
+                return False
+        elif r != Role.INTERIOR:
+            return False
+    return True
+
+
+def _try_spiral(grid: SemanticGrid, part: LayoutPart, k: int, x0: int, z0: int, ring: list[tuple[int, int]],
+                post: tuple[int, int] | None) -> bool:
+    """A spiral: one step per ring cell, rising one block per step, no fill underneath.
+
+    A 3x3 ring gives every step its own column and lands inside the ring on the upper floor. A 2x2
+    ring wraps a full turn in four steps, so it opens the whole 2x2 above and exits sideways onto the
+    upper floor; landing inside it would sit three blocks over the first step.
+    """
+    fy = part.floor_block_y(k)
+    fh = part.floor_heights[k]
+    fy_next = part.floor_block_y(k + 1)
+    cells = [(x0 + dx, z0 + dz) for dx, dz in ring]
+    if fh > len(ring) and len(ring) == 8:
+        return False
+    for (x, z) in cells:
+        if not _free_column(grid, part, x, z, fy + 1, fy_next, fy_next + 3):
+            return False
+    if post is not None:
+        px, pz = x0 + post[0], z0 + post[1]
+        if not grid.in_bounds(px, fy_next + 3, pz) or not part.mask[px, pz] or grid.reserved[px, fy + 1:fy_next + 4, pz].any():
+            return False
+    # Approach: a floor cell outside the ring, before the first step.
+    sx, sz = cells[0]
+    nx1, nz1 = cells[1]
+    ax, az = sx - (nx1 - sx), sz - (nz1 - sz)
+    if (ax, az) in cells or not (grid.in_bounds(ax, fy + 2, az) and part.mask[ax, az]
+                                  and grid.role[ax, fy + 1, az] == Role.INTERIOR and grid.role[ax, fy + 2, az] == Role.INTERIOR
+                                  and grid.role[ax, fy, az] in (Role.FLOOR, Role.FOUNDATION, Role.PARTITION)):
+        return False
+    # Landing: inside the ring for the 3x3, outside beside the last step for the 2x2.
+    last = cells[(fh - 1) % len(ring)]
+    if len(ring) == 8:
+        landing = cells[fh % 8]
+        exit_dir = None
+    else:
+        landing = None
+        for d in HORIZONTAL:
+            vx, _, vz = DIR_VEC[d]
+            lx, lz = last[0] + vx, last[1] + vz
+            if (lx, lz) in cells or not grid.in_bounds(lx, fy_next + 2, lz) or not part.mask[lx, lz]:
+                continue
+            if grid.role[lx, fy_next, lz] in (Role.FLOOR, Role.INTERIOR) and \
+                    all(int(grid.role[lx, yy, lz]) in (Role.INTERIOR, Role.EMPTY) for yy in (fy_next + 1, fy_next + 2)) \
+                    and not grid.reserved[lx, fy_next:fy_next + 3, lz].any():
+                landing, exit_dir = (lx, lz), d
+                break
+        if landing is None:
+            return False
+    # Build.
+    for i in range(fh):
+        x, z = cells[i % len(ring)]
+        nx, nz = cells[(i + 1) % len(ring)]
+        facing = Dir.EAST if nx > x else Dir.WEST if nx < x else Dir.SOUTH if nz > z else Dir.NORTH
+        if i == fh - 1 and exit_dir is not None:
+            facing = exit_dir
+        y = fy + 1 + i
+        grid.set(x, y, z, Role.STAIRCASE, BShape.STAIR, facing, part.index, 0.0)
+    for (x, z) in cells:
+        # The floor above opens wherever a step comes within three blocks of it.
+        steps_here = [fy + 1 + i for i in range(fh) if cells[i % len(ring)] == (x, z)]
+        if any(y + 3 >= fy_next and y < fy_next for y in steps_here) and grid.role[x, fy_next, z] == Role.FLOOR:
+            grid.set(x, fy_next, z, Role.INTERIOR, BShape.FULL, Dir.NONE, part.index, 0.0)
+    if post is not None:
+        px, pz = x0 + post[0], z0 + post[1]
+        for yy in range(fy + 1, fy_next):
+            grid.set(px, yy, pz, Role.PARTITION, BShape.FULL, Dir.NONE, part.index, 0.0)
+    lx, lz = landing
+    if grid.role[lx, fy_next, lz] == Role.INTERIOR:
+        grid.set(lx, fy_next, lz, Role.FLOOR, BShape.FULL, Dir.UP, part.index, 0.0)
+    for (x, z) in cells + [(ax, az), landing] + ([(x0 + post[0], z0 + post[1])] if post else []):
+        grid.reserved[x, fy + 1:fy_next + 4, z] = True
     return True
 
 
 def _stairs(grid: SemanticGrid, part: LayoutPart) -> int:
+    """Straight run where the room is long enough, a spiral where it is tight, a ladder otherwise."""
     placed = 0
     for k in range(len(part.floor_heights) - 1):
         fy = part.floor_block_y(k)
+        fh = part.floor_heights[k]
         inner = _interior_cells(grid, part, fy + 1)
         if not inner.any():
             continue
         xs, zs = np.nonzero(inner)
+        w, d = int(xs.max() - xs.min() + 1), int(zs.max() - zs.min() + 1)
         done = False
-        # Along the back wall ascending east, then the west wall ascending south, then anywhere.
-        candidates = []
-        for z in range(int(zs.min()), int(zs.min()) + 3):
-            row = sorted(int(x) for x in xs[zs == z])
-            for x in row[:3]:
-                candidates.append((x, z, 1, 0))
-        for x in range(int(xs.min()), int(xs.min()) + 3):
-            col = sorted(int(z) for z in zs[xs == x])
-            for z in col[:3]:
-                candidates.append((x, z, 0, 1))
-        for (x, z, dx, dz) in candidates:
-            if _try_stairs(grid, part, k, x, z, dx, dz):
-                placed += 1
-                done = True
-                break
+        # A straight run needs fh steps, a landing, and a cell to approach from, along one axis.
+        if max(w, d) >= fh + 3 and min(w, d) >= 3:
+            candidates = []
+            if w >= fh + 3:
+                for z in range(int(zs.min()), int(zs.min()) + 3):
+                    row = sorted(int(x) for x in xs[zs == z])
+                    for x in row[1:4]:
+                        candidates.append((x, z, 1, 0))
+            if d >= fh + 3:
+                for x in range(int(xs.min()), int(xs.min()) + 3):
+                    col = sorted(int(z) for z in zs[xs == x])
+                    for z in col[1:4]:
+                        candidates.append((x, z, 0, 1))
+            for (x, z, dx, dz) in candidates:
+                if _try_stairs(grid, part, k, x, z, dx, dz):
+                    placed += 1
+                    done = True
+                    break
+        if not done and w >= 3 and d >= 3:
+            # 3x3 spiral around a post, in each corner of the room and at its centre.
+            spots = [(int(xs.min()), int(zs.min())), (int(xs.max()) - 2, int(zs.min())),
+                     (int(xs.min()), int(zs.max()) - 2), (int(xs.max()) - 2, int(zs.max()) - 2),
+                     (int((xs.min() + xs.max()) // 2) - 1, int((zs.min() + zs.max()) // 2) - 1)]
+            for (x, z) in spots:
+                if _try_spiral(grid, part, k, x, z, _RING3, (1, 1)):
+                    placed += 1
+                    done = True
+                    break
+        if not done and w >= 2 and d >= 2:
+            corners = [(int(xs.min()), int(zs.min())), (int(xs.max()) - 1, int(zs.min())),
+                       (int(xs.min()), int(zs.max()) - 1), (int(xs.max()) - 1, int(zs.max()) - 1)]
+            for (x, z) in corners:
+                if _try_spiral(grid, part, k, x, z, _RING2, None):
+                    placed += 1
+                    done = True
+                    break
         if not done and _ladder(grid, part, k, inner):
             placed += 1
             done = True

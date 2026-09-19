@@ -42,7 +42,7 @@ program:
   interior: {stairs: true, doorways: true, partitions: false, lighting: true}
   palette:
     primary:
-      families: [{family: red_concrete, weight: 0.85}, {family: mangrove, weight: 0.15}]
+      families: [{family: red_concrete, weight: 0.85}, {family: red_terracotta, weight: 0.15}]
       texture_rate: 0.15
       weathering: 0.0
     framing:
@@ -53,7 +53,7 @@ program:
     trim:
       families: [{family: spruce, weight: 1.0}]
     foundation:
-      families: [{family: cobblestone, weight: 0.7}, {family: andesite, weight: 0.3}]
+      families: [{family: andesite, weight: 0.6}, {family: granite, weight: 0.4}]
       weathering: 0.6
       texture_rate: 0.3
     secondary:

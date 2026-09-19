@@ -48,9 +48,12 @@ def _exterior_wall_cells(grid: SemanticGrid):
         quiet = True
         for (dx, dy, dz) in ((ax, 0, az), (-ax, 0, -az), (0, 1, 0), (0, -1, 0)):
             px, py, pz = x + dx, y + dy, z + dz
-            if not grid.in_bounds(px, py, pz) or int(grid.role[px, py, pz]) not in _QUIET_NEIGHBOURS:
+            if not grid.in_bounds(px, py, pz) or int(grid.role[px, py, pz]) not in _QUIET_NEIGHBOURS \
+                    or int(grid.shape[px, py, pz]) != BShape.FULL:
                 quiet = False
                 break
+        if int(grid.shape[x, y, z]) != BShape.FULL:
+            quiet = False
         if quiet:
             out.append((x, y, z, n))
     return out
@@ -63,25 +66,40 @@ def _wall_details(grid: SemanticGrid, program: BuildProgram, density: float) -> 
     weathering = program.palette.primary.weathering
     field = clustered((grid.W, grid.H, grid.D), 3.0, rng)
     count = 0
+    has_wall_shape = any(catalog.family(f.family) and catalog.family(f.family).has("wall")
+                         for f in program.palette.primary.families)
     for (x, y, z, n) in _exterior_wall_cells(grid):
         h = float(grid.h_norm[x, y, z])
-        p = 0.07 * density * (1.0 + weathering * (1.0 - h))
-        u = 0.5 * float(field[x, y, z]) + 0.5 * float(rng.random())
-        if u >= p:
+        p = 0.12 * density * (1.0 + weathering * (1.0 - h))
+        # The field is rank-uniform, so thresholding it gives exactly p, in patches; the local draw thins the patches.
+        if float(field[x, y, z]) >= p * 1.5 or rng.random() >= 0.67:
             continue
         vx, _, vz = DIR_VEC[n]
         behind_solid = grid.in_bounds(x - vx, y, z - vz) and int(grid.role[x - vx, y, z - vz]) in _QUIET_NEIGHBOURS
         part = int(grid.part_id[x, y, z])
+        ox, oz = x + vx, z + vz
         r = rng.random()
-        if r < 0.45:
-            grid.set(x, y, z, Role.WALL, BShape.STAIR, OPPOSITE[n], part, h, Flag.PERIMETER | Flag.NO_TEXTURE)
-        elif r < 0.8:
-            grid.set(x, y, z, Role.WALL, BShape.STAIR_UPSIDE, OPPOSITE[n], part, h, Flag.PERIMETER | Flag.NO_TEXTURE)
-        elif behind_solid:
+        # Inline: stairs and slabs set into the wall plane. Protruding: small textures on the face.
+        fixed = Flag.PERIMETER | Flag.NO_TEXTURE | Flag.FIXED_SHAPE
+        if r < 0.25:
+            grid.set(x, y, z, Role.WALL, BShape.STAIR, OPPOSITE[n], part, h, fixed)
+        elif r < 0.45:
+            grid.set(x, y, z, Role.WALL, BShape.STAIR_UPSIDE, OPPOSITE[n], part, h, fixed)
+        elif r < 0.55 and behind_solid:
             shape = BShape.SLAB_TOP if rng.random() < 0.5 else BShape.SLAB_BOTTOM
             grid.set(x, y, z, Role.WALL, shape, Dir.NONE, part, h, Flag.PERIMETER | Flag.NO_TEXTURE)
+        elif r < 0.62 and has_wall_shape:
+            # A wall block set into the wall reads as a recessed post.
+            grid.set(x, y, z, Role.WALL, BShape.WALLBLOCK, Dir.NONE, part, h, Flag.PERIMETER | Flag.NO_TEXTURE)
+        elif r < 0.75:
+            grid.set(ox, y, oz, Role.DETAIL, BShape.BUTTON, n, part, h)
+        elif r < 0.9:
+            # Trapdoor: open and flush against the wall as a panel. Ledges belong under windows only.
+            grid.set(ox, y, oz, Role.DETAIL, BShape.TRAPDOOR, n, part, h, Flag.PROTRUDE)
+        elif weathering > 0.4 and h < 0.6:
+            grid.set(ox, y, oz, Role.DETAIL, BShape.LICHEN, n, part, h)
         else:
-            continue
+            grid.set(ox, y, oz, Role.DETAIL, BShape.BUTTON, n, part, h)
         count += 1
     return count
 
@@ -97,8 +115,8 @@ def _vines(grid: SemanticGrid, density: float) -> int:
         h = float(grid.h_norm[x, y, z])
         # Vines favour the shaded north side and the lower half of the wall.
         shade = 1.4 if n == Dir.NORTH else (1.0 if n in (Dir.EAST, Dir.WEST) else 0.6)
-        p = 0.10 * density * shade * (1.3 - h)
-        if 0.6 * float(field[x, z]) + 0.4 * float(rng.random()) >= p:
+        p = 0.16 * density * shade * (1.3 - h)
+        if float(field[x, z]) >= min(1.0, p * 2.0) or rng.random() >= 0.5:
             continue
         vx, _, vz = DIR_VEC[n]
         ox, oz = x + vx, z + vz
@@ -150,8 +168,8 @@ def _bushes(grid: SemanticGrid, density: float) -> int:
                 continue
             candidates.append((x, z))
     for (x, z) in candidates:
-        p = 0.25 * density
-        if 0.7 * float(field[x, z]) + 0.3 * float(rng.random()) >= p:
+        p = 0.3 * density
+        if float(field[x, z]) >= min(1.0, p * 1.5) or rng.random() >= 0.67:
             continue
         grid.set(x, y, z, Role.FOLIAGE, BShape.LEAVES, Dir.NONE, -1, 0.0)
         count += 1

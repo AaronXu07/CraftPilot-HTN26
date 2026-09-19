@@ -158,13 +158,13 @@ LIBRARY: dict[str, dict] = {
                         roof=["dark_oak"], foundation=["cobblestone", "stone_bricks"], secondary=["stone_bricks"],
                         trim=["spruce"], accent=["dark_oak"]),
     "spruce and stone": dict(tags="nordic cabin cottage mountain rustic tavern inn medieval", primary=["spruce"],
-                             framing=["dark_oak"], roof=["dark_oak"], foundation=["cobblestone", "andesite"],
+                             framing=["dark_oak"], roof=["dark_oak"], foundation=["tuff", "andesite"],
                              secondary=["stone_bricks"], trim=["spruce"], accent=["stripped_spruce"]),
     "tudor": dict(tags="tudor half timber medieval town inn manor english", primary=["white_concrete", "calcite"],
-                  framing=["dark_oak"], roof=["dark_oak"], foundation=["cobblestone", "stone_bricks"],
+                  framing=["dark_oak"], roof=["dark_oak"], foundation=["tuff_bricks", "stone_bricks"],
                   secondary=["stone_bricks"], trim=["dark_oak"], accent=["dark_oak"]),
     "castle grey": dict(tags="castle keep fortress stone medieval tower fort", primary=["cobblestone", "stone_bricks", "andesite"],
-                        framing=["dark_oak"], roof=["deepslate_tiles"], foundation=["cobbled_deepslate", "cobblestone"],
+                        framing=["dark_oak"], roof=["deepslate_tiles"], foundation=["cobbled_deepslate", "tuff"],
                         secondary=["stone_bricks"], trim=["stone_bricks"], accent=["red_concrete"]),
     "dark castle": dict(tags="castle dark evil fortress gothic vampire", primary=["deepslate_bricks", "polished_deepslate"],
                         framing=["blackstone"], roof=["polished_blackstone_bricks"], foundation=["cobbled_deepslate"],
@@ -176,10 +176,10 @@ LIBRARY: dict[str, dict] = {
                   framing=["spruce"], roof=["spruce"], foundation=["mud_bricks"], secondary=["mud_bricks"],
                   trim=["spruce"], accent=["orange_terracotta"]),
     "red brick": dict(tags="brick townhouse urban victorian city warehouse factory school", primary=["bricks"],
-                      framing=["stone_bricks"], roof=["deepslate_tiles"], foundation=["stone_bricks"],
+                      framing=["stone_bricks"], roof=["deepslate_tiles"], foundation=["polished_deepslate", "deepslate_bricks"],
                       secondary=["stone_bricks"], trim=["stone_bricks"], accent=["dark_oak"]),
     "georgian brick": dict(tags="mansion georgian manor estate grand brick colonial", primary=["bricks"],
-                           framing=["quartz"], roof=["deepslate_tiles"], foundation=["stone_bricks"],
+                           framing=["quartz"], roof=["deepslate_tiles"], foundation=["polished_andesite"],
                            secondary=["quartz"], trim=["quartz"], accent=["dark_oak"]),
     "white mansion": dict(tags="mansion palace classical quartz white marble grand villa", primary=["quartz", "smooth_quartz"],
                           framing=["quartz"], roof=["deepslate_tiles"], foundation=["polished_andesite"],
@@ -194,19 +194,19 @@ LIBRARY: dict[str, dict] = {
                         framing=["spruce"], roof=["polished_deepslate"], foundation=["polished_andesite"],
                         secondary=["white_concrete"], trim=["spruce"], accent=["copper"]),
     "japanese": dict(tags="japanese pagoda temple shrine asian zen tea house dojo", primary=["white_concrete", "calcite"],
-                     framing=["dark_oak"], roof=["dark_oak"], foundation=["stone_bricks", "andesite"],
+                     framing=["dark_oak"], roof=["dark_oak"], foundation=["andesite", "polished_andesite"],
                      secondary=["stone_bricks"], trim=["dark_oak"], accent=["red_concrete"]),
     "chinese": dict(tags="chinese pagoda temple palace asian imperial", primary=["red_terracotta", "terracotta"],
-                    framing=["dark_oak"], roof=["deepslate_tiles"], foundation=["stone_bricks"],
+                    framing=["dark_oak"], roof=["deepslate_tiles"], foundation=["stone_bricks", "granite"],
                     secondary=["stone_bricks"], trim=["dark_oak"], accent=["yellow_terracotta"]),
     "church stone": dict(tags="church chapel cathedral abbey monastery gothic stone", primary=["stone_bricks", "cobblestone"],
-                         framing=["stone_bricks"], roof=["spruce"], foundation=["cobblestone"],
+                         framing=["stone_bricks"], roof=["spruce"], foundation=["tuff_bricks", "cobblestone"],
                          secondary=["polished_andesite"], trim=["stone_bricks"], accent=["dark_oak"]),
     "barn red": dict(tags="barn farm stable red rural agricultural silo", primary=["red_concrete", "mangrove"],
-                     framing=["spruce"], roof=["spruce"], foundation=["cobblestone", "andesite"],
+                     framing=["spruce"], roof=["spruce"], foundation=["andesite", "granite"],
                      secondary=["smooth_stone"], trim=["spruce"], accent=["hay"]),
     "lighthouse": dict(tags="lighthouse beacon coastal harbour striped", primary=["white_concrete", "red_concrete"],
-                       framing=["stone_bricks"], roof=["copper"], foundation=["stone_bricks", "cobblestone"],
+                       framing=["stone_bricks"], roof=["copper"], foundation=["cobbled_deepslate", "stone_bricks"],
                        secondary=["stone_bricks"], trim=["dark_oak"], accent=["red_concrete"]),
     "fantasy elven": dict(tags="elven fantasy forest magical elegant treehouse", primary=["birch", "pale_oak"],
                           framing=["dark_oak"], roof=["weathered_copper"], foundation=["polished_andesite", "moss"],
@@ -221,7 +221,7 @@ LIBRARY: dict[str, dict] = {
                            framing=["dark_prismarine"], roof=["dark_prismarine"], foundation=["dark_prismarine"],
                            secondary=["prismarine"], trim=["dark_prismarine"], accent=["sea_lantern"]),
     "steampunk": dict(tags="steampunk industrial copper factory workshop victorian", primary=["bricks", "mud_bricks"],
-                      framing=["spruce"], roof=["exposed_copper"], foundation=["stone_bricks"],
+                      framing=["spruce"], roof=["exposed_copper"], foundation=["polished_deepslate", "tuff_bricks"],
                       secondary=["polished_deepslate"], trim=["copper"], accent=["copper"]),
     "ruined": dict(tags="ruin ruined abandoned overgrown ancient crumbling", primary=["mossy_stone_bricks", "stone_bricks", "cobblestone"],
                    framing=["mossy_cobblestone"], roof=["cobbled_deepslate"], foundation=["mossy_cobblestone"],
@@ -230,7 +230,7 @@ LIBRARY: dict[str, dict] = {
                           framing=["spruce"], roof=["terracotta"], foundation=["sandstone"],
                           secondary=["sandstone"], trim=["spruce"], accent=["light_blue_terracotta"]),
     "cherry blossom": dict(tags="cherry blossom pink spring asian garden", primary=["pale_oak", "white_concrete"],
-                           framing=["cherry"], roof=["cherry"], foundation=["stone_bricks"],
+                           framing=["cherry"], roof=["cherry"], foundation=["polished_andesite", "calcite"],
                            secondary=["polished_andesite"], trim=["cherry"], accent=["pink_terracotta"]),
     "colonial": dict(tags="colonial farmhouse american clapboard white shutters", primary=["white_concrete", "birch"],
                      framing=["spruce"], roof=["deepslate_tiles"], foundation=["stone_bricks"],
@@ -239,3 +239,61 @@ LIBRARY: dict[str, dict] = {
                         framing=["dark_oak"], roof=["dark_oak"], foundation=["mossy_cobblestone"],
                         secondary=["mossy_cobblestone"], trim=["spruce"], accent=["moss"]),
 }
+
+
+# Families with no cracked/mossy variant weather by mixing in a kindred block of the same material.
+WEATHERED_COMPANIONS: dict[str, list[str]] = {
+    "bricks": ["mud_bricks"],
+    "terracotta": ["mud_bricks"],
+    "mud_bricks": ["packed_mud"],
+    "smooth_stone": ["stone"],
+    "polished_andesite": ["andesite"],
+    "polished_deepslate": ["deepslate_bricks"],
+    "polished_tuff": ["tuff"],
+    "polished_granite": ["granite"],
+    "polished_diorite": ["diorite"],
+    "polished_blackstone": ["blackstone"],
+    "calcite": ["diorite"],
+    "oak": ["spruce"], "spruce": ["dark_oak"], "birch": ["oak"], "dark_oak": ["spruce"],
+    "quartz": ["calcite"], "smooth_quartz": ["quartz"],
+}
+for _dye in ("white", "light_gray", "gray", "black", "brown", "red", "orange", "yellow", "lime", "green", "cyan",
+             "light_blue", "blue", "purple", "magenta", "pink"):
+    WEATHERED_COMPANIONS[f"{_dye}_concrete"] = [f"{_dye}_terracotta"]
+
+
+_SHAPE_MATCH_CACHE: dict[tuple[str, str], str | None] = {}
+
+
+def closest_family_with_shape(family_name: str, shape: str) -> str | None:
+    """The family that has `shape` whose colour is closest to `family_name` (lightness first, then hue)."""
+    import colorsys
+
+    from craftpilot.blocks import catalog
+
+    key = (family_name, shape)
+    if key in _SHAPE_MATCH_CACHE:
+        return _SHAPE_MATCH_CACHE[key]
+    src = catalog.family(family_name)
+    if src is None:
+        return None
+    if src.has(shape):
+        _SHAPE_MATCH_CACHE[key] = family_name
+        return family_name
+
+    def hsl(rgb):
+        h, l, s_ = colorsys.rgb_to_hls(*(c / 255.0 for c in rgb))
+        return h * 360.0, s_, l
+
+    h0, s0, l0 = hsl(info(src.name, src.tone).rgb)
+    best, best_d = None, 1e9
+    for fam in catalog.FAMILIES.values():
+        if not fam.has(shape) or fam.tone == "glass" or fam.loud:
+            continue
+        h, s_, l = hsl(info(fam.name, fam.tone).rgb)
+        dh = min(abs(h - h0), 360 - abs(h - h0)) / 180.0
+        d = 2.0 * abs(l - l0) + abs(s_ - s0) + dh * min(s_, s0) * 2.0
+        if d < best_d:
+            best, best_d = fam.name, d
+    _SHAPE_MATCH_CACHE[key] = best
+    return best

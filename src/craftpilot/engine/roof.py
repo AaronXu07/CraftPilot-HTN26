@@ -246,6 +246,8 @@ def roof(grid: SemanticGrid, program: BuildProgram) -> None:
     S = grid.roof_surface
     valid = S > -np.inf
     eave_trim = program.depth.eave_trim
+    top_perims = {p.index: perimeter(p.floor_masks[-1]) if p.floor_masks else np.zeros((W, D), dtype=bool)
+                  for p in grid.parts}
 
     for x, z in zip(*np.nonzero(valid)):
         s = float(S[x, z])
@@ -258,6 +260,8 @@ def roof(grid: SemanticGrid, program: BuildProgram) -> None:
 
         best_dir, best_diff, min_nb = Dir.NONE, 0.0, None
         nb: dict[int, float | None] = {}
+        min_nb_block = None
+        halves = abs(frac - 0.5) < 1e-3
         for d in HORIZONTAL:
             vx, _, vz = DIR_VEC[d]
             nx, nz = x + vx, z + vz
@@ -270,6 +274,10 @@ def roof(grid: SemanticGrid, program: BuildProgram) -> None:
             if diff > best_diff:
                 best_dir, best_diff = d, diff
             min_nb = sn if min_nb is None else min(min_nb, sn)
+            nb_block = int(math.ceil(sn)) - 1
+            min_nb_block = nb_block if min_nb_block is None else min(min_nb_block, nb_block)
+            if abs((sn - math.floor(sn)) - 0.5) < 1e-3:
+                halves = True
 
         if full_only:
             shape, normal = BShape.FULL, Dir.NONE
@@ -301,25 +309,31 @@ def roof(grid: SemanticGrid, program: BuildProgram) -> None:
         if not _protected(grid, x, yb, z, pi):
             grid.set(x, yb, z, role, shape, normal, pi, 1.0, flags)
 
-        # Body under the surface.
+        # Body under the surface: fill down to the lowest neighbouring block, so nothing can be seen
+        # through the open quarters of corner stairs or the open half of a slab.
         if closed_global[x, z]:
             y_lo = eave_y
-        elif min_nb is not None:
-            y_lo = max(eave_y, int(math.ceil(min_nb)))
+        elif min_nb_block is not None:
+            y_lo = max(eave_y, min_nb_block)
         else:
             y_lo = eave_y
         fill = int(fill_role_global[x, z])
         for y in range(y_lo, yb):
             if not _protected(grid, x, y, z, pi):
                 grid.set(x, y, z, fill, BShape.FULL, Dir.NONE, pi, 1.0, flags)
-        if in_mask:
-            per = perimeter(part.floor_masks[-1])[x, z]
-            for y in range(eave_y, min(y_lo, yb)):
-                if per:
-                    n = int(grid.normal[x, part.top_y, z]) if grid.role[x, part.top_y, z] == Role.WALL else Dir.NONE
-                    grid.set(x, y, z, Role.WALL, BShape.FULL, n, pi, 1.0, Flag.PERIMETER)
-                elif grid.role[x, y, z] == Role.EMPTY:
-                    grid.set(x, y, z, Role.INTERIOR, BShape.FULL, Dir.NONE, pi, 1.0)
+        # Walls and attic air under the surface, for every part whose top storey sits in this column
+        # (a tower's cone can hang over the keep's wall; a jetty widens the top storey).
+        for other in grid.parts:
+            if not other.floor_masks or not other.floor_masks[-1][x, z] or other.eave_y > yb:
+                continue
+            per = top_perims[other.index][x, z]
+            for y in range(other.eave_y, min(y_lo, yb)):
+                r = int(grid.role[x, y, z])
+                if per and r in (Role.EMPTY, Role.INTERIOR, Role.ROOF_FILL):
+                    n = int(grid.normal[x, other.top_y, z]) if grid.role[x, other.top_y, z] == Role.WALL else Dir.NONE
+                    grid.set(x, y, z, Role.WALL, BShape.FULL, n, other.index, 1.0, Flag.PERIMETER)
+                elif r == Role.EMPTY:
+                    grid.set(x, y, z, Role.INTERIOR, BShape.FULL, Dir.NONE, other.index, 1.0)
 
         # Bracket under the eave.
         if eave_trim and not in_mask and edge_global[x, z] and eave_y - 1 >= 0:

@@ -116,7 +116,7 @@ def massing(grid: SemanticGrid, program: BuildProgram) -> None:
                         grid.set(x, yy, z, Role.INTERIOR, BShape.FULL, Dir.NONE, part.index, hn)
             # Floor block row for this storey (k = 0 is the top of the foundation).
             fy = part.floor_block_y(k)
-            if fy >= 0:
+            if 0 <= fy < grid.H:
                 inner = m & ~per if k > 0 else m
                 if k > 0:
                     # Ledge left by taper stays solid wall.

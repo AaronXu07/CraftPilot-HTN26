@@ -123,6 +123,41 @@ def check_and_repair(spec: PaletteSpec, label: str = "") -> list[str]:
             ph, ps, pl = _hsl(prim_info.rgb)
             primary_styles = set(prim_info.styles)
 
+    # 1b. A mixed wall must mix kin: same material and close in colour to the dominant block.
+    #     Ordered gradients and bands are deliberate (lighthouse stripes), so they are exempt.
+    for fw in list(spec.primary.families) if spec.primary.gradient.value == "none" else []:
+        if fw.family == prim_name:
+            continue
+        _, fi = _fam_info(fw.family)
+        if fi is None:
+            continue
+        h, s, l = _hsl(fi.rgb)
+        far = abs(l - pl) > 0.22 or (s > NEUTRAL_SAT and ps > NEUTRAL_SAT and _hue_distance(h, ph) > 40)
+        kin = {"plaster": "painted", "terracotta": "painted"}
+        same_kin = kin.get(fi.material, fi.material) == kin.get(prim_info.material, prim_info.material)
+        # Different materials still mix when the colours nearly match (white concrete with calcite).
+        close = abs(l - pl) <= 0.1 and (s <= NEUTRAL_SAT or ps <= NEUTRAL_SAT or _hue_distance(h, ph) <= 25)
+        if far or (not same_kin and not close):
+            options = [o for o in _candidates(prim_info.material, ("full",), primary_styles) if o != fw.family]
+            options = [o for o in options if abs(_hsl(info(o, catalog.family(o).tone).rgb)[2] - pl) <= 0.22]
+            swap = _closest(prim_name, options)
+            if swap and swap != fw.family and swap != prim_name:
+                notes.append(f"Wall mix '{fw.family}' clashes with '{prim_name}'; used '{swap}'.")
+                fw.family = swap
+            elif len(spec.primary.families) > 1:
+                notes.append(f"Wall mix '{fw.family}' clashes with '{prim_name}' and was dropped.")
+                spec.primary.families.remove(fw)
+
+    # 1c. No foundation given: derive a rougher, slightly darker stone relative of the wall.
+    if spec.foundation is None or not spec.foundation.families:
+        options = [o for o in _candidates("stone", ("full",), primary_styles)
+                   if info(o, catalog.family(o).tone).noise >= 0.4]
+        options = [o for o in options if _hsl(info(o, catalog.family(o).tone).rgb)[2] <= pl + 0.05]
+        swap = _closest(prim_name, options, want_darker_than=pl + 0.05)
+        if swap:
+            spec.foundation = RolePalette(families=[FamilyWeight(family=swap, weight=1.0)], weathering=0.6, texture_rate=0.3)
+            notes.append(f"Foundation derived from the wall: '{swap}'.")
+
     # 2. Context: every family shares a style with the primary or is generic.
     for role in ROLES_30 + ROLES_10:
         rp = getattr(spec, role)

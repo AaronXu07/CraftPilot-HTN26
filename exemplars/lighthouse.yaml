@@ -55,7 +55,7 @@ program:
       families: [{family: copper, weight: 1.0}]
       texture_rate: 0.0
     foundation:
-      families: [{family: stone_bricks, weight: 0.6}, {family: cobblestone, weight: 0.4}]
+      families: [{family: cobbled_deepslate, weight: 0.6}, {family: stone_bricks, weight: 0.4}]
       weathering: 0.8
       texture_rate: 0.3
     secondary:

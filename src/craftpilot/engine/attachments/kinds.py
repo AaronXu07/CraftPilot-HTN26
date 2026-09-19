@@ -213,15 +213,27 @@ def _place_dormer(grid: SemanticGrid, part: LayoutPart, side: int, cx: int, cz: 
         return False
     depth_cells = []
     x, z = fx, fz
+    prev_t = None
+    reached = False
     while grid.in_bounds(x, 0, z) and part.roof_mask[x, z]:
         t = _roof_top_y(grid, x, z)
-        if t is None or t >= y_r:
+        if t is None:
+            break
+        if t >= y_r:
+            reached = True
+            break
+        # The slope must keep rising under the dormer (on a hip roof the corner regions are flat
+        # along the walk); a dormer that never meets the roof would be open at the back.
+        if prev_t is not None and t < prev_t:
+            break
+        if prev_t is not None and t == prev_t and len(depth_cells) >= 2 and _roof_top_y(grid, x - vx, z - vz) == t:
             break
         depth_cells.append((x, z))
+        prev_t = t
         x, z = x - vx, z - vz
         if len(depth_cells) > 12:
             break
-    if len(depth_cells) < 2:
+    if len(depth_cells) < 2 or not reached:
         return False
 
     def put(px, pz, py, role, shape=BShape.FULL, normal=Dir.NONE, flags=0):
@@ -240,7 +252,8 @@ def _place_dormer(grid: SemanticGrid, part: LayoutPart, side: int, cx: int, cz: 
             if grid.in_bounds(sx, y_w0, sz) and grid.role[sx, y_w0, sz] == Role.EMPTY:
                 grid.set(sx, y_w0, sz, Role.SILL, BShape.STAIR_UPSIDE, OPPOSITE[side], part.index, 0.0)
     put(fx, fz, y_r, Role.WALL, BShape.FULL, side, Flag.PERIMETER)
-    # Side walls and interior along the depth.
+    # Side walls, and the interior: the main roof inside the dormer is carved away above the
+    # dormer floor so the room is a bump-out of the attic, with a flat floor at the front's roof level.
     for i, (dx, dz) in enumerate(depth_cells):
         if i == 0:
             continue
@@ -252,9 +265,16 @@ def _place_dormer(grid: SemanticGrid, part: LayoutPart, side: int, cx: int, cz: 
             for y in range(base, y_w1 + 1):
                 nrm = (Dir.EAST if d > 0 else Dir.WEST) if ax else (Dir.SOUTH if d > 0 else Dir.NORTH)
                 put(wx, wz, y, Role.WALL, BShape.FULL, nrm, Flag.PERIMETER)
-        for y in range((t or yb) + 1, y_w1 + 1):
-            if grid.in_bounds(dx, y, dz) and grid.role[dx, y, dz] == Role.EMPTY:
+            # Wall below the eave inside the footprint where the roof was, down to the floor.
+            for y in range(y_w0, base):
+                if grid.in_bounds(wx, y, wz) and int(grid.role[wx, y, wz]) in (Role.ROOF, Role.ROOF_FILL):
+                    grid.set(wx, y, wz, Role.WALL, BShape.FULL, nrm, part.index, 1.0, Flag.PERIMETER)
+        for y in range(y_w0, y_w1 + 1):
+            if grid.in_bounds(dx, y, dz) and int(grid.role[dx, y, dz]) in (Role.EMPTY, Role.ROOF, Role.ROOF_FILL):
                 grid.set(dx, y, dz, Role.INTERIOR, BShape.FULL, Dir.NONE, part.index, 1.0)
+        for wx, wz in ((dx, dz), (dx - ax, dz - az), (dx + ax, dz + az)):
+            if grid.in_bounds(wx, y_w0 - 1, wz) and int(grid.role[wx, y_w0 - 1, wz]) in (Role.EMPTY, Role.INTERIOR):
+                grid.set(wx, y_w0 - 1, wz, Role.FLOOR, BShape.FULL, Dir.UP, part.index, 1.0)
     # Roof: a three-wide gable running up the slope, with a one block overhang at the front.
     left = (Dir.EAST if ax else Dir.SOUTH)   # uphill direction for the -1 side stair
     right = (Dir.WEST if ax else Dir.NORTH)
@@ -273,6 +293,8 @@ def _place_dormer(grid: SemanticGrid, part: LayoutPart, side: int, cx: int, cz: 
             put(dx, dz, y_r + 1, Role.ROOF, BShape.FULL, Dir.NONE)
     reserve(grid, min(fx - 2 * ax, fx + 2 * ax), y_w0 - 1, min(fz - 2 * az, fz + 2 * az),
             max(fx - 2 * ax, fx + 2 * ax), y_r + 1, max(fz - 2 * az, fz + 2 * az))
+    grid.report.setdefault("dormers", []).append({"front": (fx, fz), "side": int(side), "depth": depth_cells,
+                                                  "y_w0": y_w0, "y_w1": y_w1, "y_r": y_r})
     return True
 
 
@@ -474,6 +496,12 @@ def cupola(grid: SemanticGrid, program: BuildProgram, req: AttachmentRequest) ->
             x, z = cx + dx, cz + dz
             if not grid.in_bounds(x, y0 + 4, z):
                 return 0
+            # Plinth: fill from the roof surface up to the cupola floor so it does not float over the slope.
+            t = _roof_top_y(grid, x, z)
+            if t is not None:
+                for y in range(t + 1, y0):
+                    if grid.role[x, y, z] == Role.EMPTY:
+                        grid.set(x, y, z, Role.ROOF_FILL, BShape.FULL, Dir.NONE, part.index, 1.0)
             edge = abs(dx) == 1 or abs(dz) == 1
             for y in (y0, y0 + 1):
                 if edge:
@@ -656,6 +684,11 @@ def spire(grid: SemanticGrid, program: BuildProgram, req: AttachmentRequest) -> 
             x, z = cx + dx, cz + dz
             if not grid.in_bounds(x, y0, z):
                 continue
+            t = _roof_top_y(grid, x, z)
+            if t is not None:
+                for y in range(t + 1, y0):
+                    if grid.role[x, y, z] == Role.EMPTY:
+                        grid.set(x, y, z, Role.ROOF_FILL, BShape.FULL, Dir.NONE, part.index, 1.0)
             if dx == 0 and dz == 0:
                 grid.set(x, y0, z, Role.ROOF_FILL, BShape.FULL, Dir.NONE, part.index, 1.0)
             else:

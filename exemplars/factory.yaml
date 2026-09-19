@@ -1,0 +1,77 @@
+description: >
+  A run down industrial brick factory. A long gabled production hall with tall windows between
+  brick pilasters, a flat roofed office block at the front, two tall brick chimney stacks, cracked
+  and dirty brick with mud brick patches near the ground, heavy weathering, vines and weeds
+  around the base, and a stone plinth.
+tags: [factory, industrial, warehouse, mill, soviet, brick, abandoned, derelict, run, down, plant, foundry, urban]
+program:
+  label: run down brick factory
+  bounds: {width: 45, height: 26, depth: 29}
+  parts:
+    - name: hall
+      shape: rect
+      size: {width: 1.0, depth: 0.7}
+      floors: 2
+      floor_height: 5
+      roof: {type: gable, pitch: 1.0, overhang: 1, ridge_axis: x}
+    - name: office
+      shape: rect
+      size: {width: 0.45, depth: 0.3}
+      floors: 2
+      floor_height: 4
+      odd_dims: true
+      roof: {type: parapet, overhang: 0}
+      attach: {to: hall, side: south, align: start, overlap: 1, offset: 2}
+  facade:
+    bay_width: {min: 4, max: 5}
+    window: tall
+    window_width: 2
+    window_height: 3
+    shutters: 0.0
+    sills: true
+    framing: bays
+    symmetry: false
+    max_flat_run: 5
+    ground_floor_taller: 1
+  depth:
+    frame_protrude: 1
+    window_inset: 0
+    eave_trim: false
+    foundation_rise: 1
+    foundation_outset: 1
+    floor_lips: false
+    corbels: false
+    detail: 0.9
+    foliage: 0.7
+  attachments:
+    - {kind: chimney, count: 2, params: {height: 8}}
+  budget: {dominant: 1, medium_min: 0, medium_max: 1, small_min: 0, small_max: 1}
+  interior: {stairs: true, doorways: true, partitions: false, lighting: true}
+  palette_name: red brick
+  palette:
+    primary:
+      families: [{family: bricks, weight: 1.0}]
+      texture_rate: 0.35
+      weathering: 0.9
+    framing:
+      families: [{family: stone_bricks, weight: 1.0}]
+      weathering: 0.8
+      texture_rate: 0.3
+    roof:
+      families: [{family: deepslate_tiles, weight: 1.0}]
+      texture_rate: 0.25
+      weathering: 0.6
+    trim:
+      families: [{family: stone_bricks, weight: 1.0}]
+    foundation:
+      families: [{family: polished_deepslate, weight: 0.6}, {family: deepslate_bricks, weight: 0.4}]
+      weathering: 0.9
+      texture_rate: 0.35
+    secondary:
+      families: [{family: bricks, weight: 1.0}]
+      weathering: 0.8
+      texture_rate: 0.3
+    accent:
+      families: [{family: dark_oak, weight: 1.0}]
+    glass:
+      families: [{family: glass, weight: 1.0}]

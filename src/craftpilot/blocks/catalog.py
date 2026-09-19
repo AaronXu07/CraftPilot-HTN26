@@ -50,6 +50,8 @@ def _wood(name: str, tone: str, log: str | None = None, planks: str | None = Non
             "stripped_log": _mc(stripped),
             "trapdoor": _mc(f"{name}_trapdoor"),
             "door": _mc(f"{name}_door"),
+            "button": _mc(f"{name}_button"),
+            "fence_gate": _mc(f"{name}_fence_gate"),
         },
         variants=[Variant(_mc(stripped), frozenset({"log"}))],
     )
@@ -76,6 +78,11 @@ def _stone(
         shapes["wall"] = _mc(wall)
     if pillar:
         shapes["pillar"] = _mc(pillar)
+    shapes["button"] = _mc("polished_blackstone_button" if "blackstone" in name else "stone_button")
+    if name in ("copper", "exposed_copper", "weathered_copper", "oxidized_copper"):
+        base = "waxed_" + (name if name != "copper" else "copper")
+        shapes["trapdoor"] = _mc(f"{base}_trapdoor")
+        shapes["door"] = _mc(f"{base}_door")
     return Family(
         name=name,
         tone=tone,
@@ -206,7 +213,8 @@ def _build() -> dict[str, Family]:
                stairs="waxed_oxidized_cut_copper_stairs", slab="waxed_oxidized_cut_copper_slab",
                variants=[("waxed_oxidized_cut_copper", {"smooth"})]),
         # Metal and misc
-        _stone("iron", "metal", full="iron_block"),
+        Family("iron", "metal", shapes={"full": _mc("iron_block"), "trapdoor": _mc("iron_trapdoor"), "door": _mc("iron_door"),
+                                        "button": _mc("stone_button")}),
         Family("iron_bars", "metal", shapes={"full": _mc("iron_bars"), "pane": _mc("iron_bars")}),
         _plain("obsidian", "dark_stone", "obsidian"),
         _plain("dark_oak_wood", "dark_wood", "dark_oak_wood"),
@@ -277,6 +285,7 @@ SHAPE_FALLBACK: dict[str, list[str]] = {
     "trapdoor": ["trapdoor", "slab", "full"],
     "door": ["door"],
     "pane": ["pane", "full"],
+    "button": ["button"],
     "full": ["full"],
 }
 

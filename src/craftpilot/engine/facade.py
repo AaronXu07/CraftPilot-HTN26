@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import math
+import re
 
 import numpy as np
 
@@ -102,21 +103,49 @@ def _set_frame_column(grid: SemanticGrid, x: int, z: int, y0: int, y1: int, part
 
 
 def _window(grid: SemanticGrid, cells: list[tuple[int, int]], side: int, wb: int, wh: int, part: LayoutPart,
-            style: WindowStyle, rules: FacadeRules, ceiling: int) -> None:
+            style: WindowStyle, rules: FacadeRules, ceiling: int, accent: bool = False) -> None:
     vx, _, vz = DIR_VEC[side]
     ww = len(cells)
     if style == WindowStyle.slit:
         shape = BShape.NONE
+    elif style == WindowStyle.boarded:
+        shape = BShape.TRAPDOOR
+    elif style == WindowStyle.gate:
+        shape = BShape.FENCE_GATE
     elif style == WindowStyle.wall or ww > 2:
         shape = BShape.FULL
     else:
         shape = BShape.PANE
     top = min(wb + wh - 1, ceiling - 1)
+    if style == WindowStyle.stair_slit:
+        # Lower cell a stair, upper cell an upside-down stair, both facing along the wall: their
+        # open quarters meet at the seam as a half-wide slit. Faces toward the middle of the face.
+        along_x = side in (Dir.NORTH, Dir.SOUTH)
+        for (x, z) in cells:
+            if top < wb + 1:
+                break
+            if along_x:
+                facing = Dir.EAST if x < part.cx else Dir.WEST
+            else:
+                facing = Dir.SOUTH if z < part.cz else Dir.NORTH
+            if grid.role[x, wb, z] == Role.WALL and grid.role[x, wb + 1, z] == Role.WALL:
+                hn = grid.h_norm[x, wb, z]
+                fl = Flag.PERIMETER | Flag.NO_TEXTURE | Flag.FIXED_SHAPE
+                grid.set(x, wb, z, Role.WALL, BShape.STAIR, facing, part.index, hn, fl)
+                grid.set(x, wb + 1, z, Role.WALL, BShape.STAIR_UPSIDE, facing, part.index, hn, fl)
+                # Thick walls: carve the inner leaf behind the slit so light comes through.
+                bx, bz = x - vx, z - vz
+                for y in (wb, wb + 1):
+                    if grid.in_bounds(bx, y, bz) and grid.role[bx, y, bz] == Role.WALL and grid.part_id[bx, y, bz] == part.index:
+                        grid.set(bx, y, bz, Role.INTERIOR, BShape.FULL, Dir.NONE, part.index, hn, Flag.INSET)
+        return
+    # Glass walls, boards and gates are never inset.
+    keep_flat = Flag.INSET if style in (WindowStyle.wall, WindowStyle.boarded, WindowStyle.gate) else 0
     for (x, z) in cells:
         for y in range(wb, top + 1):
             if grid.role[x, y, z] == Role.WALL:
                 grid.set(x, y, z, Role.WINDOW, shape, side, part.index, grid.h_norm[x, y, z],
-                         Flag.NO_TEXTURE | Flag.PERIMETER)
+                         Flag.NO_TEXTURE | Flag.PERIMETER | keep_flat)
                 # Thick walls: the glass stays in the outer leaf, the inner leaf is carved so light gets in.
                 bx, bz = x - vx, z - vz
                 if grid.in_bounds(bx, y, bz) and grid.role[bx, y, bz] == Role.WALL \
@@ -134,11 +163,19 @@ def _window(grid: SemanticGrid, cells: list[tuple[int, int]], side: int, wb: int
                 away = (Dir.EAST if sgn > 0 else Dir.WEST) if along_x else (Dir.SOUTH if sgn > 0 else Dir.NORTH)
                 grid.set(fx, top + 1, fz, Role.TRIM, BShape.STAIR_UPSIDE, away, part.index,
                          grid.h_norm[fx, top + 1, fz], Flag.PERIMETER)
-    if rules.sills and style not in (WindowStyle.wall, WindowStyle.slit):
+    if accent and style in (WindowStyle.plain, WindowStyle.tall, WindowStyle.round) and top + 1 < ceiling:
+        for (x, z) in cells:
+            if grid.role[x, top + 1, z] == Role.WALL:
+                grid.set(x, top + 1, z, Role.ACCENT, BShape.FULL, side, part.index, grid.h_norm[x, top + 1, z],
+                         Flag.PERIMETER | Flag.NO_TEXTURE)
+    if rules.sills and style not in (WindowStyle.wall, WindowStyle.slit, WindowStyle.stair_slit):
+        # Sill: an upside-down stair, or a closed trapdoor ledge, per window.
+        sill_shape = BShape.STAIR_UPSIDE if grid.rng.random() < 0.6 else BShape.TRAPDOOR
         for (x, z) in cells:
             sx, sz = x + vx, z + vz
             if grid.in_bounds(sx, wb - 1, sz) and grid.role[sx, wb - 1, sz] == Role.EMPTY:
-                grid.set(sx, wb - 1, sz, Role.SILL, BShape.STAIR_UPSIDE, OPPOSITE[side], part.index, 0.0)
+                grid.set(sx, wb - 1, sz, Role.SILL, sill_shape, OPPOSITE[side] if sill_shape == BShape.STAIR_UPSIDE else side,
+                         part.index, 0.0)
     if rules.shutters > 0 and ww == 1 and style in (WindowStyle.plain, WindowStyle.tall, WindowStyle.arched):
         if grid.rng.random() < rules.shutters:
             x, z = cells[0]
@@ -152,39 +189,122 @@ def _window(grid: SemanticGrid, cells: list[tuple[int, int]], side: int, wb: int
                         grid.set(ox, y, oz, Role.SHUTTER, BShape.TRAPDOOR, side, part.index, 0.0)
 
 
-def _door(grid: SemanticGrid, x: int, z: int, side: int, y: int, part: LayoutPart, accent: bool = False) -> None:
-    inward = OPPOSITE[side]
-    grid.set(x, y, z, Role.DOOR, BShape.DOOR_LOWER, inward, part.index, 0.0, Flag.NO_TEXTURE)
-    grid.set(x, y + 1, z, Role.DOOR, BShape.DOOR_UPPER, inward, part.index, 0.0, Flag.NO_TEXTURE)
-    grid.door = (x, y, z)
+def _steps(grid: SemanticGrid, cells: list[tuple[int, int]], side: int, y: int, part: LayoutPart, outset: int) -> None:
+    """Stairs down from the door across the foundation rise, one step per block of rise."""
     vx, _, vz = DIR_VEC[side]
-    along_x = side in (Dir.NORTH, Dir.SOUTH)
-    # Thick walls: carve the inner leaf so the door leads inside.
-    for yy in (y, y + 1):
+    for k in range(1, y + 1):
+        sy = y - k
+        for (cx, cz) in cells:
+            sx, sz = cx + vx * (outset + k), cz + vz * (outset + k)
+            if grid.in_bounds(sx, sy, sz) and grid.role[sx, sy, sz] == Role.EMPTY:
+                grid.set(sx, sy, sz, Role.STEP, BShape.STAIR, OPPOSITE[side], part.index, 0.0)
+
+
+def _carve_behind(grid: SemanticGrid, x: int, z: int, side: int, ys: tuple[int, ...], part: LayoutPart) -> None:
+    vx, _, vz = DIR_VEC[side]
+    for yy in ys:
         bx, bz = x - vx, z - vz
         if grid.in_bounds(bx, yy, bz) and grid.role[bx, yy, bz] == Role.WALL and grid.part_id[bx, yy, bz] == part.index:
             grid.set(bx, yy, bz, Role.INTERIOR, BShape.FULL, Dir.NONE, part.index, 0.0)
-    # Accent surround: the two jambs and the lintel.
-    if accent:
+
+
+def _door(grid: SemanticGrid, x: int, z: int, side: int, y: int, part: LayoutPart, accent: bool = False,
+          entrance: str = "door", outset: int = 1) -> None:
+    inward = OPPOSITE[side]
+    vx, _, vz = DIR_VEC[side]
+    along_x = side in (Dir.NORTH, Dir.SOUTH)
+    ax, az = (1, 0) if along_x else (0, 1)
+
+    def wall_at(cx, cz, yy):
+        return grid.in_bounds(cx, yy, cz) and grid.role[cx, yy, cz] == Role.WALL and grid.part_id[cx, yy, cz] == part.index
+
+    def outside_free(cx, cz, yy):
+        ox, oz = cx + vx, cz + vz
+        return grid.in_bounds(ox, yy, oz) and grid.role[ox, yy, oz] == Role.EMPTY
+
+    def set_door(cx, cz):
+        grid.set(cx, y, cz, Role.DOOR, BShape.DOOR_LOWER, inward, part.index, 0.0, Flag.NO_TEXTURE)
+        grid.set(cx, y + 1, cz, Role.DOOR, BShape.DOOR_UPPER, inward, part.index, 0.0, Flag.NO_TEXTURE)
+        _carve_behind(grid, cx, cz, side, (y, y + 1), part)
+
+    # Fall back to narrower entrances when the wall is not wide enough.
+    if entrance == "gate":
+        cells = [(x - ax, z - az), (x, z), (x + ax, z + az)]
+        ok = all(wall_at(cx, cz, yy) and outside_free(cx, cz, yy) for (cx, cz) in cells for yy in (y, y + 1, y + 2)) \
+            and all(wall_at(cx, cz, y + 3) for (cx, cz) in cells)
+        if not ok:
+            entrance = "double"
+    if entrance in ("double", "portal"):
+        cells = [(x, z), (x + ax, z + az)]
+        ok = all(wall_at(cx, cz, yy) and outside_free(cx, cz, yy) for (cx, cz) in cells for yy in (y, y + 1)) \
+            and wall_at(x - ax, z - az, y) and wall_at(x + 2 * ax, z + 2 * az, y)
+        if not ok:
+            entrance = "door"
+
+    if entrance == "gate":
+        cells = [(x - ax, z - az), (x, z), (x + ax, z + az)]
+        for (cx, cz) in cells:
+            for yy in (y, y + 1):
+                grid.set(cx, yy, cz, Role.INTERIOR, BShape.FULL, Dir.NONE, part.index, 0.0)
+            grid.set(cx, y + 2, cz, Role.RAILING, BShape.BARS, side, part.index, 0.0)
+            _carve_behind(grid, cx, cz, side, (y, y + 1, y + 2), part)
+            if wall_at(cx, cz, y + 3):
+                grid.set(cx, y + 3, cz, Role.TRIM, BShape.FULL, side, part.index, 0.0,
+                         Flag.PERIMETER | Flag.NO_TEXTURE)
+        for sgn in (-1, 1):
+            fx, fz = x + 2 * sgn * ax, z + 2 * sgn * az
+            away = (Dir.EAST if sgn > 0 else Dir.WEST) if along_x else (Dir.SOUTH if sgn > 0 else Dir.NORTH)
+            if wall_at(fx, fz, y + 3):
+                grid.set(fx, y + 3, fz, Role.TRIM, BShape.STAIR_UPSIDE, away, part.index, 0.0, Flag.PERIMETER)
+            for yy in range(y, y + 3):
+                if wall_at(fx, fz, yy):
+                    grid.set(fx, yy, fz, Role.PILLAR, BShape.LOG, side, part.index, 0.0, Flag.PERIMETER)
+        grid.door = (x, y, z)
+        _steps(grid, [(x + o * ax, z + o * az) for o in (-2, -1, 0, 1, 2)], side, y, part, outset)
+        light_cells = [(x - 3 * ax, z - 3 * az), (x + 3 * ax, z + 3 * az)]
+    elif entrance in ("double", "portal"):
+        set_door(x, z)
+        set_door(x + ax, z + az)
+        grid.door = (x, y, z)
+        if entrance == "portal":
+            for (cx, cz) in ((x, z), (x + ax, z + az)):
+                if wall_at(cx, cz, y + 2):
+                    grid.set(cx, y + 2, cz, Role.TRIM, BShape.FULL, side, part.index, 0.0,
+                             Flag.PERIMETER | Flag.NO_TEXTURE)
+            for sgn, fx, fz in ((-1, x - ax, z - az), (1, x + 2 * ax, z + 2 * az)):
+                away = (Dir.EAST if sgn > 0 else Dir.WEST) if along_x else (Dir.SOUTH if sgn > 0 else Dir.NORTH)
+                for yy in (y, y + 1):
+                    if wall_at(fx, fz, yy):
+                        grid.set(fx, yy, fz, Role.PILLAR, BShape.LOG, side, part.index, 0.0, Flag.PERIMETER)
+                if wall_at(fx, fz, y + 2):
+                    grid.set(fx, y + 2, fz, Role.TRIM, BShape.STAIR_UPSIDE, away, part.index, 0.0, Flag.PERIMETER)
+            _steps(grid, [(x + o * ax, z + o * az) for o in (-1, 0, 1, 2)], side, y, part, outset)
+            light_cells = [(x - 2 * ax, z - 2 * az), (x + 3 * ax, z + 3 * az)]
+        else:
+            light_cells = [(x - ax, z - az), (x + 2 * ax, z + 2 * az)]
+    else:
+        set_door(x, z)
+        grid.door = (x, y, z)
+        # Surround in the trim stone: jambs and lintel.
         for sgn in (-1, 0, 1):
             fx, fz = (x + sgn, z) if along_x else (x, z + sgn)
             rows = (y, y + 1, y + 2) if sgn != 0 else (y + 2,)
             for yy in rows:
-                if grid.in_bounds(fx, yy, fz) and grid.role[fx, yy, fz] == Role.WALL:
-                    grid.set(fx, yy, fz, Role.ACCENT, BShape.FULL, side, part.index, grid.h_norm[fx, yy, fz],
+                if wall_at(fx, fz, yy):
+                    grid.set(fx, yy, fz, Role.TRIM, BShape.FULL, side, part.index, grid.h_norm[fx, yy, fz],
                              Flag.PERIMETER | Flag.NO_TEXTURE)
-    # A lantern beside the door on the outside.
-    for sgn in (-1, 1):
-        fx, fz = (x + sgn, z) if along_x else (x, z + sgn)
+        light_cells = [(x - ax, z - az), (x + ax, z + az)]
+    # Lanterns on the outside beside the entrance.
+    for (fx, fz) in light_cells:
         ox, oz = fx + vx, fz + vz
         if grid.in_bounds(ox, y + 1, oz) and grid.role[ox, y + 1, oz] == Role.EMPTY \
-                and grid.in_bounds(fx, y + 1, fz) and grid.role[fx, y + 1, fz] in (Role.WALL, Role.FRAME):
+                and grid.in_bounds(fx, y + 1, fz) and grid.role[fx, y + 1, fz] in (Role.WALL, Role.FRAME, Role.PILLAR, Role.ACCENT):
             grid.set(ox, y + 1, oz, Role.LIGHT, BShape.LANTERN, Dir.NONE, part.index, 0.0)
-            break
 
 
 def _process_run(grid: SemanticGrid, run: list[tuple[int, int]], side: int, part: LayoutPart, k: int,
-                 rules: FacadeRules, is_front: bool, want_door: bool, accent: bool = False) -> bool:
+                 rules: FacadeRules, is_front: bool, want_door: bool, accent: bool = False,
+                 entrance: str = "door", outset: int = 1) -> bool:
     """Returns True if a door was placed."""
     fy = part.floor_block_y(k)
     fh = part.floor_heights[k]
@@ -226,7 +346,11 @@ def _process_run(grid: SemanticGrid, run: list[tuple[int, int]], side: int, part
         center = bay[len(bay) // 2]
         grid.anchors.append(Anchor(AnchorType.wall_bay, center[0], y_base, center[1], side, part.index, bw))
         if door_bay is not None and i == door_bay and not door_placed:
-            _door(grid, center[0], center[1], side, y_base, part, accent)
+            # Wide entrances start one cell left of centre so the pair or the arch is centred.
+            cx, cz = center
+            if entrance in ("double", "portal") and len(bay) % 2 == 0:
+                cx, cz = bay[len(bay) // 2 - 1]
+            _door(grid, cx, cz, side, y_base, part, accent, entrance, outset)
             door_placed = True
             continue
         style = rules.window
@@ -238,8 +362,10 @@ def _process_run(grid: SemanticGrid, run: list[tuple[int, int]], side: int, part
                 ww, wh = 1, 1
             elif style == WindowStyle.tall:
                 wh = max(3, rules.window_height)
-            elif style == WindowStyle.slit:
+            elif style in (WindowStyle.slit, WindowStyle.stair_slit):
                 ww, wh = 1, 2
+            elif style in (WindowStyle.boarded, WindowStyle.gate):
+                wh = max(1, min(rules.window_height, 2)) if style == WindowStyle.gate else max(1, rules.window_height)
             else:
                 wh = max(1, rules.window_height)
             off = (bw - ww) // 2
@@ -250,7 +376,7 @@ def _process_run(grid: SemanticGrid, run: list[tuple[int, int]], side: int, part
             wh = min(wh, ceiling - 1 - wb)
             if wh < 1:
                 continue
-        _window(grid, cells, side, wb, wh, part, style, rules, ceiling)
+        _window(grid, cells, side, wb, wh, part, style, rules, ceiling, accent)
     # Pilasters on a blank run longer than the flat-run limit.
     if count == 0 and rules.framing != Framing.none and n > rules.max_flat_run:
         step = max(3, rules.max_flat_run)
@@ -267,7 +393,7 @@ def _process_run(grid: SemanticGrid, run: list[tuple[int, int]], side: int, part
 
 
 def _round_part(grid: SemanticGrid, part: LayoutPart, k: int, rules: FacadeRules, is_root: bool,
-                want_door: bool, accent: bool = False) -> bool:
+                want_door: bool, accent: bool = False, entrance: str = "door", outset: int = 1) -> bool:
     """Windows around a circular or polygonal part, one every few blocks along the perimeter."""
     m = part.floor_masks[k]
     per = perimeter(m)
@@ -291,7 +417,7 @@ def _round_part(grid: SemanticGrid, part: LayoutPart, k: int, rules: FacadeRules
         if side not in HORIZONTAL or grid.role[x, y_base, z] != Role.WALL:
             continue
         if want_door and not placed_door and is_root and k == 0 and j == 0 and side == Dir.SOUTH:
-            _door(grid, x, z, side, y_base, part, accent)
+            _door(grid, x, z, side, y_base, part, accent, "door", outset)
             placed_door = True
             continue
         style = rules.window if rules.window != WindowStyle.wall else WindowStyle.plain
@@ -299,7 +425,7 @@ def _round_part(grid: SemanticGrid, part: LayoutPart, k: int, rules: FacadeRules
         wb = y_base + 1
         wh = min(wh, ceiling - 1 - wb)
         if wh >= 1:
-            _window(grid, [(x, z)], side, wb, wh, part, style, rules, ceiling)
+            _window(grid, [(x, z)], side, wb, wh, part, style, rules, ceiling, accent)
     return placed_door
 
 
@@ -312,12 +438,30 @@ def facade(grid: SemanticGrid, program: BuildProgram) -> None:
     ground = [p for p in grid.parts if not p.is_attachment and (p.spec.attach is None or p.spec.attach.side.value != "top")]
     front_parts = sorted(ground, key=lambda p: (-p.z1, p.spec.name != root_name))
     door_part = front_parts[0].spec.name if front_parts else root_name
+    outset = max(0, program.depth.foundation_outset)
+    entrance = rules.entrance
+    if entrance == "auto":
+        root = program.root()
+        rp = grid.part_by_name(root.name) or grid.parts[0]
+        label = program.label.lower()
+        castle_like = root.roof.type.value == "parapet" and (root.wall_thickness >= 2 or re.search(r"castle|fort|keep|citadel|stronghold", label))
+        grand = bool(re.search(r"mansion|palace|manor|cathedral|church|temple|hall|grand|estate|villa|factory|station", label))
+        plain = rules.framing.value == "none"   # modern builds do not want log pillars at the door
+        if castle_like and rp.width >= 15:
+            entrance = "gate"
+        elif (rp.width >= 25 or grand) and root.floors >= 2 and not plain:
+            entrance = "portal"
+        elif (rp.width >= 17 and root.floors >= 2) or (grand and plain):
+            entrance = "double"
+        else:
+            entrance = "door"
+    grid.report["entrance"] = entrance
     for part in grid.parts:
         is_root = part.spec.name == door_part
         for k in range(len(part.floor_heights)):
             m = part.floor_masks[k]
             if part.spec.shape not in RECT_LIKE:
-                if _round_part(grid, part, k, rules, is_root, want_door=not door_done, accent=accent):
+                if _round_part(grid, part, k, rules, is_root, want_door=not door_done, accent=accent, entrance=entrance, outset=outset):
                     door_done = True
                 continue
             fy = part.floor_block_y(k)
@@ -328,7 +472,8 @@ def facade(grid: SemanticGrid, program: BuildProgram) -> None:
                     if len(run) < 3:
                         continue
                     is_front = side == grid.front and is_root
-                    if _process_run(grid, run, side, part, k, rules, is_front, want_door=not door_done, accent=accent):
+                    if _process_run(grid, run, side, part, k, rules, is_front, want_door=not door_done, accent=accent,
+                                    entrance=entrance, outset=outset):
                         door_done = True
     if not door_done:
         # Fallback: a front-facing wall cell with interior behind it, nearest the middle of the face.
@@ -342,7 +487,7 @@ def facade(grid: SemanticGrid, program: BuildProgram) -> None:
                      and grid.in_bounds(x + vx, y, z + vz) and grid.role[x + vx, y, z + vz] == Role.EMPTY]
             if cells:
                 x, z = min(cells, key=lambda c: abs(c[0] - cand.cx) + abs(c[1] - cand.cz))
-                _door(grid, x, z, grid.front, y, cand, accent)
+                _door(grid, x, z, grid.front, y, cand, accent, entrance, outset)
                 door_done = True
                 break
     grid.stage_done("facade", door=grid.door)

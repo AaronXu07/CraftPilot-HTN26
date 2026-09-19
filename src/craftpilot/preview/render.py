@@ -35,6 +35,7 @@ _COLORS: dict[str, tuple[int, int, int]] = {
     "oak_leaves": (60, 110, 30), "spruce_leaves": (45, 90, 45), "birch_leaves": (90, 130, 50), "dark_oak_leaves": (50, 95, 25),
     "cherry_leaves": (230, 160, 190), "pale_oak_leaves": (110, 150, 80), "acacia_leaves": (90, 120, 40),
     "jungle_leaves": (55, 120, 30), "mangrove_leaves": (60, 105, 35), "vine": (50, 100, 40), "ladder": (150, 120, 70),
+    "glow_lichen": (120, 160, 130), "stone_button": (130, 130, 130), "iron_trapdoor": (190, 190, 190),
 }
 
 

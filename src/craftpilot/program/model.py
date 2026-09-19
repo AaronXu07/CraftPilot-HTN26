@@ -63,6 +63,9 @@ class WindowStyle(str, Enum):
     arched = "arched"
     tall = "tall"
     slit = "slit"
+    stair_slit = "stair_slit"   # two stairs meeting at the seam: a half-wide arrow slit
+    boarded = "boarded"         # opening closed with wooden trapdoors flush in the wall (shuttered, abandoned)
+    gate = "gate"               # fence gates set in the wall (barns, stables, rustic)
     wall = "wall"
     round = "round"
 
@@ -158,6 +161,9 @@ class FacadeRules(BaseModel):
     symmetry: bool = True
     max_flat_run: int = Field(default=7, description="Longest wall run without a break")
     ground_floor_taller: int = Field(default=0, description="Extra blocks of height on the ground floor")
+    entrance: Literal["auto", "door", "double", "portal", "gate"] = Field(
+        default="auto", description="door = single door; double = pair of doors; portal = double doors with pillars, "
+                                    "lintel, arch and steps; gate = 3 wide open arch with iron bars (castles). auto picks by size")
 
 
 class DepthRules(BaseModel):

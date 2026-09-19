@@ -23,7 +23,7 @@ program:
       attach: {to: keep, side: south, align: center, overlap: 1}
   facade:
     bay_width: {min: 3, max: 4}
-    window: slit
+    window: stair_slit
     window_width: 1
     window_height: 2
     shutters: 0.0

@@ -50,7 +50,7 @@ program:
     trim:
       families: [{family: stone_bricks, weight: 1.0}]
     foundation:
-      families: [{family: stone_bricks, weight: 1.0}]
+      families: [{family: polished_andesite, weight: 1.0}]
       weathering: 0.4
       texture_rate: 0.25
     secondary:

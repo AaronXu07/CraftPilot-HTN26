@@ -191,3 +191,101 @@ def test_palette_repair_rules():
     from pathlib import Path
     for ex in load_all(Path(__file__).resolve().parents[1] / "exemplars"):
         assert check_and_repair(ex.program.palette, ex.program.label) == [], ex.name
+
+
+def _roof_holes(grid) -> int:
+    """Air cells under a roof, inside the footprint, that touch outside air sideways."""
+    from craftpilot.grid.enums import DIR_VEC, HORIZONTAL
+    holes = 0
+    for part in grid.parts:
+        if part.roof_surface is None:
+            continue
+        for x, z in zip(*np.nonzero(part.mask)):
+            s = grid.roof_surface[x, z]
+            if not np.isfinite(s):
+                continue
+            top = int(np.ceil(s)) - 1
+            for y in range(part.eave_y, top):
+                if grid.role[x, y, z] not in (Role.EMPTY, Role.INTERIOR):
+                    continue
+                for d in HORIZONTAL:
+                    vx, _, vz = DIR_VEC[d]
+                    nx, nz = x + vx, z + vz
+                    if grid.in_bounds(nx, y, nz) and grid.role[nx, y, nz] == Role.EMPTY and not grid.footprint[nx, nz]:
+                        holes += 1
+                        break
+    return holes
+
+
+@pytest.mark.parametrize("roof", [RoofType.cone, RoofType.dome, RoofType.spire, RoofType.hip, RoofType.gable])
+@pytest.mark.parametrize("pitch", [0.5, 1.0, 1.5])
+def test_round_and_sloped_roofs_have_no_holes(roof, pitch):
+    from craftpilot.program.model import Shape
+    prog = simple_program(roof, shape=Shape.circle if roof in (RoofType.cone, RoofType.dome, RoofType.spire) else Shape.rect)
+    prog.parts[0].roof.pitch = pitch
+    prog.attachments = []
+    prog.budget.dominant = prog.budget.medium_min = 0
+    prog, _ = repair(prog, SAFETY)
+    grid = generate(prog, prog.bounds, 1)
+    assert _roof_holes(grid) == 0
+
+
+def test_exemplar_roofs_have_no_holes():
+    from craftpilot.program.exemplars import load_all
+    from pathlib import Path
+    for ex in load_all(Path(__file__).resolve().parents[1] / "exemplars"):
+        prog, _ = repair(ex.program, SAFETY)
+        grid = generate(prog, prog.bounds, 4)
+        assert _roof_holes(grid) == 0, ex.name
+
+
+def _staircases_walkable(grid) -> list[str]:
+    """Every interior staircase must be climbable: fh stair blocks in a straight run rising one per cell,
+    two clear cells above each step, the last step set into the upper floor row, and a solid landing."""
+    from craftpilot.grid.enums import DIR_VEC, Dir
+    problems = []
+    seen = set()
+    for x, y, z in zip(*np.nonzero((grid.role == Role.STAIRCASE) & (grid.shape == BShape.STAIR))):
+        x, y, z = int(x), int(y), int(z)
+        n = int(grid.normal[x, y, z])
+        vx, _, vz = DIR_VEC[n]
+        # Only start from the bottom step of a run.
+        if grid.role[x - vx, y - 1, z - vz] == Role.STAIRCASE:
+            continue
+        if (x, y, z) in seen:
+            continue
+        cx, cy, cz = x, y, z
+        steps = 0
+        while grid.in_bounds(cx, cy, cz) and grid.role[cx, cy, cz] == Role.STAIRCASE and grid.shape[cx, cy, cz] == BShape.STAIR:
+            seen.add((cx, cy, cz))
+            for yy in (cy + 1, cy + 2, cy + 3):
+                if grid.in_bounds(cx, yy, cz) and grid.role[cx, yy, cz] not in (Role.INTERIOR, Role.EMPTY, Role.LIGHT, Role.STAIRCASE):
+                    problems.append(f"head hit above step at {(cx, cy, cz)}: {Role(int(grid.role[cx, yy, cz])).name} at y={yy}")
+            if steps == 0:
+                ax, az = cx - vx, cz - vz
+                if grid.role[ax, cy - 1, az] not in (Role.FLOOR, Role.FOUNDATION, Role.PARTITION) or grid.role[ax, cy, az] != Role.INTERIOR:
+                    problems.append(f"no floor cell to start from before {(cx, cy, cz)}")
+            steps += 1
+            # Follow this step's own facing (spirals turn).
+            n = int(grid.normal[cx, cy, cz])
+            vx, _, vz = DIR_VEC[n]
+            cx, cy, cz = cx + vx, cy + 1, cz + vz
+        # cy is now the landing row; the landing must be solid floor with clear head room.
+        lx, ly, lz = cx, cy - 1, cz
+        if grid.role[lx, ly, lz] not in (Role.FLOOR, Role.PARTITION, Role.WALL):
+            problems.append(f"no landing after run ending at {(lx, ly, lz)}: {Role(int(grid.role[lx, ly, lz])).name}")
+        for yy in (ly + 1, ly + 2):
+            if grid.in_bounds(lx, yy, lz) and grid.role[lx, yy, lz] not in (Role.INTERIOR, Role.EMPTY, Role.LIGHT):
+                problems.append(f"landing blocked at {(lx, yy, lz)}")
+        if steps < 3:
+            problems.append(f"run of {steps} steps at {(x, y, z)} is too short")
+    return problems
+
+
+def test_interior_staircases_are_walkable():
+    from craftpilot.program.exemplars import load_all
+    from pathlib import Path
+    for ex in load_all(Path(__file__).resolve().parents[1] / "exemplars"):
+        prog, _ = repair(ex.program, SAFETY)
+        grid = generate(prog, prog.bounds, 2)
+        assert _staircases_walkable(grid) == [], ex.name
