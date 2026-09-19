@@ -49,17 +49,33 @@ def materials_list(block_map: BlockMap) -> List[Tuple[str, int]]:
     return sorted(c.items(), key=lambda t: (-t[1], t[0]))
 
 
+def stacks_text(n: int) -> str:
+    """Survival-friendly count: `3 stacks + 12` (64 per stack); `12` under a stack; shulkers at ≥ 27 stacks."""
+    stacks, rest = divmod(n, 64)
+    if stacks == 0:
+        return str(rest)
+    text = f"{stacks} stack{'s' if stacks != 1 else ''}" + (f" + {rest}" if rest else "")
+    if stacks >= 27:
+        boxes, box_rest = divmod(stacks, 27)
+        text += f" = {boxes} shulker{'s' if boxes != 1 else ''}" + (f" + {box_rest} stack{'s' if box_rest != 1 else ''}" if box_rest else "")
+    return text
+
+
 def materials_list_text(block_map: BlockMap, limit: int = 40) -> str:
-    """Human-readable materials list with stacks (64) and shulker boxes (27 stacks)."""
+    """Human-readable materials list for survival players: stacks (64) and shulker boxes (27 stacks)."""
     rows = materials_list(block_map)
     if not rows:
         return "no blocks"
     total = sum(n for _, n in rows)
-    lines = [f"{total} blocks, {len(rows)} block types:"]
+    total_stacks = -(-total // 64)
+    header = f"{total} blocks ({total_stacks} stacks"
+    if total_stacks >= 27:
+        header += f", {-(-total_stacks // 27)} shulker boxes"
+    header += f"), {len(rows)} block types:"
+    lines = [header]
+    width = min(32, max(len(short_id(bid)) for bid, _ in rows[:limit]))
     for bid, n in rows[:limit]:
-        stacks = n / 64.0
-        extra = f" ({stacks:.1f} stacks" + (f", {stacks / 27:.1f} shulkers)" if stacks >= 27 else ")")
-        lines.append(f"  {short_id(bid):<32} {n:>7}{extra}")
+        lines.append(f"  {short_id(bid):<{width}} {n:>6}  ({stacks_text(n)})")
     if len(rows) > limit:
-        lines.append(f"  ... {len(rows) - limit} more types")
+        lines.append(f"  ... {len(rows) - limit} more types ({sum(n for _, n in rows[limit:])} blocks)")
     return "\n".join(lines)

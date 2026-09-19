@@ -2,7 +2,7 @@ import os
 
 import pytest
 
-from copilot.engine.schematic import export_litematic, materials_list, materials_list_text
+from copilot.engine.schematic import export_litematic, materials_list, materials_list_text, stacks_text
 
 
 def test_export_and_reload(tmp_path):
@@ -26,8 +26,31 @@ def test_materials_list():
     bm = {(0, 0, 0): "minecraft:stone", (1, 0, 0): "minecraft:stone", (2, 0, 0): "minecraft:oak_stairs[facing=east]", (3, 0, 0): "minecraft:oak_stairs[facing=west]"}
     assert materials_list(bm) == [("minecraft:oak_stairs", 2), ("minecraft:stone", 2)]
     txt = materials_list_text(bm)
-    assert "4 blocks" in txt and "oak_stairs" in txt and "stacks" in txt
+    assert txt.startswith("4 blocks (1 stack") and "oak_stairs" in txt and "stone" in txt
     assert materials_list_text({}) == "no blocks"
+
+
+def test_materials_list_survival_stacks():
+    # survival players count in stacks of 64 and shulker boxes of 27 stacks
+    assert stacks_text(0) == "0"
+    assert stacks_text(63) == "63"
+    assert stacks_text(64) == "1 stack"
+    assert stacks_text(100) == "1 stack + 36"
+    assert stacks_text(64 * 27) == "27 stacks = 1 shulker"
+    assert stacks_text(64 * 28 + 1) == "28 stacks + 1 = 1 shulker + 1 stack"
+    assert stacks_text(64 * 60) == "60 stacks = 2 shulkers + 6 stacks"
+    bm = {(i, 0, 0): "minecraft:stone_bricks" for i in range(1800)}
+    bm.update({(i, 1, 0): "minecraft:oak_stairs[facing=east]" for i in range(100)})
+    bm.update({(i, 2, 0): "minecraft:lantern" for i in range(63)})
+    lines = materials_list_text(bm).splitlines()
+    assert lines[0] == "1963 blocks (31 stacks, 2 shulker boxes), 3 block types:"
+    assert lines[1].split() == ["stone_bricks", "1800", "(28", "stacks", "+", "8", "=", "1", "shulker", "+", "1", "stack)"]
+    assert lines[2].split() == ["oak_stairs", "100", "(1", "stack", "+", "36)"]
+    assert lines[3].split() == ["lantern", "63", "(63)"]
+    # long lists are capped with a remainder line
+    many = {(i, 0, 0): f"minecraft:block_{i}" for i in range(45)}
+    tail = materials_list_text(many, limit=40).splitlines()[-1]
+    assert tail.strip() == "... 5 more types (5 blocks)"
 
 
 def test_export_empty_raises(tmp_path):

@@ -32,7 +32,7 @@ HELP_TEXT = (
     "• `/cp make the northeast tower 8 blocks taller and give it a copper roof`\n"
     "• `/cp swap the walls to deepslate with a mossy base`\n"
     "• `/cp undo` · `/cp redo` · `/cp status` · `/cp cancel` (stop the running job) · `/cp render` · `/cp lint` · `/cp place`\n"
-    "• `/cp export [name]` (.litematic) · `/cp materials` (block counts)\n"
+    "• `/cp export [name]` (.litematic) · `/cp materials [n]` (block counts in stacks)\n"
     "• `/cp preview on|off` (place the build live after blocking and detailing) · `/cp verbose on|off` (one line per op)\n"
     "• `/cp reset` (forget the current build)"
 )
@@ -225,7 +225,8 @@ def handle_meta(ctx: Any, text: str) -> Optional[ChatResult]:
         r = call_tool(ctx, "export_schematic", {"name": name})
         return ChatResult(reply=getattr(r, "text", "exported"), data=getattr(r, "data", {}) or {})
     if cmd.startswith("material"):
-        r = call_tool(ctx, "materials_list", {})
+        # chat is narrow: 15 block types by default; `materials 40` for the long list
+        r = call_tool(ctx, "materials_list", {"limit": int(arg) if arg.isdigit() else 15})
         return ChatResult(reply=getattr(r, "text", ""))
     if cmd in ("reset", "clear"):
         from ..engine.scene import Scene

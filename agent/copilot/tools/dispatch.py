@@ -442,7 +442,8 @@ def _materials_list(ctx: ToolContext, args: Dict[str, Any]) -> ToolResult:
     try:
         from ..engine.schematic import materials_list_text
 
-        return ToolResult(materials_list_text(build["block_map"]))
+        limit = int(args.get("limit") or 40)
+        return ToolResult(materials_list_text(build["block_map"], limit=max(1, limit)))
     except ImportError:
         from collections import Counter
 

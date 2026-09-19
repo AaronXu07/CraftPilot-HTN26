@@ -90,3 +90,10 @@ Start the agent first: `cd agent && ../.venv/bin/python -m copilot.server --port
   `ERROR: move: unknown argument 'by'; valid arguments: ids, delta`.
 - In-game: `/cp player` is unchanged in behaviour but now reads the crosshair target on the client thread;
   `/cp build …` on a fresh world still plans the anchor from where you stand and look.
+
+## T7 — nice-to-haves (materials list, demo script)
+- In-game: after any build, type `/cp materials`; expect a header like `1228 blocks (20 stacks), 9 block types:`
+  followed by ≤ 15 lines `stone_bricks   612  (9 stacks + 36)` (one shulker line `= 1 shulker + …` only for
+  ≥ 27 stacks) and, if there are more types, `... 4 more types (31 blocks)`. `/cp materials 40` lists up to 40.
+- Demo rehearsal: follow `docs/demo.md` once end to end (lighthouse build off camera, then the 30-second
+  edit / materials / undo / export sequence); note any line that does not match the "expect" column.

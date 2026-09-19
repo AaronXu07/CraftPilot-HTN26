@@ -182,3 +182,17 @@ def test_run_script_can_import_math_but_nothing_else(ctx):
     assert r.data["ops"] == 0 and "may only import" in r.text and "'os'" in r.text
     r = dispatch(ctx, "run_script", {"python": "import subprocess"})
     assert r.data["ops"] == 0 and "may only import" in r.text
+
+
+def test_materials_list_tool_stacks_and_limit(ctx):
+    # survival shopping list: counts in stacks of 64, capped at `limit` block types
+    c = ctx
+    dispatch(c, "add", {"id": "slab", "shape": {"type": "box", "size": [16, 1, 8]}, "material": "stone_bricks"})
+    dispatch(c, "add", {"id": "post", "shape": {"type": "box", "size": [1, 3, 1]}, "pos": [20, 0, 0], "material": "oak_planks"})
+    text = dispatch(c, "materials_list", {}).text
+    lines = text.splitlines()
+    assert lines[0].startswith("131 blocks (3 stacks), 2 block types:")
+    assert lines[1].split() == ["stone_bricks", "128", "(2", "stacks)"]
+    assert lines[2].split() == ["oak_planks", "3", "(3)"]
+    short = dispatch(c, "materials_list", {"limit": 1}).text.splitlines()
+    assert len(short) == 3 and short[-1].strip() == "... 1 more types (3 blocks)"

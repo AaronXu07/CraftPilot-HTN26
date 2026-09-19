@@ -439,3 +439,36 @@ files under `agent/tests/`:
 **Note for the morning**: `wait_inline` has a benign race — if a job finishes in the µs between
 `submit()` and `wait_inline()`, the reply goes out via `/say` instead of inline (the player still sees it,
 after the "working (job N)…" line). The tests gate the runner so they don't depend on the timing.
+
+## T7 — Nice-to-haves [done: items 3 and 4; items 1 and 2 not started]
+
+Iteration 9 had ~40 minutes, so this session shipped the two small items and documents the two larger ones
+as not started (see "remaining" below) rather than half-implementing them.
+
+**Materials list with stacks (64s) for survival players** — `agent/copilot/engine/schematic.py`:
+new `stacks_text(n)` → `3 stacks + 12` (integer stacks, `12` under a stack, `= 1 shulker + 1 stack` once
+≥ 27 stacks); `materials_list_text` header now `1963 blocks (31 stacks, 2 shulker boxes), 3 block types:`,
+rows aligned to the longest id, and the cap line reports the leftover block count
+(`... 5 more types (5 blocks)`). Before: `stone_bricks  1800 (28.1 stacks, 1.0 shulkers)` fractional stacks.
+`materials_list` tool takes `limit` (schemas + dispatch); `/cp materials [n]` defaults to 15 types so the
+chat stays short (`/cp materials 40` for the long list); help text updated. The mod already prints
+multi-line replies line by line (`AgentChatClient` splits on `\n`).
+
+**docs/demo.md** — 30-second demo script derived from `bench/results/t4_after/report.json`: the four
+prompts with the best critic score / wall time (lighthouse 7.25 @ 2:39 / 1 228 blocks — the pick; stone
+bridge, market hall, round library as spares), an off-camera warm-up (start agent, `/cp build …`), a
+timed on-camera table (edit → `materials` → `undo` → `export`), fallbacks that match the server's actual
+behaviour (anything typed during a job gets `[cp] still working on job N …`; only `status`/`cancel` are
+answered), and three spare edits.
+
+**Verified**: `pytest -q` 361 → **363 passed in 11.5 s** (`test_materials_list_survival_stacks`,
+`test_materials_list_tool_stacks_and_limit` through the real dispatcher), `ruff check .` clean,
+`mypy copilot --ignore-missing-imports` clean. No API credits used. Checklist: two T7 items appended.
+
+**Remaining (not started, for a future session)**:
+- `/cp variants 3` — needs a per-variant Session + pipeline run in parallel threads with the same brief,
+  placed at x-offsets of (footprint + 6), then `keep N` to undo the others. `JobManager` already runs one
+  job per player; the simplest path is one job that fans out three `run_pipeline` calls with a shared
+  budget and per-variant `progress` prefixes (`[cp·v1·block …]`).
+- Cutaway render ("show me the inside") — add a `cut` option to `render` (drop voxels with z > centre or
+  y > half height before rasterising) and a router phrasing for "inside"/"cutaway"/"section".
