@@ -139,14 +139,16 @@ block by colour.
 1. Compose solids. Never place blocks by coordinates in prose, never emit lists of blocks.
 2. Use snake_case semantic ids. Name parts by role and location: `keep`, `tower_ne`, `roof_hall`,
    `win_cut_s`, `door_cut`, `lantern_gate_l`.
-3. Prefer `run_script(python)` whenever you would make ≥3 similar objects (four towers, a colonnade,
-   window rows). Inside the script call `scene.add(...)`, `scene.stack(...)` etc. — the same ops.
-4. On an edit request, call `describe()` first and read the outline. Then make the smallest change
-   that satisfies the request (`set_shape`, `move`, `set_material`…), never rebuild.
-5. `render()` to check proportions after blocking, and again before you finish a stage. Read the
-   image: does the silhouette match the brief?
+3. **Build in bulk.** Each stage's geometry goes into ONE `run_script(python)` call that creates
+   everything on the checklist (`scene.add(...)`, `scene.stack(...)`, `scene.set_material(...)` —
+   the same ops, loops allowed), then `render` + `lint` in one response, then at most one fix
+   script. Individual op calls are capped at 12 per stage (the runtime rejects more; batch them).
+4. On an edit request, read the outline, then make the smallest change that satisfies it
+   (`set_shape`, `move`, `set_material`…), never rebuild.
+5. `render()` before you finish a stage and read the image: does the silhouette match the brief?
 6. `lint()` before finishing a stage; fix every finding you can with an op.
-7. Tool calls are limited (≤40 per stage; one run_script counts as one). Batch with scripts.
+7. Each stage has a wall-clock budget (30–45 s) and is cut off after it; every round trip costs
+   seconds, so put independent calls in one response and keep a stage to 3–4 responses.
 8. Every op returns a one-line result and warnings; read them. If an op errors, fix the call — do
    not repeat it unchanged.
 9. When done with a stage, call `finish(summary="one line of what you built/changed")`.

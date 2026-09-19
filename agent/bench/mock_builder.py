@@ -31,10 +31,10 @@ class ScriptedBuilderLLM(MockLLM):
         self.roles: List[str] = []
 
     # ------------------------------------------------------------------------------------
-    def chat(self, messages, tools=None, temperature=0.2, tool_choice="auto", max_tokens=4000) -> LLMResponse:
+    def chat(self, messages, tools=None, temperature=0.2, tool_choice="auto", max_tokens=4000, timeout=None) -> LLMResponse:
         self.calls += 1
         names = [t.get("function", {}).get("name", t.get("name")) for t in (tools or [])]
-        self.requests.append({"messages": [dict(m) for m in messages], "tools": names, "temperature": temperature, "tool_choice": tool_choice, "has_images": _messages_have_images(messages)})
+        self.requests.append({"messages": [dict(m) for m in messages], "tools": names, "temperature": temperature, "tool_choice": tool_choice, "has_images": _messages_have_images(messages), "timeout": timeout, "deployment": getattr(self, "deployment", None)})
         system = _text(messages[0].get("content")) if messages and messages[0].get("role") == "system" else ""
         user_msgs = [m for m in messages if m.get("role") == "user"]
         last_user = _text(user_msgs[-1].get("content")) if user_msgs else ""

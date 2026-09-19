@@ -188,7 +188,7 @@ TOOL_SCHEMAS: List[Dict[str, Any]] = [
     # ---------------------------------------------------------------- agent tools
     tool(
         "run_script",
-        "Run a short Python script for bulk creation with loops (four towers, a colonnade, a ring of merlons). The script gets `scene` with every scene op as a method: scene.add(id=..., shape=..., pos=...), scene.move(ids, delta), scene.define_material(name, spec), ... plus `math`, `random`, `json`, `range`, `print`. No imports, no file/network I/O, 10 s limit. Every op it performs is recorded individually (undo works). Example:\n"
+        "THE main way to build: one script per stage that creates all of the stage's geometry/materials (loops for towers, colonnades, merlon rings). Individual op calls are capped at 12 per stage. The script gets `scene` with every scene op as a method: scene.add(id=..., shape=..., pos=...), scene.move(ids, delta), scene.define_material(name, spec), ... plus `math`, `random`, `json`, `range`, `print`. No imports, no file/network I/O, 10 s limit. Every op it performs is recorded individually (undo works). Example:\n"
         "for i, (x, z) in enumerate([(0,0),(30,0),(0,30),(30,30)]):\n    scene.add(id=f'tower_{i}', shape={'type':'cylinder','radius':4,'height':20}, pos=[x,0,z], material='stone_wall', modifiers=[{'type':'shell','thickness':1}])\n    scene.add(id=f'tower_{i}_roof', shape={'type':'cone','radius':5,'height':7}, pos=[x,20,z], material='slate_roof')",
         {"python": _s("Python source code")},
         ["python"],

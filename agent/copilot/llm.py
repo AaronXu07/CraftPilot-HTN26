@@ -64,19 +64,37 @@ class LLM(Protocol):
 # ----------------------------------------------------------------------------------------------
 # Helpers
 # ----------------------------------------------------------------------------------------------
-def image_content(pil_image, detail: str = "high", max_px: int = 1024) -> Dict[str, Any]:
-    """A chat-completions `image_url` content part with a PNG data URI (downscaled to <= max_px)."""
+IMAGE_MAX_PX = 640  # T2: every image sent to the model is at most 640 px on its long side
+IMAGES_PER_CALL = 2  # ...and no call carries more than two images
+JPEG_QUALITY = 82
+
+
+def image_content(pil_image, detail: str = "high", max_px: int = IMAGE_MAX_PX, fmt: str = "jpeg") -> Dict[str, Any]:
+    """A chat-completions `image_url` content part: JPEG (default) or PNG data URI, downscaled to <= max_px."""
     img = pil_image
     w, h = img.size
     if max(w, h) > max_px:
         s = max_px / float(max(w, h))
         img = img.resize((max(1, int(w * s)), max(1, int(h * s))))
-    if img.mode not in ("RGB", "RGBA"):
-        img = img.convert("RGB")
     buf = io.BytesIO()
-    img.save(buf, format="PNG", optimize=True)
+    if fmt.lower() in ("jpg", "jpeg"):
+        if img.mode != "RGB":
+            img = img.convert("RGB")
+        img.save(buf, format="JPEG", quality=JPEG_QUALITY, optimize=True)
+        mime = "image/jpeg"
+    else:
+        if img.mode not in ("RGB", "RGBA"):
+            img = img.convert("RGB")
+        img.save(buf, format="PNG", optimize=True)
+        mime = "image/png"
     b64 = base64.b64encode(buf.getvalue()).decode("ascii")
-    return {"type": "image_url", "image_url": {"url": f"data:image/png;base64,{b64}", "detail": detail}}
+    return {"type": "image_url", "image_url": {"url": f"data:{mime};base64,{b64}", "detail": detail}}
+
+
+def image_parts(images: Sequence[Any], limit: int = IMAGES_PER_CALL) -> List[Dict[str, Any]]:
+    """Content parts for the last `limit` images (the most recent renders are the ones that matter)."""
+    keep = list(images)[-limit:] if limit else []
+    return [image_content(im) for im in keep]
 
 
 def text_content(text: str) -> Dict[str, Any]:
@@ -252,8 +270,11 @@ class AzureLLM:
         self.endpoint = endpoint or os.environ.get("AZURE_OPENAI_ENDPOINT", "")
         self.api_key = api_key or os.environ.get("AZURE_OPENAI_API_KEY", "")
         self.api_version = api_version or os.environ.get("AZURE_OPENAI_API_VERSION", "2024-10-21")
-        self.deployment = deployment or os.environ.get("AZURE_OPENAI_DEPLOYMENT", "")
+        self.deployment = deployment or os.environ.get("AZURE_OPENAI_DEPLOYMENT") or os.environ.get("MODEL", "")
         self.vision_deployment = vision_deployment or os.environ.get("AZURE_OPENAI_VISION_DEPLOYMENT") or self.deployment
+        # T2: a cheaper deployment for the router / describe / fix passes (falls back to the main one)
+        self.fast_deployment = os.environ.get("MODEL_FAST") or os.environ.get("AZURE_OPENAI_FAST_DEPLOYMENT") or self.deployment
+        self.is_fast = False
         self.supports_vision = os.environ.get("AZURE_OPENAI_VISION", "1").lower() not in ("0", "false", "no")
         # "chat" (chat.completions), "responses" (Responses API; required by some newer deployments such as
         # gpt-5.x on Azure AI Foundry) or "auto": responses when the endpoint URL ends in /responses, else chat,
@@ -264,6 +285,8 @@ class AzureLLM:
         self.reasoning_effort = os.environ.get("AZURE_OPENAI_REASONING_EFFORT", "low")
         self.timeout = float(timeout if timeout is not None else os.environ.get("AZURE_OPENAI_TIMEOUT_S", 120.0))
         self.max_attempts = max(1, int(max_attempts if max_attempts is not None else os.environ.get("AZURE_OPENAI_MAX_ATTEMPTS", 2)))
+        # 429s are short and frequent on small deployments: allow a few more (cheap) attempts than for timeouts
+        self.rate_limit_attempts = max(self.max_attempts, int(os.environ.get("AZURE_OPENAI_RATE_LIMIT_ATTEMPTS", 4)))
         self.total_usage: Dict[str, int] = {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
         self.calls = 0
         self._client = None
@@ -295,6 +318,18 @@ class AzureLLM:
                 )
         return self._client
 
+    def fast(self) -> "AzureLLM":
+        """A view of this client that uses `fast_deployment` (shares the HTTP client and usage counters)."""
+        if self.is_fast or self.fast_deployment == self.deployment:
+            return self
+        import copy
+
+        _ = self.client  # build once so both views share it
+        f = copy.copy(self)
+        f.deployment = self.fast_deployment
+        f.is_fast = True
+        return f
+
     @staticmethod
     def _is_reasoning_model(model: str) -> bool:
         """gpt-5.x and o-series deployments reject `temperature` and want `max_completion_tokens`."""
@@ -308,7 +343,10 @@ class AzureLLM:
         temperature: float = 0.2,
         tool_choice: Any = "auto",
         max_tokens: int = 4000,
+        timeout: Optional[float] = None,
     ) -> LLMResponse:
+        """One completion. `timeout` (s) overrides the client default for this call (T2: the pipeline
+        passes what is left of the turn's hard budget)."""
         import openai
 
         has_images = _messages_have_images(messages)
@@ -317,8 +355,10 @@ class AzureLLM:
             has_images = False
         model = self.vision_deployment if has_images else self.deployment
         if self.api == "responses":
-            return self._chat_via_responses(messages, tools, temperature, tool_choice, max_tokens, model, has_images)
+            return self._chat_via_responses(messages, tools, temperature, tool_choice, max_tokens, model, has_images, timeout)
         kwargs: Dict[str, Any] = {"model": model, "messages": messages}
+        if timeout is not None:
+            kwargs["timeout"] = float(timeout)
         if self._is_reasoning_model(model):
             kwargs["max_completion_tokens"] = max_tokens
         else:
@@ -330,7 +370,10 @@ class AzureLLM:
             kwargs["parallel_tool_calls"] = True
         delay = 2.0
         last_err: Optional[Exception] = None
-        for attempt in range(self.max_attempts):
+        attempts = self.max_attempts
+        attempt = 0
+        while attempt < attempts:
+            attempt += 1
             try:
                 resp = self.client.chat.completions.create(**kwargs)
                 self.calls += 1
@@ -350,7 +393,7 @@ class AzureLLM:
                 if "not allowed in this deployment" in msg.lower() or "operation is not allowed" in msg.lower():
                     # Responses-only deployment (e.g. gpt-5.x on Foundry): switch APIs and remember it
                     self.api = "responses"
-                    return self._chat_via_responses(messages, tools, temperature, tool_choice, max_tokens, model, has_images)
+                    return self._chat_via_responses(messages, tools, temperature, tool_choice, max_tokens, model, has_images, timeout)
                 if "max_tokens" in msg and "max_tokens" in kwargs:
                     kwargs["max_completion_tokens"] = kwargs.pop("max_tokens")
                     continue
@@ -361,15 +404,17 @@ class AzureLLM:
             except (openai.RateLimitError, openai.APIConnectionError, openai.APITimeoutError) as e:
                 last_err = e
                 delay = max(delay, _retry_after_seconds(e))
+                if isinstance(e, openai.RateLimitError):
+                    attempts = self.rate_limit_attempts
             except openai.APIStatusError as e:
                 if e.status_code and e.status_code >= 500:
                     last_err = e
                 else:
                     raise
-            if attempt + 1 < self.max_attempts:
-                time.sleep(delay)
+            if attempt < attempts:
+                time.sleep(min(delay, timeout or 60.0))
                 delay = min(delay * 2, 60.0)
-        raise RuntimeError(f"Azure OpenAI failed after {self.max_attempts} attempts: {last_err}")
+        raise RuntimeError(f"Azure OpenAI failed after {attempt} attempts: {last_err}")
 
     # -- Responses API ------------------------------------------------------------------------
     def _chat_via_responses(
@@ -381,12 +426,15 @@ class AzureLLM:
         max_tokens: int,
         model: str,
         has_images: bool,
+        timeout: Optional[float] = None,
     ) -> LLMResponse:
         """Same contract as chat(), over `client.responses.create` (chat-style history converted)."""
         import openai
 
         instructions, items = messages_to_responses_input(messages)
         kwargs: Dict[str, Any] = {"model": model, "input": items, "max_output_tokens": max_tokens}
+        if timeout is not None:
+            kwargs["timeout"] = float(timeout)
         if instructions:
             kwargs["instructions"] = instructions
         if self._is_reasoning_model(model):
@@ -400,7 +448,10 @@ class AzureLLM:
             kwargs["parallel_tool_calls"] = True
         delay = 2.0
         last_err: Optional[Exception] = None
-        for attempt in range(self.max_attempts):
+        attempts = self.max_attempts
+        attempt = 0
+        while attempt < attempts:
+            attempt += 1
             try:
                 resp = self.client.responses.create(**kwargs)
                 self.calls += 1
@@ -423,15 +474,17 @@ class AzureLLM:
             except (openai.RateLimitError, openai.APIConnectionError, openai.APITimeoutError) as e:
                 last_err = e
                 delay = max(delay, _retry_after_seconds(e))
+                if isinstance(e, openai.RateLimitError):
+                    attempts = self.rate_limit_attempts
             except openai.APIStatusError as e:
                 if e.status_code and e.status_code >= 500:
                     last_err = e
                 else:
                     raise
-            if attempt + 1 < self.max_attempts:
-                time.sleep(delay)
+            if attempt < attempts:
+                time.sleep(min(delay, timeout or 60.0))
                 delay = min(delay * 2, 60.0)
-        raise RuntimeError(f"Azure OpenAI (responses) failed after {self.max_attempts} attempts: {last_err}")
+        raise RuntimeError(f"Azure OpenAI (responses) failed after {attempt} attempts: {last_err}")
 
     def _parse_responses(self, resp: Any) -> LLMResponse:
         calls: List[ToolCall] = []
@@ -638,6 +691,7 @@ class MockLLM:
         temperature: float = 0.2,
         tool_choice: Any = "auto",
         max_tokens: int = 4000,
+        timeout: Optional[float] = None,
     ) -> LLMResponse:
         self.calls += 1
         self.requests.append(
@@ -647,6 +701,8 @@ class MockLLM:
                 "temperature": temperature,
                 "tool_choice": tool_choice,
                 "has_images": _messages_have_images(messages),
+                "timeout": timeout,
+                "deployment": getattr(self, "deployment", None),
             }
         )
         if self._i >= len(self.script):
@@ -673,10 +729,13 @@ class LoopResult:
     text: str
     calls: List[Tuple[str, Dict[str, Any], str]] = field(default_factory=list)
     images_shown: int = 0
-    stopped_reason: str = "text"  # text | finish | max_calls | error
+    stopped_reason: str = "text"  # text | finish | max_calls | budget | error
     messages: List[Dict[str, Any]] = field(default_factory=list)
     usage: Dict[str, int] = field(default_factory=dict)
     llm_calls: int = 0
+    llm_ms: int = 0
+    tool_ms: int = 0
+    ops: int = 0  # individual (non-script) scene-mutating calls
 
     @property
     def tool_calls(self) -> int:
@@ -684,6 +743,14 @@ class LoopResult:
 
     def call_names(self) -> List[str]:
         return [c[0] for c in self.calls]
+
+
+# tools that never change the scene: a run of these in one response is executed concurrently
+READ_ONLY_TOOLS = frozenset({"select", "describe", "bbox", "measure", "top_of", "side_of", "list_materials", "render", "lint", "search_blocks", "nearest_block", "get_player", "materials_list"})
+# calls that do not count against the per-stage op cap (batching, feedback, history, chat)
+OP_CAP_EXEMPT = READ_ONLY_TOOLS | frozenset({"run_script", "finish", "say", "set_brief", "undo", "redo", "snapshot", "restore"})
+DEFAULT_OP_CAP = 12
+PARALLEL_WORKERS = 4
 
 
 def get_logger(ctx: Any) -> Any:
@@ -714,6 +781,68 @@ def _emit(log: Any, **rec: Any) -> None:
         pass
 
 
+_TIMEOUT_OK: Dict[type, bool] = {}
+
+
+def _accepts_timeout(llm: Any) -> bool:
+    t = type(llm)
+    if t not in _TIMEOUT_OK:
+        try:
+            import inspect
+
+            _TIMEOUT_OK[t] = "timeout" in inspect.signature(llm.chat).parameters
+        except (TypeError, ValueError):
+            _TIMEOUT_OK[t] = False
+    return _TIMEOUT_OK[t]
+
+
+def llm_call(llm: Any, ctx: Any, messages: List[Dict[str, Any]], tools: Optional[List[Dict[str, Any]]] = None, temperature: float = 0.2, tool_choice: Any = "auto", max_tokens: int = 4000) -> LLMResponse:
+    """`llm.chat` with the per-call timeout capped to what is left of the turn's budget (ctx.budget)."""
+    budget = getattr(ctx, "budget", None)
+    if budget is not None and hasattr(budget, "llm_timeout") and _accepts_timeout(llm):
+        default = getattr(llm, "timeout", None) or 120.0
+        return llm.chat(messages, tools, temperature, tool_choice, max_tokens, timeout=budget.llm_timeout(default))
+    return llm.chat(messages, tools, temperature, tool_choice, max_tokens)
+
+
+def _exec_tool(ctx: Any, dispatch_fn: Callable[[Any, str, Dict[str, Any]], Any], tc: ToolCall) -> Tuple[str, List[Any], int]:
+    """Run one tool call; never raises except JobCancelled. Returns (text, images, ms)."""
+    check_cancel(ctx)  # a cancel lands before the next tool call, even mid-batch
+    t1 = time.time()
+    try:
+        tr = dispatch_fn(ctx, tc.name, tc.args)
+        text = getattr(tr, "text", None)
+        if text is None:
+            text = str(tr)
+        images = list(getattr(tr, "images", None) or [])
+    except JobCancelled:
+        raise
+    except Exception as e:  # noqa: BLE001
+        text = f"ERROR in {tc.name}: {e}"
+        images = []
+    return str(text), images, int((time.time() - t1) * 1000)
+
+
+def _exec_batch(ctx: Any, dispatch_fn: Callable[[Any, str, Dict[str, Any]], Any], calls: List[ToolCall]) -> List[Tuple[str, List[Any], int]]:
+    """Execute the tool calls of one response in order; runs of read-only calls go concurrently (T2)."""
+    out: List[Tuple[str, List[Any], int]] = []
+    i = 0
+    while i < len(calls):
+        j = i
+        while j < len(calls) and calls[j].name in READ_ONLY_TOOLS:
+            j += 1
+        if j - i >= 2:
+            from concurrent.futures import ThreadPoolExecutor
+
+            with ThreadPoolExecutor(max_workers=min(PARALLEL_WORKERS, j - i), thread_name_prefix="copilot-tool") as pool:
+                out.extend(pool.map(lambda tc: _exec_tool(ctx, dispatch_fn, tc), calls[i:j]))
+            i = j
+        else:
+            out.append(_exec_tool(ctx, dispatch_fn, calls[i]))
+            i += 1
+    return out
+
+
 def run_tool_loop(
     llm: Any,
     ctx: Any,
@@ -727,14 +856,20 @@ def run_tool_loop(
     log: Any = None,
     tool_choice: Any = "auto",
     max_llm_calls: Optional[int] = None,
+    deadline: Optional[float] = None,
+    op_cap: Optional[int] = DEFAULT_OP_CAP,
 ) -> LoopResult:
     """OpenAI tool-calling loop.
 
-    * All tool calls in one response are executed in order; results are appended as `tool` messages.
+    * All tool calls in one response are executed in order (runs of read-only calls concurrently);
+      results are appended as `tool` messages.
     * Images returned by tools (ToolResult.images) are attached to the next user message when the
-      model supports vision, otherwise only the tool text is used.
-    * Stops on a plain text response, on a `finish` tool call, or when `max_calls` tool calls have
-      been made (a system nudge is inserted when 5 calls remain).
+      model supports vision (at most IMAGES_PER_CALL, 640 px JPEG), otherwise only the tool text is used.
+    * Stops on a plain text response, on a `finish` tool call, when `max_calls` tool calls have
+      been made (a system nudge is inserted when 5 calls remain), or — after the current tool
+      call — once `deadline` (absolute time) has passed (stopped_reason "budget").
+    * `op_cap` individual scene-mutating calls per loop; beyond it the model is told to batch the
+      rest in one `run_script`.
     * Every call is logged with timing as {t, stage, name, args, result_preview, ms}.
     """
     log = log or get_logger(ctx)
@@ -745,18 +880,33 @@ def run_tool_loop(
     usage: Dict[str, int] = {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
     pending_images: List[Any] = []
     nudged = False
+    time_nudged = False
     n_calls = 0
     max_llm = max_llm_calls or (max_calls * 2 + 4)
     supports_vision = bool(getattr(llm, "supports_vision", False))
     last_text = ""
+    loop_t0 = time.time()
+
+    def over_deadline() -> bool:
+        return deadline is not None and time.time() >= deadline
+
     while True:
         if result.llm_calls >= max_llm:
             result.stopped_reason = "max_calls"
             break
+        if over_deadline():
+            result.stopped_reason = "budget"
+            result.text = last_text or "stopped: stage time budget reached"
+            break
         check_cancel(ctx)
+        if deadline is not None and not time_nudged:
+            left = deadline - time.time()
+            if left <= max(10.0, 0.25 * (deadline - loop_t0)):
+                time_nudged = True
+                full.append({"role": "system", "content": f"About {int(left)} s left in this stage. Make the remaining essential changes in ONE call (a run_script if several ops), then call finish."})
         t0 = time.time()
         try:
-            resp: LLMResponse = llm.chat(full, tools, temperature, tool_choice)
+            resp: LLMResponse = llm_call(llm, ctx, full, tools, temperature, tool_choice)
         except JobCancelled:
             raise
         except Exception as e:  # noqa: BLE001
@@ -764,10 +914,12 @@ def run_tool_loop(
             result.stopped_reason = "error"
             result.text = last_text or f"LLM error: {e}"
             break
+        ms = int((time.time() - t0) * 1000)
         result.llm_calls += 1
+        result.llm_ms += ms
         for k, v in (resp.usage or {}).items():
             usage[k] = usage.get(k, 0) + int(v or 0)
-        _emit(log, stage=stage, name="__llm__", args={"tools": len(tools or [])}, result_preview=_preview(resp.text or f"{len(resp.tool_calls)} tool calls"), ms=int((time.time() - t0) * 1000))
+        _emit(log, stage=stage, name="__llm__", args={"tools": len(tools or []), "model": getattr(llm, "deployment", None)}, result_preview=_preview(resp.text or f"{len(resp.tool_calls)} tool calls"), ms=ms)
         if resp.text:
             last_text = resp.text
         if not resp.tool_calls:
@@ -787,6 +939,8 @@ def run_tool_loop(
             }
         )
         finished = False
+        to_run: List[ToolCall] = []
+        results: Dict[str, Tuple[str, List[Any], int]] = {}
         for tc in resp.tool_calls:
             n_calls += 1
             if session is not None:
@@ -794,35 +948,34 @@ def run_tool_loop(
                     session.tool_calls_this_stage = getattr(session, "tool_calls_this_stage", 0) + 1
                 except Exception:  # noqa: BLE001
                     pass
-            t1 = time.time()
             if tc.name == "finish":
                 text = str(tc.args.get("summary") or tc.args.get("text") or "done")
-                full.append({"role": "tool", "tool_call_id": tc.id, "content": "ok"})
-                result.calls.append((tc.name, tc.args, text))
+                results[tc.id] = (text, [], 0)
                 result.text = text
                 finished = True
-                _emit(log, stage=stage, name="finish", args=tc.args, result_preview=_preview(text), ms=0)
-                if on_tool:
-                    on_tool(tc.name, tc.args, text)
                 continue
-            check_cancel(ctx)
-            try:
-                tr = dispatch_fn(ctx, tc.name, tc.args)
-                text = getattr(tr, "text", None)
-                if text is None:
-                    text = str(tr)
-                images = list(getattr(tr, "images", None) or [])
-            except JobCancelled:
-                raise
-            except Exception as e:  # noqa: BLE001
-                text = f"ERROR in {tc.name}: {e}"
-                images = []
-            ms = int((time.time() - t1) * 1000)
-            _emit(log, stage=stage, name=tc.name, args=tc.args, result_preview=_preview(text), ms=ms)
-            full.append({"role": "tool", "tool_call_id": tc.id, "content": str(text)})
-            result.calls.append((tc.name, tc.args, str(text)))
-            if images:
-                pending_images.extend(images)
+            if tc.name not in OP_CAP_EXEMPT:
+                result.ops += 1
+                if op_cap and result.ops > op_cap:
+                    results[tc.id] = (f"ERROR: op cap reached ({op_cap} individual ops this stage). Batch the remaining edits in ONE run_script(python=...) call (scene.add / scene.set_shape / ... inside the script).", [], 0)
+                    continue
+            to_run.append(tc)
+        check_cancel(ctx)
+        for tc, res in zip(to_run, _exec_batch(ctx, dispatch_fn, to_run)):
+            results[tc.id] = res
+        for tc in resp.tool_calls:
+            text, images, ms = results.get(tc.id, ("", [], 0))
+            if tc.name == "finish":
+                full.append({"role": "tool", "tool_call_id": tc.id, "content": "ok"})
+                result.calls.append((tc.name, tc.args, text))
+                _emit(log, stage=stage, name="finish", args=tc.args, result_preview=_preview(text), ms=0)
+            else:
+                result.tool_ms += ms
+                _emit(log, stage=stage, name=tc.name, args=tc.args, result_preview=_preview(text), ms=ms)
+                full.append({"role": "tool", "tool_call_id": tc.id, "content": str(text)})
+                result.calls.append((tc.name, tc.args, str(text)))
+                if images:
+                    pending_images.extend(images)
             if on_tool:
                 on_tool(tc.name, tc.args, text)
         if finished:
@@ -830,11 +983,16 @@ def run_tool_loop(
             break
         if pending_images:
             if supports_vision:
-                parts: List[Dict[str, Any]] = [text_content(f"Rendered view(s) from your last render call ({len(pending_images)} image(s)). Check silhouette, proportions and detail before continuing.")]
-                parts += [image_content(im) for im in pending_images]
+                shown = pending_images[-IMAGES_PER_CALL:]
+                parts: List[Dict[str, Any]] = [text_content(f"Rendered view(s) from your last render call ({len(shown)} image(s)). Check silhouette, proportions and detail before continuing.")]
+                parts += image_parts(shown)
                 full.append({"role": "user", "content": parts})
-                result.images_shown += len(pending_images)
+                result.images_shown += len(shown)
             pending_images = []
+        if over_deadline():
+            result.stopped_reason = "budget"
+            result.text = last_text or f"stopped after {n_calls} tool calls: stage time budget reached"
+            break
         remaining = max_calls - n_calls
         if remaining <= 0:
             result.stopped_reason = "max_calls"
@@ -848,15 +1006,13 @@ def run_tool_loop(
     return result
 
 
-def single_call(llm: Any, system_prompt: str, user_content: Any, temperature: float = 0.2, tools: Optional[List[Dict[str, Any]]] = None, tool_choice: Any = "auto", max_tokens: int = 2000) -> LLMResponse:
-    """One chat call with a system prompt and a user message (string or content parts)."""
-    return llm.chat(
-        [{"role": "system", "content": system_prompt}, {"role": "user", "content": user_content}],
-        tools,
-        temperature,
-        tool_choice,
-        max_tokens,
-    )
+def single_call(llm: Any, system_prompt: str, user_content: Any, temperature: float = 0.2, tools: Optional[List[Dict[str, Any]]] = None, tool_choice: Any = "auto", max_tokens: int = 2000, ctx: Any = None) -> LLMResponse:
+    """One chat call with a system prompt and a user message (string or content parts).
+    With `ctx`, the call's timeout is capped to the turn's remaining budget."""
+    messages = [{"role": "system", "content": system_prompt}, {"role": "user", "content": user_content}]
+    if ctx is not None:
+        return llm_call(llm, ctx, messages, tools, temperature, tool_choice, max_tokens)
+    return llm.chat(messages, tools, temperature, tool_choice, max_tokens)
 
 
 def make_llm(kind: Optional[str] = None) -> Any:

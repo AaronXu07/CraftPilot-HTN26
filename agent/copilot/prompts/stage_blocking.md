@@ -12,15 +12,16 @@ you render, the shape should already read as the requested building from 30 bloc
 `subtract` (except a big arch/gate opening that defines the silhouette), `block`, `paint`,
 `define_material` with palettes (that is the materials stage).
 
-## Method
-1. Read the brief's silhouette_plan. Lay out the ground plan first: walls/keep/hall footprints, then
-   towers at corners, then the roofs stacked on top with `stack` or `top_of`.
-2. Hollow the main volumes with `shell(1 or 2)` so interiors exist; roofs are separate objects with
-   overhang (≥1 block wider than the wall they cover).
-3. Group logically: `group([...], "towers")`, `group([...], "keep")`.
-4. `render(views=["iso","front"])` and compare with the brief. Fix proportions with `set_shape`,
-   `move`, `scale` — do not delete and re-add.
-5. `lint()`, then `finish`.
+## Method (3 responses, not 30)
+1. Read the brief's silhouette_plan and plan the ground plan in your head: walls/keep/hall footprints,
+   towers at corners, roofs on top. Then write ONE `run_script` that creates every mass: placeholder
+   materials, hollow main volumes with `shell(1 or 2)`, roofs as separate objects with overhang
+   (≥1 block wider than the wall they cover), `scene.stack`/loops for repeated parts, groups
+   (`group="towers"`, `group="keep"`).
+2. In the same response as the script (or the next), call `render(views=["iso","front"])` and `lint()`
+   together. Compare with the brief.
+3. Fix proportions in one more script or a few `set_shape`/`move`/`scale` calls — do not delete and
+   re-add. Then `finish`.
 
 ## Checklist
 - [ ] Every mass in silhouette_plan exists with the right size and position.

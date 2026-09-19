@@ -55,7 +55,7 @@ def test_tool_loop_attaches_images_when_vision(tmp_path):
     last_user = [x for x in m.requests[1]["messages"] if x["role"] == "user"][-1]
     parts = last_user["content"]
     assert isinstance(parts, list) and sum(p.get("type") == "image_url" for p in parts) == 2
-    assert parts[1]["image_url"]["url"].startswith("data:image/png;base64,")
+    assert parts[1]["image_url"]["url"].startswith("data:image/jpeg;base64,")  # T2: JPEG payloads
     # without vision: no image parts
     ctx2 = _ctx(tmp_path)
     m2 = L.MockLLM(list(script), supports_vision=False)
@@ -191,3 +191,49 @@ def test_azure_llm_times_out_with_one_retry(monkeypatch):
 
     a._client.chat.completions.create = flaky
     assert a.chat([{"role": "user", "content": "hi"}]).text == "ok" and calls["n"] == 2
+
+
+def test_azure_llm_retries_429_a_few_times_and_passes_timeout(monkeypatch):
+    """T2: 429s get up to AZURE_OPENAI_RATE_LIMIT_ATTEMPTS (4) short attempts; the per-call timeout
+    reaches the SDK and bounds the backoff sleep."""
+    import types
+
+    import httpx
+    import openai
+    import pytest
+
+    monkeypatch.setenv("AZURE_OPENAI_ENDPOINT", "https://x.openai.azure.com")
+    monkeypatch.setenv("AZURE_OPENAI_API_KEY", "k")
+    monkeypatch.setenv("AZURE_OPENAI_DEPLOYMENT", "gpt-4o")
+    monkeypatch.delenv("AZURE_OPENAI_MAX_ATTEMPTS", raising=False)
+    monkeypatch.delenv("AZURE_OPENAI_RATE_LIMIT_ATTEMPTS", raising=False)
+    monkeypatch.setenv("AZURE_OPENAI_API", "chat")
+    a = L.AzureLLM()
+    assert a.rate_limit_attempts == 4
+    sleeps = []
+    monkeypatch.setattr(L.time, "sleep", lambda s: sleeps.append(s))
+    seen = []
+
+    def create(**kw):
+        seen.append(kw)
+        resp = httpx.Response(429, request=httpx.Request("POST", "https://x"), headers={"retry-after": "9"})
+        raise openai.RateLimitError("rate limited", response=resp, body=None)
+
+    a._client = types.SimpleNamespace(chat=types.SimpleNamespace(completions=types.SimpleNamespace(create=create)))
+    with pytest.raises(RuntimeError, match="after 4 attempts"):
+        a.chat([{"role": "user", "content": "hi"}], timeout=5.0)
+    assert len(seen) == 4 and all(kw["timeout"] == 5.0 for kw in seen)
+    assert sleeps == [5.0, 5.0, 5.0]  # retry-after 9 s capped by the 5 s call timeout
+    assert "timeout" not in {k for kw in seen for k in kw} - {"timeout", "model", "messages", "temperature", "max_tokens"}
+    # no timeout given -> nothing forwarded, plain timeouts still get one retry
+    seen.clear()
+    sleeps.clear()
+
+    def timeout_(**kw):
+        seen.append(kw)
+        raise openai.APITimeoutError(request=httpx.Request("POST", "https://x"))
+
+    a._client.chat.completions.create = timeout_
+    with pytest.raises(RuntimeError, match="after 2 attempts"):
+        a.chat([{"role": "user", "content": "hi"}])
+    assert len(seen) == 2 and "timeout" not in seen[0]

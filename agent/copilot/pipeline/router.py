@@ -2,12 +2,14 @@
 from __future__ import annotations
 
 import json
+import time
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional
 
 from ..jobs import check_cancel
 from ..llm import extract_json, single_call
-from .common import get_tools, outline, tool_names
+from .budget import profile_row
+from .common import fast_llm, get_tools, outline, tool_names
 from .stages import STAGE_BY_NAME, load_prompt
 
 INTENTS = ("build", "edit", "question", "meta")
@@ -66,11 +68,14 @@ def route(llm: Any, ctx: Any, request: str) -> Route:
     if brief:
         sys_prompt += "\n\n## Brief\n" + json.dumps({k: brief.get(k) for k in ("name", "build_type", "style", "facing", "key_features") if k in brief})
     check_cancel(ctx)
+    t0 = time.time()
     try:
-        resp = single_call(llm, sys_prompt, request.strip(), temperature=0.0, max_tokens=800)
+        resp = single_call(fast_llm(llm), sys_prompt, request.strip(), temperature=0.0, max_tokens=800, ctx=ctx)
         text = resp.text or ""
     except Exception as e:  # noqa: BLE001
         text = f"router error: {e}"
+    ms = int((time.time() - t0) * 1000)
+    profile_row(ctx, "route", wall_ms=ms, llm_ms=ms, llm_calls=1)
     known = tool_names(get_tools(ctx)) or None
     r = parse_route(text, known)
     log = getattr(ctx, "log", None)

@@ -2,10 +2,12 @@
 from __future__ import annotations
 
 import re
+import time
 from typing import Any, Dict, Optional
 
 from ..jobs import check_cancel
 from ..llm import extract_json, single_call
+from .budget import profile_row
 from .common import get_tools
 from .stages import load_prompt, system_prompt
 
@@ -114,8 +116,9 @@ def interpret(llm: Any, ctx: Any, request: str, temperature: float = 0.6) -> Dic
     user = f"Player request: {request.strip()}\n\nWrite the brief and call set_brief."
     brief: Optional[Dict[str, Any]] = None
     check_cancel(ctx)
+    t0 = time.time()
     try:
-        resp = single_call(llm, sys_prompt, user, temperature, tools, tool_choice={"type": "function", "function": {"name": "set_brief"}})
+        resp = single_call(llm, sys_prompt, user, temperature, tools, tool_choice={"type": "function", "function": {"name": "set_brief"}}, ctx=ctx)
         for tc in resp.tool_calls:
             if tc.name == "set_brief":
                 brief = tc.args.get("brief", tc.args) if isinstance(tc.args, dict) else None
@@ -126,6 +129,8 @@ def interpret(llm: Any, ctx: Any, request: str, temperature: float = 0.6) -> Dic
                 brief = j
     except Exception as e:  # noqa: BLE001
         brief = {"error": str(e)}
+    ms = int((time.time() - t0) * 1000)
+    profile_row(ctx, "interpret", wall_ms=ms, llm_ms=ms, llm_calls=1)
     b = normalize_brief(brief, request)
     session = getattr(ctx, "session", None)
     if session is not None:

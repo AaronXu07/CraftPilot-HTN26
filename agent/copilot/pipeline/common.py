@@ -95,6 +95,17 @@ def outline(ctx: Any, ids: Any = None, detail: str = "outline") -> str:
         return f"(outline unavailable: {e})"
 
 
+def fast_llm(llm: Any) -> Any:
+    """The LLM's cheaper variant (`llm.fast()`, e.g. MODEL_FAST) for router/describe/fix passes; else the LLM itself."""
+    f = getattr(llm, "fast", None)
+    if callable(f):
+        try:
+            return f() or llm
+        except Exception:  # noqa: BLE001
+            return llm
+    return llm
+
+
 def env_int(name: str, default: int) -> int:
     try:
         return int(os.environ.get(name, default))

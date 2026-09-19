@@ -13,16 +13,20 @@ string courses (`array`/`mirror`), `shell`, `round`, `wedge`/`pyramid`/`cone` ro
 ## Discouraged
 Changing primary masses (that was blocking) unless the critic asked; `block` props; palettes.
 
-## Method
-1. `describe()` and `lint()` to see the blank faces.
-2. Openings: one `subtract` box per façade with `array`. Windows 1×2 or 2×3, doors 2×3 (P6). Arches:
-   a box plus a horizontal cylinder (`axis="x"` or `"z"`) subtract on top, or a `torus` half.
-3. Depth: buttresses (boxes with `taper`), a plinth (box 1 wider than the wall, 2 tall, at y=0), a
-   string course (a thin box ring or a `paint` band 1 tall), corbels under overhangs.
-4. Roofs: check pitch; add a ridge (`line`/thin box), dormers (small box + wedge), chimneys.
-5. Battlements: `add` merlon box with `array` along each wall top (odd count, gap = merlon width).
-6. Interiors: floor slabs every 4–5 blocks (`box` 1 tall inside the shell), a stair `wedge`.
-7. `render`, `lint`, fix, `finish`.
+## Method (3 responses, not 30)
+1. Read the scene outline in the message (it is current) and the lint findings from blocking; you
+   rarely need another `describe()`.
+2. Write ONE `run_script` that adds all the secondary geometry at once:
+   - openings: one `subtract` box per façade with `array` (windows 1×2 or 2×3, doors 2×3, P6);
+     arches: a box plus a horizontal cylinder (`axis="x"`/`"z"`) subtract on top, or a `torus` half;
+   - depth: buttresses (boxes with `taper`), a plinth (box 1 wider than the wall, 2 tall, at y=0), a
+     string course (thin box ring or a `paint` band), corbels under overhangs;
+   - roofs: ridge (`line`/thin box), dormers (small box + wedge), chimneys;
+   - battlements: merlon box with `array` along each wall top (odd count, gap = merlon width);
+   - interiors: floor slabs every 4–5 blocks (`box` 1 tall inside the shell), a stair `wedge`;
+   - `scene.reorder(...)` any cut that must carve an earlier plinth.
+3. `render(views=["iso","front"])` + `lint()` in one response; fix findings with one more script or a
+   few ops; `finish`.
 
 ## Checklist
 - [ ] Every façade has openings at consistent spacing (P3) and ≥2 depth layers (P2).

@@ -13,7 +13,8 @@ from typing import Any, Dict, List, Optional
 
 from ..jobs import JobCancelled, check_cancel
 from ..llm import JsonlLogger, MockLLM, _emit, single_call
-from .common import call_tool, env_flag, outline
+from .budget import Budget, get_budget, new_budget, profile_row
+from .common import call_tool, env_flag, fast_llm, outline
 from .critic import Critique, critique, fixes_text
 from .interpret import DEFAULT_STAGES, brief_to_text, interpret
 from .router import Route, route
@@ -88,7 +89,15 @@ def _say(ctx: Any, text: str) -> None:
 
 
 def _place(ctx: Any, mode: str = "diff") -> Any:
-    return call_tool(ctx, "place", {"mode": mode, "animate": True})
+    t0 = time.time()
+    r = call_tool(ctx, "place", {"mode": mode, "animate": True})
+    ms = int((time.time() - t0) * 1000)
+    profile_row(ctx, "place", wall_ms=ms, engine_ms=ms, tool_calls=1, note=mode)
+    return r
+
+
+def _budget(ctx: Any) -> Budget:
+    return get_budget(ctx) or new_budget(ctx)
 
 
 def _one_line(s: str, n: int = 160) -> str:
@@ -234,27 +243,45 @@ class BuildReport:
 
 
 def run_build(ctx: Any, llm: Any, request: str, fast: bool = False, place: bool = True) -> "tuple[ChatResult, BuildReport]":
-    """Interpret → (blocking → critic → fix)* … → final critique → place. Returns the reply + report."""
+    """Interpret → (blocking → critic → fix)* … → final critique → place. Returns the reply + report.
+
+    Wall-clock budget (T2): every stage runs against `ctx.budget` (150 s plan, 300 s hard cap). A stage
+    ends after its current tool call once its deadline passes; critic and fix rounds are skipped when
+    the turn is behind schedule; decoration is skipped when under 40 s of hard budget remain.
+    """
     session = ctx.session
+    budget = _budget(ctx)
     t0 = time.time()
+    budget.start_stage("interpret")
     brief = interpret(llm, ctx, request)
+    budget.end_stage()
     report = BuildReport(brief=brief)
     _say(ctx, "Plan: " + brief_to_text(brief) + ". Building…")
     stage_names = [s for s in brief.get("stages", DEFAULT_STAGES) if s in STAGE_BY_NAME] or list(DEFAULT_STAGES)
     carry: Optional[str] = None
     images: List[Any] = []
+    skipped: List[str] = []
     for name in stage_names:
         check_cancel(ctx)
         stage = STAGE_BY_NAME[name]
+        if not budget.can_start(name):
+            skipped.append(name)
+            profile_row(ctx, name, stopped="skipped", note=f"{budget.remaining:.0f}s left")
+            continue
+        budget.start_stage(name)
         res = run_stage(llm, ctx, stage, request, brief, extra=carry)
+        budget.end_stage()
         report.stages.append(res)
         carry = None
         images = res.images or images
-        if not fast:
+        if not fast and budget.allow_critic():
+            budget.start_critic()
             crit = critique(llm, ctx, stage.name, brief, lint_text=res.lint_text)
             report.critiques.append(crit)
-            if crit.fixes and not crit.passed(CRITIC_PASS):
-                fix = run_stage(llm, ctx, stage, request, brief, extra=fixes_text(crit), max_calls=FIX_ROUND_CALLS, fix_round=True)
+            if crit.fixes and not crit.passed(CRITIC_PASS) and budget.allow_fix():
+                budget.fix_deadline()
+                fix = run_stage(fast_llm(llm), ctx, stage, request, brief, extra=fixes_text(crit), max_calls=FIX_ROUND_CALLS, fix_round=True)
+                budget.end_stage()
                 report.stages.append(fix)
                 images = fix.images or images
             elif crit.fixes:
@@ -264,13 +291,18 @@ def run_build(ctx: Any, llm: Any, request: str, fast: bool = False, place: bool 
             _place(ctx, "diff")
     if not fast:
         for _ in range(MAX_FINAL_FIX_ROUNDS):
+            if not budget.allow_critic():
+                break
+            budget.start_critic()
             crit = critique(llm, ctx, "final", brief)
             report.critiques.append(crit)
             report.final_score = crit.score
-            if crit.passed(CRITIC_PASS) or not crit.fixes:
+            if crit.passed(CRITIC_PASS) or not crit.fixes or not budget.allow_fix():
                 break
             stage = stage_for_rule(crit.fixes[0].get("rule", "")) if crit.fixes else FIX_STAGE
-            fix = run_stage(llm, ctx, stage, request, brief, extra=fixes_text(crit), max_calls=FIX_ROUND_CALLS, fix_round=True)
+            budget.fix_deadline()
+            fix = run_stage(fast_llm(llm), ctx, stage, request, brief, extra=fixes_text(crit), max_calls=FIX_ROUND_CALLS, fix_round=True)
+            budget.end_stage()
             report.stages.append(fix)
             images = fix.images or images
     placed = False
@@ -290,8 +322,12 @@ def run_build(ctx: Any, llm: Any, request: str, fast: bool = False, place: bool 
     last = next((s.text for s in reversed(report.stages) if s.text), "")
     if last:
         reply += ". " + _one_line(last, 140)
+    if skipped:
+        reply += f" (skipped {', '.join(skipped)}: out of time — say \"add decoration\" to continue)"
     reply += " Say what to change (e.g. \"make the towers taller\", \"copper roofs\") or `undo`."
-    return ChatResult(reply=reply, images=images, brief=brief, placed=placed, data=report.to_dict()), report
+    data = report.to_dict()
+    data["skipped"] = skipped
+    return ChatResult(reply=reply, images=images, brief=brief, placed=placed, data=data), report
 
 
 # ----------------------------------------------------------------------------------------------
@@ -307,21 +343,30 @@ def run_edit(ctx: Any, llm: Any, request: str, r: Route, fast: bool = False) -> 
         txt = getattr(res, "text", "") or ""
         (errors if txt.startswith("ERROR") else changes).append(_one_line(txt, 120))
     images: List[Any] = []
+    budget = _budget(ctx)
     for name in r.stages:
         stage = STAGE_BY_NAME.get(name)
         if stage is None:
             continue
+        if not budget.can_start(name):
+            errors.append(f"skipped {name}: out of time")
+            continue
         extra = None
         if errors:
             extra = "Some direct ops failed; achieve the request another way:\n" + "\n".join(errors)
+        budget.start_stage(name)
         res = run_stage(llm, ctx, stage, request, session.brief, selection=r.selection, extra=extra)
+        budget.end_stage()
         images = res.images or images
         if res.text:
             changes.append(_one_line(res.text, 140))
-        if not fast and stage.name in ("blocking", "detailing"):
+        if not fast and stage.name in ("blocking", "detailing") and budget.allow_critic():
+            budget.start_critic()
             crit = critique(llm, ctx, stage.name, session.brief, lint_text=res.lint_text)
-            if crit.fixes and not crit.passed(CRITIC_PASS):
-                fix = run_stage(llm, ctx, stage, request, session.brief, selection=r.selection, extra=fixes_text(crit), max_calls=FIX_ROUND_CALLS, fix_round=True)
+            if crit.fixes and not crit.passed(CRITIC_PASS) and budget.allow_fix():
+                budget.fix_deadline()
+                fix = run_stage(fast_llm(llm), ctx, stage, request, session.brief, selection=r.selection, extra=fixes_text(crit), max_calls=FIX_ROUND_CALLS, fix_round=True)
+                budget.end_stage()
                 images = fix.images or images
     if not images:
         rr = call_tool(ctx, "render", {"views": ["iso", "front"]})
@@ -353,17 +398,27 @@ def answer_question(ctx: Any, llm: Any, request: str) -> ChatResult:
     brief = getattr(ctx.session, "brief", None)
     if brief:
         sys_prompt += "\n\n## Brief\n" + brief_to_text(brief)
+    t0 = time.time()
     try:
-        resp = single_call(llm, sys_prompt, request, temperature=0.2, max_tokens=400)
+        resp = single_call(fast_llm(llm), sys_prompt, request, temperature=0.2, max_tokens=400, ctx=ctx)
         text = resp.text or "I don't have an answer for that."
     except Exception as e:  # noqa: BLE001
         text = f"I couldn't answer that: {e}"
+    ms = int((time.time() - t0) * 1000)
+    profile_row(ctx, "describe", wall_ms=ms, llm_ms=ms, llm_calls=1)
     return ChatResult(reply=text.strip(), brief=brief)
 
 
 # ----------------------------------------------------------------------------------------------
 # entry point
 # ----------------------------------------------------------------------------------------------
+def profile_line(summary: Dict[str, Any]) -> str:
+    """One-line latency summary: `wall 132.4s llm 118.2s engine 3.1s | interpret 6.1 blocking 31.0 ...`."""
+    parts = [f"wall {summary['wall_ms'] / 1000:.1f}s", f"llm {summary['llm_ms'] / 1000:.1f}s ({summary['llm_calls']} calls)", f"engine {summary['engine_ms'] / 1000:.1f}s ({summary['tool_calls']} tools)"]
+    stages = " ".join(f"{r['stage']} {r['wall_ms'] / 1000:.1f}" + (f"[{r['stopped']}]" if r.get("stopped") and r["stopped"] not in ("finish", "text", "") else "") for r in summary.get("stages", []))
+    return " ".join(parts) + (" | " + stages if stages else "")
+
+
 _BUILD_RE = re.compile(r"^\s*(?:please\s+)?(?:build|make|create|construct|design|erect|put up|generate)\b", re.IGNORECASE)
 
 
@@ -380,6 +435,7 @@ def handle_chat(ctx: Any, text: str, llm: Any = None, fast: Optional[bool] = Non
     log = _turn_logger(ctx)
     fast_mode = _fast(ctx, fast)
     t0 = time.time()
+    budget = new_budget(ctx)
     try:
         meta = handle_meta(ctx, text)
         if meta is not None:
@@ -406,6 +462,8 @@ def handle_chat(ctx: Any, text: str, llm: Any = None, fast: Optional[bool] = Non
     except JobCancelled as e:
         # the job runner reports "[cp] stopped: <reason>" to the player; keep the turn's history consistent
         session.add_chat("assistant", f"[cp] stopped: {e.reason}")
+        summary = budget.summary()
+        _emit(log, stage="turn", name="__summary__", args={}, result_preview=profile_line(summary), ms=summary["wall_ms"], profile=summary)
         _emit(log, stage="turn", name="__cancelled__", args={"reason": e.reason}, result_preview="", ms=int((time.time() - t0) * 1000))
         try:
             session.save()
@@ -417,6 +475,9 @@ def handle_chat(ctx: Any, text: str, llm: Any = None, fast: Optional[bool] = Non
         _emit(log, stage="error", name="__exception__", args={}, result_preview=tb[-600:], ms=int((time.time() - t0) * 1000))
         result = ChatResult(reply=f"Sorry — that failed ({type(e).__name__}: {str(e)[:200]}). Try `undo`, `status`, or rephrase the request.")
     session.add_chat("assistant", result.reply)
+    summary = budget.summary()
+    result.data["profile"] = summary
+    _emit(log, stage="turn", name="__summary__", args={}, result_preview=profile_line(summary), ms=summary["wall_ms"], profile=summary)
     _emit(log, stage="turn", name="__reply__", args={"text": text[:200]}, result_preview=result.reply[:300], ms=int((time.time() - t0) * 1000))
     try:
         session.save()

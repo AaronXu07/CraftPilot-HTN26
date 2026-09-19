@@ -53,3 +53,58 @@ All later work continues on `overnight/20260919-0339` (history was not rewritten
 **For the morning**: see MORNING_CHECKLIST.md "T1". The mod's chat prefix is still `[copilot]`; T3 will
 restyle the progress lines. Cancel is cooperative: a job stops after its current LLM/tool call
 (≤ 120 s worst case on a slow Azure call); the watchdog is the hard stop.
+
+## T2 — Latency: 5 min hard cap, ≤ 2 min target [in progress]
+
+**Where the time went (instrumented first)**: the one real full build in `runs/` before T1 took 2025 s:
+94 stage LLM calls (blocking 30, detailing 24, materials 13, decoration 27) averaging 6–23 s each, two Azure
+hangs of 830 s and 235 s (now bounded by T1's timeouts), and *2.6 s* of engine time per stage. The engine is
+not the problem: a full rasterize→fit→resolve of the 37-object / 12.8k-block bench castle is 0.13 s
+(raster 4 ms after an edit thanks to the existing per-object cache; fit is numpy-vectorised), renders
+0.17–0.27 s and are cached by scene hash. Latency = number of LLM round trips × per-call latency, plus
+stages that ran until their 40-call cap.
+
+**What changed**
+- `copilot/pipeline/budget.py` (new): `Budget` — hard cap `COPILOT_HARD_BUDGET_S` (300 s, aligned with the
+  job's deadline when running under `/chat`) and a `COPILOT_PLAN_BUDGET_S` (150 s) schedule: interpret 10,
+  blocking 35, detailing 45, materials 30, decoration 20, critic 10 (scaled if the plan changes). Deadlines are
+  cumulative, so time saved early rolls forward; a stage that starts late still gets half its allotment. A
+  stage that reaches its deadline ends after its current tool call (`stopped_reason: "budget"`, the model
+  gets an "about N s left" nudge first). Critic and fix rounds only run while the turn is on schedule
+  (`allow_critic()/allow_fix()`); fix rounds are 25 s; decoration is skipped when < 40 s of hard budget
+  remain (the reply says `skipped decoration: out of time`). `ProfileRow`s per interpret/stage/critic/
+  fix/route/describe/place feed the run log (`__profile__` lines and one `__summary__` line per turn with
+  wall/LLM/engine ms and calls) and `ChatResult.data["profile"]`.
+- `copilot/llm.py`: `run_tool_loop(deadline=, op_cap=)`; individual scene-mutating calls capped at
+  `COPILOT_OP_CAP` (12) per stage — the 13th returns `ERROR: op cap reached … batch the rest in ONE
+  run_script`; runs of read-only calls in one response (`render`, `lint`, `describe`, `select`, `search_blocks`,
+  …) execute concurrently on a small thread pool (results stay in order; `Session.build_lock` makes the
+  rasterize/fit/resolve build once). `LoopResult` now carries `llm_ms`, `tool_ms`, `ops`. `llm_call()` caps
+  each call's timeout to the remaining hard budget (`AzureLLM.chat(timeout=)` → SDK per-request timeout;
+  `single_call(ctx=)` does the same for interpret/critic/router). `__llm__` log records carry `model`.
+  Images: `image_content` is now 640 px JPEG (q82) by default, `image_parts()` keeps the last 2 images;
+  the tool loop shows at most 2 renders per call and the critic sends one contact sheet.
+- `AzureLLM`: `MODEL` is accepted as an alias of `AZURE_OPENAI_DEPLOYMENT`; `MODEL_FAST` (or
+  `AZURE_OPENAI_FAST_DEPLOYMENT`) gives `llm.fast()`, a copy sharing the HTTP client and usage counters that
+  uses the cheaper deployment. `pipeline.common.fast_llm()` applies it to the router, `answer_question`
+  (describe) and critic fix rounds (`fix_round=True`). Unset → same model, no behaviour change.
+  429s: `AZURE_OPENAI_RATE_LIMIT_ATTEMPTS` (4) short attempts with Retry-After honoured and the sleep capped
+  by the call timeout (timeouts keep T1's one retry). The baseline bench hit 5–6 429s per prompt on the
+  `gpt-5.4-mini` deployment, each ending a stage early with "error".
+- `pipeline/stages.py`: stage user message asks for ONE `run_script` per stage + `render`+`lint` in one
+  response and states the stage's time budget; profile row per stage. `orchestrator.run_build/run_edit`
+  drive the budget (`can_start`, `start_stage`, `start_critic`, `fix_deadline`); `handle_chat` creates a
+  fresh budget per turn and emits the `__summary__` line (`profile_line()`).
+- Prompts: `system_core.md` rules 3/7 ("build in bulk": one script per stage, 12-op cap, stage time budget,
+  3–4 responses per stage); each `stage_*.md` "Method" rewritten as 2–3 responses with the whole checklist
+  inside one script; `run_script` tool description says it is the main way to build. Prompt sizes stayed
+  under the `test_prompts` cap (core 10.2k chars).
+- Bench: `bench/run.py --quick` (first 5 prompts), `--profile` (per-stage latency table + median/max/mean
+  line), `--profile --from DIR` (table for an old run, rebuilt from its jsonl logs). Rows carry `profile`.
+- Docs: CONTRACTS.md §7 (wall-clock plan), `.env.example` (`MODEL_FAST`, `COPILOT_PLAN_BUDGET_S`,
+  `COPILOT_OP_CAP`), README bench line, `MORNING_CHECKLIST.md` "T2".
+- Tests: `tests/test_budget.py` (17: schedule math, late stages, hard cap & decoration skip, job alignment,
+  loop deadline after the current call, time nudge, op cap → run_script, concurrent read-only calls with
+  ordered results, timeout capping, profile rows & `__summary__`, behind-schedule skips critics, router/fix
+  rounds on the fast model, `AzureLLM.fast()`, JPEG/640 px/2-image payloads, critic single sheet, bench
+  table incl. legacy logs); `tests/test_llm.py` +1 (429 retries + timeout forwarding).

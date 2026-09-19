@@ -41,6 +41,7 @@ class ToolContext:
     log: Optional[Callable[[Dict[str, Any]], None]] = None
     run_dir: Optional[str] = None
     job: Any = None  # copilot.jobs.Job when running as a background chat job (cancel / time budget)
+    budget: Any = None  # copilot.pipeline.budget.Budget for the current turn (stage deadlines, profile)
 
     def emit(self, event: Dict[str, Any]) -> None:
         if self.log:
@@ -69,6 +70,19 @@ def build_all(ctx: ToolContext) -> Dict[str, Any]:
     cached = session.cached("build")
     if cached is not None:
         return cached
+    # T2: read-only tool calls (render + lint) may run concurrently; build the scene once
+    lock = getattr(session, "build_lock", None)
+    if lock is None:
+        return _build_all(ctx)
+    with lock:
+        cached = session.cached("build")
+        if cached is not None:
+            return cached
+        return _build_all(ctx)
+
+
+def _build_all(ctx: ToolContext) -> Dict[str, Any]:
+    session = ctx.session
     scene = session.scene
     if not scene.objects:
         raise SceneError("the scene is empty; add objects first")

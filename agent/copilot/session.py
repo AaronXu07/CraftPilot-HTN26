@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import json
 import os
+import threading
 import time
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional, Tuple
@@ -55,6 +56,7 @@ class Session:
         self.world = WorldState()
         self.cache: Dict[str, Any] = {}  # engine outputs keyed by scene hash (raster/fit/block_map/renders)
         self.live_preview: bool = False
+        self.build_lock = threading.Lock()  # serialises rasterize/fit/resolve when tools run concurrently
         self.turn: int = 0
         self.created = time.time()
         self.run_dir = run_dir or os.path.join("runs", _safe(player) + "_" + time.strftime("%Y%m%d_%H%M%S"))

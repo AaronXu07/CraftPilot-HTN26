@@ -21,14 +21,14 @@ Geometry or material changes (report them via `finish` instead).
 - `dirt_path`, `gravel`, `coarse_dirt` for paths (paint a thin box at y=-1..0)
 - `spruce_stairs[facing=north,half=bottom]` as seats, `oak_trapdoor[half=top,open=false]` as table tops
 
-## Method
-1. `describe()`; find the entrance (`side_of(door_cut, "south")`) and wall tops (`top_of`).
-2. Entrance: two lanterns/torches flanking the door at y+2, a banner over it, a door pair.
-3. Walls: a lantern every 6–8 blocks along parapets or under eaves (`array`).
-4. Interior: 2–4 light sources per floor; simple furniture.
-5. Ground: a path from the door toward +z (paint band of gravel/dirt_path), flower boxes
-   under windows.
-6. `render`, `lint` (props must rest on something), `finish`.
+## Method (2 responses)
+1. Work out positions from the scene outline in the message (door cut, wall tops, eaves); the
+   outline gives every object's position and size, so `side_of`/`top_of` are rarely needed.
+2. Write ONE `run_script` that places all the props: two lanterns/torches flanking the door at y+2, a
+   banner over it, a door pair; a lantern every 6–8 blocks along parapets or under eaves (`array`);
+   2–4 light sources per floor and simple furniture; a path from the door toward +z (paint band of
+   gravel/dirt_path); flower boxes under windows.
+3. `render` + `lint` together (props must rest on something), fix in one script if needed, `finish`.
 
 ## Checklist
 - [ ] Entrance lit and framed (P6, P7).

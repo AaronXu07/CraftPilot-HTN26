@@ -17,3 +17,16 @@ Start the agent first: `cd agent && ../.venv/bin/python -m copilot.server --port
 - In-game: with the agent stopped, type `/cp hi`; expect `agent not running at http://127.0.0.1:8000 (start it with: …)`.
 - Agent env `COPILOT_HARD_BUDGET_S=20` and `/cp build a castle` with the real LLM; expect
   `[cp] stopped: over time budget` after ~20 s and `/cp status` → `job N: timeout, …`.
+
+## T2 — latency budget
+- In-game: type `/cp build a medieval castle with four round towers and a gatehouse`; expect the final `Built …`
+  reply within about 2–3 minutes (hard stop at 5 min), and `/cp status` mid-run to show the stage advancing
+  roughly every 30–45 s (`blocking` → `detailing` → `materials` → `decoration`).
+- Agent log (`runs/<player>_<stamp>/turn_NNN.jsonl`, last `__summary__` line): expect `wall …s llm …s (N calls)`
+  with N in the 12–25 range for a build (was 90+), and per-stage entries like `blocking 31.0[budget]` when a
+  stage was cut at its deadline.
+- In-game: if a build reply ends with `(skipped decoration: out of time — say "add decoration" to continue)`,
+  type `/cp add lanterns at the entrance and along the walls`; expect an edit turn that places lanterns.
+- Agent env `MODEL_FAST=<cheaper deployment>` then `/cp how tall is the keep?`; expect an answer within ~10 s
+  (the router and the answer run on the fast deployment; `__llm__` records in the run log carry `"model"`, so
+  build stages should still show the main deployment).

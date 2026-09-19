@@ -2,15 +2,17 @@
 from __future__ import annotations
 
 import json
+import time
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional
 
 from ..jobs import check_cancel
-from ..llm import extract_json, image_content, single_call, text_content
+from ..llm import IMAGES_PER_CALL, extract_json, image_parts, single_call, text_content
+from .budget import profile_row
 from .common import call_tool, outline
 from .stages import load_prompt
 
-CRITIC_VIEWS = ["contact"]  # one image: iso + front + top (+ cutaway)
+CRITIC_VIEWS = ["contact"]  # one image: iso + front + top (+ cutaway), sent as one 640 px JPEG (T2)
 
 
 @dataclass
@@ -88,6 +90,7 @@ def critique(llm: Any, ctx: Any, stage: str, brief: Optional[Dict[str, Any]], li
     """Render (contact sheet when vision is available) and ask the critic for a score + top-3 fixes."""
     supports_vision = bool(getattr(llm, "supports_vision", False))
     check_cancel(ctx)
+    t0 = time.time()
     if lint_text is None:
         r = call_tool(ctx, "lint", {})
         lint_text = getattr(r, "text", "") or ""
@@ -95,11 +98,11 @@ def critique(llm: Any, ctx: Any, stage: str, brief: Optional[Dict[str, Any]], li
     render_text = ""
     if supports_vision:
         r = call_tool(ctx, "render", {"views": CRITIC_VIEWS})
-        images = list(getattr(r, "images", None) or [])[:3]
+        images = list(getattr(r, "images", None) or [])[:1]
         render_text = getattr(r, "text", "") or ""
         if not images:  # older/other renderers: ask for the views separately
-            r = call_tool(ctx, "render", {"views": ["iso", "front", "top"]})
-            images = list(getattr(r, "images", None) or [])[:3]
+            r = call_tool(ctx, "render", {"views": ["iso", "front"]})
+            images = list(getattr(r, "images", None) or [])[:IMAGES_PER_CALL]
             render_text = getattr(r, "text", "") or render_text
     if not images:
         # text-only fallback: bbox/block summary plus an ASCII plan slice at mid height
@@ -117,17 +120,20 @@ def critique(llm: Any, ctx: Any, stage: str, brief: Optional[Dict[str, Any]], li
     if images:
         head.append("## Images\nContact sheet (isometric, front, top, cutaway). Judge what you see.")
     parts.append(text_content("\n\n".join(head)))
-    for im in images:
-        parts.append(image_content(im))
+    parts.extend(image_parts(images))
     parts.append(text_content("Reply with the JSON object only."))
+    t_llm = time.time()
     try:
-        resp = single_call(llm, sys_prompt, parts, temperature=0.2, max_tokens=1200)
+        resp = single_call(llm, sys_prompt, parts, temperature=0.2, max_tokens=1200, ctx=ctx)
         text = resp.text or ""
     except Exception as e:  # noqa: BLE001
         text = f"critic error: {e}"
+    llm_ms = int((time.time() - t_llm) * 1000)
     c = parse_critique(text, stage)
     c.used_vision = bool(images)
     c.lint_text = lint_text
+    wall_ms = int((time.time() - t0) * 1000)
+    profile_row(ctx, f"critic:{stage}", wall_ms=wall_ms, llm_ms=llm_ms, engine_ms=wall_ms - llm_ms, llm_calls=1, note=f"score {c.score}")
     log = getattr(ctx, "log", None)
     if log is not None and hasattr(log, "log"):
         try:

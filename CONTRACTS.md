@@ -174,6 +174,20 @@ a second `/chat` while busy returns `{busy: true, job_id, reply: "[cp] still wor
 and `status` sent while busy act on the running job. Hard budget `COPILOT_HARD_BUDGET_S` (300 s) — a job
 over budget is closed with `[cp] stopped: over time budget`. Mod HTTP requests time out after 15 s.
 
+Wall-clock plan (T2, `copilot/pipeline/budget.py`): inside the hard budget every build turn follows a
+`COPILOT_PLAN_BUDGET_S` (150 s) schedule — interpret 10, blocking 35, detailing 45, materials 30,
+decoration 20, critic 10 (scaled if the plan changes). A stage ends after its current tool call once
+its deadline passes (`stopped_reason: "budget"`); critic/fix rounds are skipped while the turn is behind
+schedule; decoration is skipped when < 40 s of hard budget remain (the reply says so). Individual op
+calls are capped at `COPILOT_OP_CAP` (12) per stage — the model is told to batch the rest in one
+`run_script`. Runs of read-only tool calls in one response (`render`, `lint`, `describe`, …) execute
+concurrently. Each LLM call's timeout is capped to the remaining hard budget. `MODEL_FAST` (or
+`AZURE_OPENAI_FAST_DEPLOYMENT`) names a cheaper deployment for the router, `describe`/question
+answers and critic fix rounds (falls back to the main deployment; `MODEL` is an alias of
+`AZURE_OPENAI_DEPLOYMENT`). Vision payloads: ≤ 2 images per call, 640 px JPEG; the critic gets one
+contact sheet. Every turn's run log ends with a `__summary__` record (`profile`: wall/LLM/engine ms
+and calls per stage) and `bench/run.py --profile` prints the same as a table.
+
 The python `Bridge` protocol (bridge.py) mirrors this 1:1:
 `health()`, `player()`, `scan(lo, hi) -> BlockMap (includes air as "minecraft:air")`,
 `setblocks(chunks: list[tuple[list[tuple[x,y,z,state]], delay_ms]], flags=3) -> int`,

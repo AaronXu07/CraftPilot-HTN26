@@ -13,7 +13,8 @@ from dataclasses import dataclass, field
 from functools import lru_cache
 from typing import Any, Dict, List, Optional
 
-from ..llm import LoopResult, run_tool_loop
+from ..llm import DEFAULT_OP_CAP, LoopResult, run_tool_loop
+from .budget import get_budget, profile_row
 from .common import call_tool, env_int, get_dispatch, get_tools, outline
 
 PROMPT_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "prompts")
@@ -146,7 +147,7 @@ class StageResult:
         return [c[0] for c in self.calls]
 
 
-def stage_user_message(stage: Stage, request: str, brief: Optional[Dict[str, Any]], scene_outline: str, selection: Optional[str] = None, extra: Optional[str] = None, fix_round: bool = False) -> str:
+def stage_user_message(stage: Stage, request: str, brief: Optional[Dict[str, Any]], scene_outline: str, selection: Optional[str] = None, extra: Optional[str] = None, fix_round: bool = False, budget_s: Optional[float] = None) -> str:
     parts = [f"## Player request\n{request.strip()}"]
     if brief:
         parts.append("## Brief\n```json\n" + json.dumps(brief, indent=1) + "\n```")
@@ -158,7 +159,13 @@ def stage_user_message(stage: Stage, request: str, brief: Optional[Dict[str, Any
     if fix_round:
         parts.append(f"This is a FIX round for the {stage.name} stage: apply the findings above with the fewest ops, render once to confirm, then call finish.")
     else:
-        parts.append(f"Begin the **{stage.name}** stage now. Work through the checklist, render to check, run lint, then call finish with a one-line summary.")
+        parts.append(
+            f"Begin the **{stage.name}** stage now. Work through the checklist with as few round trips as possible: "
+            "put all the geometry/material changes for this stage in ONE run_script call, then render and lint together, "
+            "fix what is wrong in one more call if needed, and call finish with a one-line summary."
+        )
+    if budget_s:
+        parts.append(f"Time budget for this stage: about {int(budget_s)} s of wall clock; the stage is cut off after that.")
     return "\n\n".join(parts)
 
 
@@ -175,8 +182,14 @@ def run_stage(
     fix_round: bool = False,
     render_after: bool = True,
     lint_after: bool = True,
+    deadline: Optional[float] = None,
+    op_cap: Optional[int] = None,
 ) -> StageResult:
-    """Run one pipeline stage: compose prompts, run the tool loop, then render + lint for feedback."""
+    """Run one pipeline stage: compose prompts, run the tool loop, then render + lint for feedback.
+
+    `deadline` (absolute time; defaults to the stage deadline of `ctx.budget`) ends the loop after the
+    current tool call; `op_cap` (default COPILOT_OP_CAP / 12) bounds individual op calls per stage.
+    """
     session = getattr(ctx, "session", None)
     t0 = time.time()
     if session is not None:
@@ -184,11 +197,17 @@ def run_stage(
         session.tool_calls_this_stage = 0
     cap = env_int("COPILOT_MAX_CALLS_PER_STAGE", 40)
     limit = min(max_calls or stage.max_calls, cap) if max_calls else min(stage.max_calls, cap)
+    budget = get_budget(ctx)
+    if deadline is None and budget is not None:
+        deadline = budget.stage_deadline
+    if op_cap is None:
+        op_cap = env_int("COPILOT_OP_CAP", DEFAULT_OP_CAP)
+    budget_s = (deadline - t0) if deadline else None
     tools = get_tools(ctx, exclude=STAGE_TOOL_EXCLUDE)
     sys_prompt = system_prompt(ctx, stage)
     if stage.encouraged_tools:
         sys_prompt += "\n\nEncouraged tools in this stage: " + ", ".join(stage.encouraged_tools) + "."
-    user = stage_user_message(stage, request, brief, outline(ctx), selection, extra, fix_round)
+    user = stage_user_message(stage, request, brief, outline(ctx), selection, extra, fix_round, budget_s)
     dispatch = get_dispatch(ctx)
     loop = run_tool_loop(
         llm,
@@ -200,8 +219,11 @@ def run_stage(
         max_calls=limit,
         temperature=stage.temperature if temperature is None else temperature,
         log=getattr(ctx, "log", None),
+        deadline=deadline,
+        op_cap=op_cap,
     )
     result = StageResult(stage=stage.name, text=loop.text, calls=loop.calls, loop=loop, stopped_reason=loop.stopped_reason)
+    t_engine = time.time()
     if render_after:
         r = call_tool(ctx, "render", {"views": ["iso", "front"]})
         result.images = list(getattr(r, "images", None) or [])
@@ -210,6 +232,17 @@ def run_stage(
         r = call_tool(ctx, "lint", {})
         result.lint_text = getattr(r, "text", "") or ""
     result.seconds = time.time() - t0
+    profile_row(
+        ctx,
+        ("fix:" if fix_round else "") + stage.name,
+        wall_ms=int(result.seconds * 1000),
+        llm_ms=loop.llm_ms,
+        engine_ms=loop.tool_ms + int((time.time() - t_engine) * 1000),
+        llm_calls=loop.llm_calls,
+        tool_calls=loop.tool_calls,
+        stopped=loop.stopped_reason,
+        note=f"ops {loop.ops}",
+    )
     if session is not None:
         session.stage = None
     return result
