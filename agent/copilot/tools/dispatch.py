@@ -14,6 +14,7 @@ from dataclasses import dataclass, field
 from typing import Any, Callable, Dict, List, Optional
 
 from ..engine.scene import OPS, READ_ONLY_OPS, SceneError
+from ..jobs import JobCancelled
 from .schemas import AGENT_TOOL_NAMES, HISTORY_TOOL_NAMES, TOOLS_BY_NAME
 
 MAX_RESULT_CHARS = 4000
@@ -39,6 +40,7 @@ class ToolContext:
     registry: Any = None
     log: Optional[Callable[[Dict[str, Any]], None]] = None
     run_dir: Optional[str] = None
+    job: Any = None  # copilot.jobs.Job when running as a background chat job (cancel / time budget)
 
     def emit(self, event: Dict[str, Any]) -> None:
         if self.log:
@@ -170,6 +172,8 @@ def dispatch(ctx: ToolContext, name: str, args: Optional[Dict[str, Any]] = None)
             res = ToolResult(f"ERROR: unknown tool {name!r}. Available: {', '.join(TOOLS_BY_NAME)}")
     except SceneError as e:
         res = ToolResult(f"ERROR: {e}")
+    except JobCancelled:
+        raise  # unwind the job; not a tool error
     except Exception as e:  # noqa: BLE001 - never crash the tool loop
         res = ToolResult(f"ERROR: {name} failed: {type(e).__name__}: {e}")
     res.text = truncate(res.text)

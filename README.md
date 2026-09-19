@@ -41,10 +41,10 @@ Player chat  ──/cp──▶  Fabric mod (thin bridge, 7 HTTP endpoints)   mo
 ```bash
 python3 -m venv .venv && .venv/bin/pip install -e "agent[dev]"
 cd agent
-../.venv/bin/pytest -q                       # 213 tests, ~3 s
+../.venv/bin/pytest -q                       # ~225 tests, ~4 s
 ../.venv/bin/python ../scripts/demo.py       # scripted castle → out/demo_contact.png, diff placement into the mock
 COPILOT_LLM=mock ../.venv/bin/python -m copilot.server --port 8000 --bridge mock   # whole pipeline, scripted LLM
-curl -X POST localhost:8000/chat -H 'content-type: application/json' -d '{"player":"me","text":"build a hall"}'
+curl -X POST localhost:8000/chat -H 'content-type: application/json' -d '{"player":"me","text":"build a hall"}'   # → {"job_id":1,...}; reply via /say, or curl localhost:8000/jobs/1
 ../.venv/bin/python -m bench.run --mock --fast     # bench smoke run → bench/out/<ts>/report.md
 ```
 

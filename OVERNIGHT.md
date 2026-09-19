@@ -14,7 +14,7 @@ You are running unattended, in a fresh session, on branch `overnight/*`. Nobody 
 
 ## Tasks (priority order)
 
-### T1 — Async chat; fix `HttpTimeoutException: request timed out`
+### T1 [done] — Async chat; fix `HttpTimeoutException: request timed out`
 Root cause: the mod's `/chat` HTTP request waits for the whole agent run and the Java `HttpClient` times out. Make chat asynchronous:
 - Agent: `POST /chat` returns `{"job_id": ...}` within 1 s and runs the pipeline in a background task. Progress and the final answer are pushed to the mod via `POST /say`. Add `GET /jobs/{id}` (status, elapsed, stage) and `POST /jobs/{id}/cancel`.
 - Mod: `/cp` posts and prints `[cp] working (job 3)…` immediately; request timeout 15 s; `/cp cancel` and `/cp status` commands. Never block on a long request again.

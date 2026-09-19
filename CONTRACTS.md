@@ -8,7 +8,7 @@ Facing: north = -z, south = +z, east = +x, west = -x.
 
 ```
 agent/copilot/
-  server.py           FastAPI  POST /chat {player, text} -> {reply, brief?, images?}
+  server.py           FastAPI  POST /chat {player, text} -> {job_id, status, reply?}; GET/POST /jobs/{id}[/cancel]
   llm.py              LLM protocol: AzureLLM + MockLLM (scripted), tool loop
   session.py          Session: scene, history, undo/redo, snapshots, brief, chat, world state
   bridge.py           Bridge protocol + HttpBridge (talks to the Fabric mod)
@@ -164,7 +164,15 @@ Family forms come from `registry.family(base)`: full, stairs, slab, wall, fence,
 | POST /camera | `{"mode":"orbit","center":[x,y,z],"radius":r,"seconds":n}` or `{"mode":"return"}` | `{"ok":true}` |
 
 Chat: `/cp <text>` in game → mod POSTs `http://127.0.0.1:8000/chat {"player":name,"text":text}` →
-agent replies `{"reply": "..."}` which the mod prints. Long builds stream progress via `/say`.
+agent answers **within ~1 s** with `{"job_id": n, "status": "queued|running|done|failed|cancelled|timeout",
+"reply": str|null, "brief": ...}`. The turn runs as a background job: if it finished inside the inline window
+(short commands such as `undo`, `help`, `status`) `reply` is set and the mod prints it; otherwise `reply` is
+null, the mod prints `[cp] working (job n)…` and the final answer (or `[cp] stopped: <reason>`) arrives via
+`/say`. `GET /jobs/{id}` → `{job_id, status, stage, elapsed_s, remaining_s, reply, error, line}`;
+`POST /jobs/{id}/cancel` asks the job to stop after its current LLM/tool call. One active job per player:
+a second `/chat` while busy returns `{busy: true, job_id, reply: "[cp] still working…"}`; the texts `cancel`
+and `status` sent while busy act on the running job. Hard budget `COPILOT_HARD_BUDGET_S` (300 s) — a job
+over budget is closed with `[cp] stopped: over time budget`. Mod HTTP requests time out after 15 s.
 
 The python `Bridge` protocol (bridge.py) mirrors this 1:1:
 `health()`, `player()`, `scan(lo, hi) -> BlockMap (includes air as "minecraft:air")`,

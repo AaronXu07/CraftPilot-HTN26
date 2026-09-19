@@ -2,8 +2,10 @@
 
     python -m copilot.server --port 8000 --bridge mock|http|auto
 
-Endpoints: POST /chat {player, text} -> {reply, brief, images}; GET /health; GET /sessions;
-POST /sessions/{player}/reset; GET /sessions/{player}/scene; GET /sessions/{player}/render.png.
+Endpoints: POST /chat {player, text} -> {job_id, status, reply?} (the pipeline runs in a background
+job; long replies are pushed to the player through the mod's /say); GET /jobs/{id}; POST /jobs/{id}/cancel;
+GET /health; GET /sessions; POST /sessions/{player}/reset; GET /sessions/{player}/scene;
+GET /sessions/{player}/render.png.
 """
 from __future__ import annotations
 
@@ -18,10 +20,14 @@ from typing import Any, Dict, List, Optional
 
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import JSONResponse, Response
+from starlette.concurrency import run_in_threadpool
 
 from .bridge import BridgeError, get_bridge
+from .jobs import Job, JobManager
 from .session import Session, SessionStore
 from .tools.dispatch import ToolContext, dispatch
+
+CHAT_INLINE_WAIT_S = float(os.environ.get("COPILOT_CHAT_INLINE_WAIT_S", 0.8))  # /chat answers inline if the job finishes this fast, else returns the job id
 
 
 @dataclass
@@ -105,6 +111,30 @@ def handle_chat_for(ctx: ToolContext, text: str) -> ChatResult:
     return ChatResult(reply=getattr(res, "reply", str(res)), images=list(getattr(res, "images", []) or []), brief=getattr(res, "brief", None))
 
 
+def _save_images(session: Session, images: List[Any]) -> List[str]:
+    paths: List[str] = []
+    for i, img in enumerate(images or []):
+        try:
+            os.makedirs(session.run_dir, exist_ok=True)
+            p = os.path.join(session.run_dir, f"turn_{session.turn:03d}_{i}.png")
+            img.save(p)
+            paths.append(os.path.abspath(p))
+        except Exception:  # noqa: BLE001
+            pass
+    return paths
+
+
+_JOB_STATUS_RE = re.compile(r"^\s*/?(?:cp\s+)?(?P<cmd>cancel|stop|status)\s*$", re.IGNORECASE)
+
+
+def job_status_line(job: Job) -> str:
+    """One chat line describing a job: `job 3: running (detailing, 1:32 elapsed)`."""
+    m, sec = divmod(int(job.elapsed), 60)
+    where = f", {job.stage}" if job.stage else ""
+    tail = f" — {job.reply}" if job.is_terminal and job.reply else ""
+    return f"job {job.id}: {job.status}{where}, {m}:{sec:02d} elapsed{tail}"
+
+
 def create_app(bridge=None, registry=None, store: Optional[SessionStore] = None, bridge_pref: Optional[str] = None, load_registry: bool = True) -> FastAPI:
     """Build the FastAPI app. Pass a bridge/registry to skip auto-detection (tests)."""
     _load_env()
@@ -146,37 +176,96 @@ def create_app(bridge=None, registry=None, store: Optional[SessionStore] = None,
             "llm": bool(os.environ.get("AZURE_OPENAI_API_KEY")),
         }
 
+    def run_job(job: Job) -> ChatResult:
+        """Worker: one chat turn for `job.player` (runs on the job pool, never on the event loop)."""
+        ctx = ctx_for(job.player)
+        ctx.job = job
+        ctx.emit({"event": "chat", "player": job.player, "text": job.text, "job": job.id})
+        t0 = time.time()
+        turn_before = ctx.session.turn
+        try:
+            res = handle_chat_for(ctx, job.text)
+        except BridgeError as e:
+            res = ChatResult(f"Bridge error: {e}")
+        if ctx.session.turn == turn_before:  # the handler did not record the turn (direct-ops fallback)
+            ctx.session.turn += 1
+            ctx.session.add_chat("user", job.text)
+            ctx.session.add_chat("assistant", res.reply)
+        res.images = _save_images(ctx.session, res.images)  # type: ignore[assignment]
+        ctx.emit({"event": "reply", "reply": res.reply[:1000], "ms": round((time.time() - t0) * 1000), "job": job.id})
+        if res.brief is None:
+            res.brief = ctx.session.brief
+        return res
+
+    def say_to(player: str, text: str) -> None:
+        b = state["bridge"]
+        if b is None:
+            return
+        try:
+            b.say(text)
+        except BridgeError as e:
+            print(f"[server] /say failed for {player}: {e}")
+
+    state["jobs"] = JobManager(runner=run_job, say=say_to)
+
+    def job_payload(job: Job, reply_inline: bool) -> Dict[str, Any]:
+        out = job.to_dict()
+        if not reply_inline:
+            out["reply"] = None
+        return out
+
     @app.post("/chat")
     async def chat(req: Request) -> Dict[str, Any]:
+        """Start a chat job. Returns within ~1 s: `{job_id, status, reply}` with `reply` set only when the
+        turn already finished (short commands); otherwise the reply arrives through the mod's /say."""
         body = await req.json()
         player = str(body.get("player") or "player")
         text = str(body.get("text") or "").strip()
         if not text:
             raise HTTPException(400, "text required")
-        ctx = ctx_for(player)
-        ctx.session.turn += 1
-        ctx.session.add_chat("user", text)
-        ctx.emit({"event": "chat", "player": player, "text": text})
-        t0 = time.time()
-        try:
-            res = handle_chat_for(ctx, text)
-        except BridgeError as e:
-            res = ChatResult(f"Bridge error: {e}")
-        except Exception as e:  # noqa: BLE001
-            ctx.emit({"event": "error", "error": repr(e)})
-            res = ChatResult(f"Sorry, that failed: {type(e).__name__}: {e}")
-        ctx.session.add_chat("assistant", res.reply)
-        paths: List[str] = []
-        for i, img in enumerate(res.images or []):
-            try:
-                os.makedirs(ctx.session.run_dir, exist_ok=True)
-                p = os.path.join(ctx.session.run_dir, f"turn_{ctx.session.turn:03d}_{i}.png")
-                img.save(p)
-                paths.append(os.path.abspath(p))
-            except Exception:  # noqa: BLE001
-                pass
-        ctx.emit({"event": "reply", "reply": res.reply[:1000], "ms": round((time.time() - t0) * 1000)})
-        return {"reply": res.reply, "brief": res.brief if res.brief is not None else ctx.session.brief, "images": paths}
+        jobs: JobManager = state["jobs"]
+        active = jobs.active_for(player)
+        jm = _JOB_STATUS_RE.match(text)
+        if jm and active is not None:
+            cmd = jm.group("cmd").lower()
+            if cmd in ("cancel", "stop"):
+                jobs.cancel(active.id)
+                return {"job_id": active.id, "status": active.status, "reply": f"[cp] cancelling job {active.id}…", "cancelling": True}
+            return {"job_id": active.id, "status": active.status, "reply": "[cp] " + job_status_line(active)}
+        if active is not None:
+            return {"job_id": active.id, "status": active.status, "reply": f"[cp] still working on job {active.id} ({active.stage or 'starting'}, {int(active.elapsed)} s) — say `cancel` to stop it.", "busy": True}
+        session = state["store"].get(player)
+        job = jobs.submit(player, text, stage_fn=lambda: getattr(session, "stage", None))
+        inline = await run_in_threadpool(jobs.wait_inline, job, CHAT_INLINE_WAIT_S)
+        out = job_payload(job, reply_inline=inline)
+        if inline:
+            out["brief"] = job.brief if job.brief is not None else session.brief
+        return out
+
+    @app.get("/jobs")
+    def list_jobs() -> Dict[str, Any]:
+        return {"jobs": [job_payload(j, reply_inline=j.is_terminal) for j in state["jobs"].all()]}
+
+    @app.get("/jobs/{job_id}")
+    def get_job(job_id: int) -> Dict[str, Any]:
+        job = state["jobs"].get(job_id)
+        if job is None:
+            raise HTTPException(404, f"no job {job_id}")
+        out = job_payload(job, reply_inline=True)
+        out["line"] = job_status_line(job)
+        return out
+
+    @app.post("/jobs/{job_id}/cancel")
+    def cancel_job(job_id: int) -> Dict[str, Any]:
+        jobs: JobManager = state["jobs"]
+        job = jobs.get(job_id)
+        if job is None:
+            raise HTTPException(404, f"no job {job_id}")
+        already_done = job.is_terminal
+        jobs.cancel(job_id)
+        out = job_payload(job, reply_inline=True)
+        out["line"] = job_status_line(job) if already_done else f"job {job.id}: cancelling (stops after the current step)"
+        return out
 
     @app.get("/sessions")
     def sessions() -> Dict[str, Any]:

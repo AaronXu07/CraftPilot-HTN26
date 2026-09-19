@@ -5,6 +5,7 @@ import json
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional
 
+from ..jobs import check_cancel
 from ..llm import extract_json, image_content, single_call, text_content
 from .common import call_tool, outline
 from .stages import load_prompt
@@ -86,6 +87,7 @@ def fixes_text(c: Critique) -> str:
 def critique(llm: Any, ctx: Any, stage: str, brief: Optional[Dict[str, Any]], lint_text: Optional[str] = None) -> Critique:
     """Render (contact sheet when vision is available) and ask the critic for a score + top-3 fixes."""
     supports_vision = bool(getattr(llm, "supports_vision", False))
+    check_cancel(ctx)
     if lint_text is None:
         r = call_tool(ctx, "lint", {})
         lint_text = getattr(r, "text", "") or ""

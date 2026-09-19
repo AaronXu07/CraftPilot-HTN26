@@ -11,7 +11,8 @@ import traceback
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional
 
-from ..llm import JsonlLogger, MockLLM, single_call
+from ..jobs import JobCancelled, check_cancel
+from ..llm import JsonlLogger, MockLLM, _emit, single_call
 from .common import call_tool, env_flag, outline
 from .critic import Critique, critique, fixes_text
 from .interpret import DEFAULT_STAGES, brief_to_text, interpret
@@ -27,7 +28,7 @@ HELP_TEXT = (
     "• `/cp build a castle with four round towers and a gatehouse facing me`\n"
     "• `/cp make the northeast tower 8 blocks taller and give it a copper roof`\n"
     "• `/cp swap the walls to deepslate with a mossy base`\n"
-    "• `/cp undo` · `/cp redo` · `/cp status` · `/cp render` · `/cp place`\n"
+    "• `/cp undo` · `/cp redo` · `/cp status` · `/cp cancel` (stop the running job) · `/cp render` · `/cp place`\n"
     "• `/cp export [name]` (.litematic) · `/cp materials` (block counts)\n"
     "• `/cp preview on|off` (place each stage live) · `/cp reset` (forget the current build)"
 )
@@ -243,6 +244,7 @@ def run_build(ctx: Any, llm: Any, request: str, fast: bool = False, place: bool 
     carry: Optional[str] = None
     images: List[Any] = []
     for name in stage_names:
+        check_cancel(ctx)
         stage = STAGE_BY_NAME[name]
         res = run_stage(llm, ctx, stage, request, brief, extra=carry)
         report.stages.append(res)
@@ -401,16 +403,22 @@ def handle_chat(ctx: Any, text: str, llm: Any = None, fast: Optional[bool] = Non
                     result = answer_question(ctx, model, text)
                 else:
                     result = run_edit(ctx, model, text, r, fast=fast_mode)
-    except Exception as e:  # noqa: BLE001
-        tb = traceback.format_exc(limit=3)
+    except JobCancelled as e:
+        # the job runner reports "[cp] stopped: <reason>" to the player; keep the turn's history consistent
+        session.add_chat("assistant", f"[cp] stopped: {e.reason}")
+        _emit(log, stage="turn", name="__cancelled__", args={"reason": e.reason}, result_preview="", ms=int((time.time() - t0) * 1000))
         try:
-            log.log(stage="error", name="__exception__", args={}, result_preview=tb[-600:], ms=int((time.time() - t0) * 1000))
+            session.save()
         except Exception:  # noqa: BLE001
             pass
+        raise
+    except Exception as e:  # noqa: BLE001
+        tb = traceback.format_exc(limit=3)
+        _emit(log, stage="error", name="__exception__", args={}, result_preview=tb[-600:], ms=int((time.time() - t0) * 1000))
         result = ChatResult(reply=f"Sorry — that failed ({type(e).__name__}: {str(e)[:200]}). Try `undo`, `status`, or rephrase the request.")
     session.add_chat("assistant", result.reply)
+    _emit(log, stage="turn", name="__reply__", args={"text": text[:200]}, result_preview=result.reply[:300], ms=int((time.time() - t0) * 1000))
     try:
-        log.log(stage="turn", name="__reply__", args={"text": text[:200]}, result_preview=result.reply[:300], ms=int((time.time() - t0) * 1000))
         session.save()
     except Exception:  # noqa: BLE001
         pass

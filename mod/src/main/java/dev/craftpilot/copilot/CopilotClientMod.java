@@ -27,6 +27,10 @@ public class CopilotClientMod implements ClientModInitializer {
     public static final int BRIDGE_PORT = 7777;
     /** Where the Python agent listens (the /cp command talks to this). */
     public static final String AGENT_CHAT_URL = System.getProperty("copilot.agent", "http://127.0.0.1:8000/chat");
+    /** Agent base URL (AGENT_CHAT_URL without the trailing /chat) for the /jobs endpoints. */
+    public static final String AGENT_BASE_URL = AGENT_CHAT_URL.endsWith("/chat")
+            ? AGENT_CHAT_URL.substring(0, AGENT_CHAT_URL.length() - "/chat".length())
+            : AGENT_CHAT_URL;
 
     private static HttpBridgeServer bridge;
 
@@ -60,6 +64,15 @@ public class CopilotClientMod implements ClientModInitializer {
                                 .executes(ctx -> {
                                     String text = StringArgumentType.getString(ctx, "text");
                                     String player = ctx.getSource().getPlayer().getGameProfile().getName();
+                                    String cmd = text.trim().toLowerCase();
+                                    // Job controls talk to /jobs/{id} directly; if no job is known they
+                                    // fall through to the agent as ordinary chat (`status` = scene outline).
+                                    if ((cmd.equals("cancel") || cmd.equals("stop")) && AgentChatClient.cancelAsync()) {
+                                        return 1;
+                                    }
+                                    if (cmd.equals("status") && AgentChatClient.statusAsync()) {
+                                        return 1;
+                                    }
                                     ctx.getSource().sendFeedback(Text.literal("§6[copilot]§7 thinking..."));
                                     AgentChatClient.sendAsync(player, text);
                                     return 1;

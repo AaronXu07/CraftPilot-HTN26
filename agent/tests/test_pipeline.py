@@ -217,3 +217,59 @@ def test_system_prompt_without_registry(tmp_path):
     ctx.registry = None
     sp = system_prompt(ctx)
     assert "Materials catalog (abridged)" in sp and "{{materials_catalog}}" not in sp
+
+
+# -- jobs: cooperative cancellation / time budget -------------------------------------------
+def test_handle_chat_unwinds_on_cancel_between_tool_calls(tmp_path):
+    """A cancel requested mid-stage stops the run at the next tool call and raises JobCancelled."""
+    import pytest
+
+    from copilot.jobs import Job, JobCancelled
+
+    ctx = _ctx(tmp_path)
+    job = Job(id=1, player="tester", text="build", budget_s=300.0)
+    ctx.job = job
+    llm = ScriptedBuilderLLM()
+    inner = ctx.dispatch
+    n = {"calls": 0}
+
+    def cancelling_dispatch(c, name, args):
+        n["calls"] += 1
+        if n["calls"] == 3:
+            job.cancel_reason = "cancelled"
+        return inner(c, name, args)
+
+    ctx.dispatch = cancelling_dispatch
+    with pytest.raises(JobCancelled) as ei:
+        handle_chat(ctx, "build a small stone hall with a hip roof", llm=llm, fast=True)
+    assert ei.value.reason == "cancelled"
+    assert n["calls"] == 3  # nothing ran after the cancel
+    assert ctx.session.chat[-1]["content"] == "[cp] stopped: cancelled"
+    assert not ctx.bridge.setblock_calls  # never reached placement
+
+
+def test_handle_chat_unwinds_when_over_budget(tmp_path):
+    import time
+
+    import pytest
+
+    from copilot.jobs import Job, JobCancelled
+
+    ctx = _ctx(tmp_path)
+    ctx.job = Job(id=2, player="tester", text="build", budget_s=0.0, started=time.time() - 1)
+    with pytest.raises(JobCancelled) as ei:
+        handle_chat(ctx, "build a small stone hall", llm=ScriptedBuilderLLM(), fast=True)
+    assert ei.value.reason == "over time budget"
+
+
+def test_run_tool_loop_checks_cancel_before_llm_call(tmp_path):
+    import pytest
+
+    from copilot.jobs import Job, JobCancelled
+
+    ctx = _ctx(tmp_path)
+    ctx.job = Job(id=3, player="tester", text="x", budget_s=300.0, cancel_reason="cancelled")
+    m = L.MockLLM([{"text": "hello"}])
+    with pytest.raises(JobCancelled):
+        L.run_tool_loop(m, ctx, "sys", [{"role": "user", "content": "hi"}], None, ctx.dispatch)
+    assert m.requests == []

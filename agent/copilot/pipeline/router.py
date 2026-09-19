@@ -5,6 +5,7 @@ import json
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional
 
+from ..jobs import check_cancel
 from ..llm import extract_json, single_call
 from .common import get_tools, outline, tool_names
 from .stages import STAGE_BY_NAME, load_prompt
@@ -64,6 +65,7 @@ def route(llm: Any, ctx: Any, request: str) -> Route:
     brief = getattr(getattr(ctx, "session", None), "brief", None)
     if brief:
         sys_prompt += "\n\n## Brief\n" + json.dumps({k: brief.get(k) for k in ("name", "build_type", "style", "facing", "key_features") if k in brief})
+    check_cancel(ctx)
     try:
         resp = single_call(llm, sys_prompt, request.strip(), temperature=0.0, max_tokens=800)
         text = resp.text or ""

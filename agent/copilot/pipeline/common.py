@@ -5,6 +5,8 @@ import os
 from dataclasses import dataclass, field
 from typing import Any, Callable, Dict, List, Optional
 
+from ..jobs import JobCancelled, check_cancel
+
 
 @dataclass
 class ToolResultLike:
@@ -29,12 +31,15 @@ def get_dispatch(ctx: Any) -> Callable[[Any, str, Dict[str, Any]], Any]:
 def call_tool(ctx: Any, name: str, args: Optional[Dict[str, Any]] = None) -> Any:
     """Dispatch one tool call from pipeline code (not the model). Never raises; errors become text."""
     args = args or {}
+    check_cancel(ctx)
     try:
         fn = get_dispatch(ctx)
     except Exception as e:  # noqa: BLE001
         return ToolResultLike(text=f"ERROR: tool dispatch unavailable ({e})", ok=False)
     try:
         r = fn(ctx, name, args)
+    except JobCancelled:
+        raise
     except Exception as e:  # noqa: BLE001
         return ToolResultLike(text=f"ERROR in {name}: {e}", ok=False)
     if r is None:

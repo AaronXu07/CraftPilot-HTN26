@@ -51,11 +51,16 @@ can be overridden with the JVM property `-Dcopilot.agent=http://host:port/chat`.
 ```
 /cp                      prints usage
 /cp <free text>          POSTs {"player": "<name>", "text": "<free text>"} to http://127.0.0.1:8000/chat
+/cp status               GET  /jobs/{id} for the current job → "job 3: running, detailing, 1:32 elapsed"
+/cp cancel               POST /jobs/{id}/cancel → the agent stops after its current step
 ```
 
-The command returns immediately with `[copilot] thinking...`; the agent's `reply` is printed to
-chat when it arrives (up to 10 minutes; long builds report progress through `/say`). If the
-agent is not running you get a one-line hint with the command to start it.
+The agent answers `/chat` within about a second with a job id. Short turns (`undo`, `help`, `status`
+with no job running) carry the reply inline and it is printed at once; long builds print
+`[cp] working (job 3)…` and the agent pushes progress and the final answer through the mod's `/say`
+endpoint. Every request the mod makes times out after 15 s, so the client never blocks on a long
+turn; if the agent is not running you get a one-line hint with the command to start it. When no
+job is known, `status`/`cancel` are forwarded to the agent as ordinary chat.
 
 ## Endpoints (CONTRACTS.md §7)
 

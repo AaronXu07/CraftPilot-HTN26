@@ -146,3 +146,48 @@ def test_azure_llm_requires_config(monkeypatch):
     monkeypatch.setenv("AZURE_OPENAI_DEPLOYMENT", "gpt-4o")
     a = L.AzureLLM()
     assert a.supports_vision and a.vision_deployment == "gpt-4o"
+
+
+def test_azure_llm_times_out_with_one_retry(monkeypatch):
+    """Each Azure call is bounded: 120 s timeout, one retry, no SDK-internal retries (T1)."""
+    import types
+
+    import httpx
+    import openai
+    import pytest
+
+    monkeypatch.setenv("AZURE_OPENAI_ENDPOINT", "https://x.openai.azure.com")
+    monkeypatch.setenv("AZURE_OPENAI_API_KEY", "k")
+    monkeypatch.setenv("AZURE_OPENAI_DEPLOYMENT", "gpt-4o")
+    monkeypatch.delenv("AZURE_OPENAI_MAX_ATTEMPTS", raising=False)
+    monkeypatch.delenv("AZURE_OPENAI_TIMEOUT_S", raising=False)
+    monkeypatch.setenv("AZURE_OPENAI_API", "chat")
+    a = L.AzureLLM()
+    assert a.timeout == 120.0 and a.max_attempts == 2
+    assert a.client.max_retries == 0
+
+    calls = {"n": 0}
+    sleeps = []
+    monkeypatch.setattr(L.time, "sleep", lambda s: sleeps.append(s))
+
+    def create(**kw):
+        calls["n"] += 1
+        raise openai.APITimeoutError(request=httpx.Request("POST", "https://x"))
+
+    a._client = types.SimpleNamespace(chat=types.SimpleNamespace(completions=types.SimpleNamespace(create=create)))
+    with pytest.raises(RuntimeError, match="after 2 attempts"):
+        a.chat([{"role": "user", "content": "hi"}])
+    assert calls["n"] == 2 and len(sleeps) == 1  # one retry, no sleep after the last attempt
+
+    # a transient failure followed by success still returns normally
+    calls["n"] = 0
+
+    def flaky(**kw):
+        calls["n"] += 1
+        if calls["n"] == 1:
+            raise openai.APIConnectionError(request=httpx.Request("POST", "https://x"))
+        msg = types.SimpleNamespace(content="ok", tool_calls=None)
+        return types.SimpleNamespace(choices=[types.SimpleNamespace(message=msg)], usage=None)
+
+    a._client.chat.completions.create = flaky
+    assert a.chat([{"role": "user", "content": "hi"}]).text == "ok" and calls["n"] == 2

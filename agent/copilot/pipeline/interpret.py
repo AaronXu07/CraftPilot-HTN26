@@ -4,6 +4,7 @@ from __future__ import annotations
 import re
 from typing import Any, Dict, Optional
 
+from ..jobs import check_cancel
 from ..llm import extract_json, single_call
 from .common import get_tools
 from .stages import load_prompt, system_prompt
@@ -112,6 +113,7 @@ def interpret(llm: Any, ctx: Any, request: str, temperature: float = 0.6) -> Dic
     sys_prompt = system_prompt(ctx) + "\n\n" + load_prompt("stage_interpret")
     user = f"Player request: {request.strip()}\n\nWrite the brief and call set_brief."
     brief: Optional[Dict[str, Any]] = None
+    check_cancel(ctx)
     try:
         resp = single_call(llm, sys_prompt, user, temperature, tools, tool_choice={"type": "function", "function": {"name": "set_brief"}})
         for tc in resp.tool_calls:

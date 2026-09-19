@@ -14,6 +14,8 @@ import time
 from dataclasses import dataclass, field
 from typing import Any, Callable, Dict, List, Optional, Protocol, Sequence, Tuple
 
+from .jobs import JobCancelled, check_cancel
+
 try:  # optional: .env support
     from dotenv import load_dotenv
 
@@ -232,7 +234,9 @@ class AzureLLM:
 
     Env: AZURE_OPENAI_ENDPOINT, AZURE_OPENAI_API_KEY, AZURE_OPENAI_DEPLOYMENT,
     AZURE_OPENAI_VISION_DEPLOYMENT (defaults to the chat deployment), AZURE_OPENAI_API_VERSION
-    (default 2024-10-21), AZURE_OPENAI_VISION ("0" disables image input).
+    (default 2024-10-21), AZURE_OPENAI_VISION ("0" disables image input), AZURE_OPENAI_TIMEOUT_S
+    (per call, default 120) and AZURE_OPENAI_MAX_ATTEMPTS (default 2 = one retry on timeout/429/5xx).
+    The SDK's own retries are disabled so one `chat()` never exceeds attempts x timeout.
     """
 
     def __init__(
@@ -242,8 +246,8 @@ class AzureLLM:
         endpoint: Optional[str] = None,
         api_key: Optional[str] = None,
         api_version: Optional[str] = None,
-        timeout: float = 120.0,
-        max_attempts: int = 6,
+        timeout: Optional[float] = None,
+        max_attempts: Optional[int] = None,
     ):
         self.endpoint = endpoint or os.environ.get("AZURE_OPENAI_ENDPOINT", "")
         self.api_key = api_key or os.environ.get("AZURE_OPENAI_API_KEY", "")
@@ -258,8 +262,8 @@ class AzureLLM:
         if self.api == "auto":
             self.api = "responses" if self.endpoint.rstrip("/").endswith("/responses") else "chat"
         self.reasoning_effort = os.environ.get("AZURE_OPENAI_REASONING_EFFORT", "low")
-        self.timeout = timeout
-        self.max_attempts = max_attempts
+        self.timeout = float(timeout if timeout is not None else os.environ.get("AZURE_OPENAI_TIMEOUT_S", 120.0))
+        self.max_attempts = max(1, int(max_attempts if max_attempts is not None else os.environ.get("AZURE_OPENAI_MAX_ATTEMPTS", 2)))
         self.total_usage: Dict[str, int] = {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
         self.calls = 0
         self._client = None
@@ -284,10 +288,10 @@ class AzureLLM:
             root = f"{u.scheme}://{u.netloc}"
             use_v1 = "/openai/v1" in (u.path or "") or os.environ.get("AZURE_OPENAI_USE_V1", "").lower() in ("1", "true", "yes")
             if use_v1:
-                self._client = OpenAI(base_url=f"{root}/openai/v1/", api_key=self.api_key, timeout=self.timeout)
+                self._client = OpenAI(base_url=f"{root}/openai/v1/", api_key=self.api_key, timeout=self.timeout, max_retries=0)
             else:
                 self._client = AzureOpenAI(
-                    azure_endpoint=root + "/", api_key=self.api_key, api_version=self.api_version, timeout=self.timeout
+                    azure_endpoint=root + "/", api_key=self.api_key, api_version=self.api_version, timeout=self.timeout, max_retries=0
                 )
         return self._client
 
@@ -362,8 +366,9 @@ class AzureLLM:
                     last_err = e
                 else:
                     raise
-            time.sleep(delay)
-            delay = min(delay * 2, 60.0)
+            if attempt + 1 < self.max_attempts:
+                time.sleep(delay)
+                delay = min(delay * 2, 60.0)
         raise RuntimeError(f"Azure OpenAI failed after {self.max_attempts} attempts: {last_err}")
 
     # -- Responses API ------------------------------------------------------------------------
@@ -423,8 +428,9 @@ class AzureLLM:
                     last_err = e
                 else:
                     raise
-            time.sleep(delay)
-            delay = min(delay * 2, 60.0)
+            if attempt + 1 < self.max_attempts:
+                time.sleep(delay)
+                delay = min(delay * 2, 60.0)
         raise RuntimeError(f"Azure OpenAI (responses) failed after {self.max_attempts} attempts: {last_err}")
 
     def _parse_responses(self, resp: Any) -> LLMResponse:
@@ -747,9 +753,12 @@ def run_tool_loop(
         if result.llm_calls >= max_llm:
             result.stopped_reason = "max_calls"
             break
+        check_cancel(ctx)
         t0 = time.time()
         try:
             resp: LLMResponse = llm.chat(full, tools, temperature, tool_choice)
+        except JobCancelled:
+            raise
         except Exception as e:  # noqa: BLE001
             _emit(log, stage=stage, name="__llm_error__", args={}, result_preview=_preview(e), ms=int((time.time() - t0) * 1000))
             result.stopped_reason = "error"
@@ -796,12 +805,15 @@ def run_tool_loop(
                 if on_tool:
                     on_tool(tc.name, tc.args, text)
                 continue
+            check_cancel(ctx)
             try:
                 tr = dispatch_fn(ctx, tc.name, tc.args)
                 text = getattr(tr, "text", None)
                 if text is None:
                     text = str(tr)
                 images = list(getattr(tr, "images", None) or [])
+            except JobCancelled:
+                raise
             except Exception as e:  # noqa: BLE001
                 text = f"ERROR in {tc.name}: {e}"
                 images = []

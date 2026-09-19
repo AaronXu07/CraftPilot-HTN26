@@ -14,6 +14,7 @@ from .engine.coretypes import BlockMap, IVec3
 
 DEFAULT_MOD_URL = "http://127.0.0.1:7777"
 SCAN_CHUNK = 64  # /scan requests are split into <= 64x64x64 boxes
+BRIDGE_TIMEOUT_S = 30.0  # cap for every mod call (health/player/say use shorter ones)
 
 SetblockChunk = Tuple[List[Tuple[int, int, int, str]], int]  # (blocks, delay_ms)
 
@@ -93,7 +94,7 @@ class HttpBridge:
         hi_i = [int(max(a, b)) for a, b in zip(lo, hi)]
         out: BlockMap = {}
         for box_lo, box_hi in split_boxes(lo_i, hi_i, SCAN_CHUNK):
-            data = self._post("/scan", {"min": list(box_lo), "max": list(box_hi)}, timeout=60.0)
+            data = self._post("/scan", {"min": list(box_lo), "max": list(box_hi)}, timeout=BRIDGE_TIMEOUT_S)
             out.update(decode_scan(data))
         return out
 
@@ -102,14 +103,14 @@ class HttpBridge:
         n = sum(len(b) for b, _ in chunks)
         if n == 0:
             return 0
-        data = self._post("/setblocks", body, timeout=30.0)
+        data = self._post("/setblocks", body, timeout=BRIDGE_TIMEOUT_S)
         return int(data.get("queued", n))
 
     def say(self, text: str) -> None:
         self._post("/say", {"text": str(text)}, timeout=5.0)
 
     def blocks(self) -> List[Dict[str, Any]]:
-        data = self._get("/blocks", timeout=30.0)
+        data = self._get("/blocks", timeout=BRIDGE_TIMEOUT_S)
         return list(data.get("blocks", []))
 
     def camera(self, **kw: Any) -> Dict[str, Any]:
