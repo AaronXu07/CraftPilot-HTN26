@@ -102,6 +102,35 @@ def regenerate(req: RegenerateRequest) -> dict:
                 _last_yaw.get(req.player, 0.0))
 
 
+class ObjectRequest(BaseModel):
+    text: str
+    player: str = "player"
+    height: int | None = None
+    use_llm: bool = True
+    preview: bool = True
+    yaw: float = 0.0
+
+
+@app.post("/object")
+def build_object_endpoint(req: ObjectRequest) -> dict:
+    """Free-form object (statue, creature, vehicle, prop): image -> mesh -> voxels; see craftpilot.objects."""
+    from craftpilot.objects.imagegen import ImageRejected
+    from craftpilot.objects.pipeline import build_object
+    from craftpilot.objects.recon import ReconUnavailable
+
+    try:
+        r = build_object(req.text, height=req.height, use_llm=req.use_llm, preview=req.preview, yaw_deg=req.yaw)
+    except ReconUnavailable as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    except ImageRejected as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    out = r.to_dict()
+    out["source"] = "object"
+    return out
+
+
 @app.post("/exemplars")
 def save_exemplar(req: SaveExemplarRequest) -> dict:
     from craftpilot.program.exemplars import save
