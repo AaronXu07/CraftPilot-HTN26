@@ -12,7 +12,7 @@ program:
       size: {width: 0.8, depth: 0.8}
       floors: 2
       floor_height: 4
-      roof: {type: pagoda, pitch: 1.0, overhang: 2, tiers: 3}
+      roof: {type: pagoda, pitch: 1.0, overhang: 2, tiers: 3, profile: concave, curl: 2.0}
   facade:
     bay_width: {min: 3, max: 3}
     window: plain

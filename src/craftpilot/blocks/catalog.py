@@ -25,9 +25,54 @@ class Family:
     loud: bool = False
     shapes: dict[str, str] = field(default_factory=dict)   # shape name -> block id
     variants: list[Variant] = field(default_factory=list)  # alternative full blocks
+    # Appearance and context, filled from palette_data at build time.
+    rgb: tuple[int, int, int] = (128, 128, 128)
+    noise: float = 0.4                                     # 0 flat colour .. 1 very busy texture
+    material: str = "stone"                                # wood, stone, brick, plaster, terracotta, metal, glass, organic
+    styles: frozenset[str] = frozenset({"generic"})
 
     def has(self, shape: str) -> bool:
         return shape in self.shapes
+
+    def colour_words(self) -> str:
+        return colour_words(self.rgb)
+
+    def noise_word(self) -> str:
+        return "smooth" if self.noise <= 0.2 else "textured" if self.noise <= 0.45 else "rough" if self.noise <= 0.7 else "busy"
+
+
+def colour_words(rgb: tuple[int, int, int]) -> str:
+    """A short human colour name: lightness word plus hue word, e.g. 'light warm grey', 'dark red'."""
+    import colorsys
+    h, l, sat = colorsys.rgb_to_hls(*(c / 255.0 for c in rgb))
+    h *= 360
+    if l < 0.12:
+        return "black"
+    if l > 0.88 and sat < 0.25:
+        return "white"
+    light = "very dark" if l < 0.22 else "dark" if l < 0.4 else "mid" if l < 0.6 else "light" if l < 0.8 else "very light"
+    if sat < 0.1:
+        return f"{light} grey"
+    if sat < 0.25:
+        tint = "warm" if h < 70 or h > 320 else "cool"
+        return f"{light} {tint} grey"
+    if h < 15 or h >= 340:
+        hue = "red"
+    elif h < 40:
+        hue = "orange-brown" if l < 0.55 else "orange"
+    elif h < 65:
+        hue = "brown" if l < 0.5 else "tan" if sat < 0.5 else "yellow"
+    elif h < 160:
+        hue = "green"
+    elif h < 200:
+        hue = "teal"
+    elif h < 260:
+        hue = "blue"
+    elif h < 300:
+        hue = "purple"
+    else:
+        hue = "pink"
+    return f"{light} {hue}"
 
 
 def _mc(block: str) -> str:
@@ -257,16 +302,19 @@ def _known_blocks() -> set[str] | None:
 
 
 def _filter(fams: dict[str, Family], known: set[str] | None) -> dict[str, Family]:
-    """Drop shapes, variants, and whole families whose blocks the target version does not have."""
-    if known is None:
-        return fams
+    """Drop shapes, variants, and whole families whose blocks the target version does not have,
+    and attach appearance data to every family."""
+    from craftpilot.blocks.palette_data import info
+
     out: dict[str, Family] = {}
     for name, f in fams.items():
-        shapes = {k: v for k, v in f.shapes.items() if v in known}
+        shapes = {k: v for k, v in f.shapes.items() if known is None or v in known}
         if "full" not in shapes:
             continue
-        variants = [v for v in f.variants if v.block_id in known]
-        out[name] = Family(name=f.name, tone=f.tone, loud=f.loud, shapes=shapes, variants=variants)
+        variants = [v for v in f.variants if known is None or v.block_id in known]
+        fi = info(name, f.tone)
+        out[name] = Family(name=f.name, tone=f.tone, loud=f.loud, shapes=shapes, variants=variants,
+                           rgb=fi.rgb, noise=fi.noise, material=fi.material, styles=frozenset(fi.styles))
     return out
 
 
@@ -315,19 +363,23 @@ def families_by_tone() -> dict[str, list[Family]]:
 
 
 def catalog_summary() -> str:
-    """Compact description of families for the LLM prompt."""
+    """One line per family for the LLM prompt: name, shapes, colour, texture, material, where it belongs."""
+    by_material: dict[str, list[Family]] = {}
+    for f in FAMILIES.values():
+        by_material.setdefault(f.material, []).append(f)
     lines = []
-    for tone, fams in sorted(families_by_tone().items()):
-        names = []
-        for f in fams:
+    for material in ("wood", "stone", "brick", "plaster", "terracotta", "metal", "glass", "organic", "cloth"):
+        fams = by_material.get(material)
+        if not fams:
+            continue
+        lines.append(f"## {material}")
+        for f in sorted(fams, key=lambda f: f.rgb[0] + f.rgb[1] + f.rgb[2]):
             shapes = "".join(
                 ch for ch, s in (("S", "stairs"), ("s", "slab"), ("F", "fence"), ("W", "wall"),
-                                 ("L", "log"), ("T", "trapdoor"), ("D", "door"), ("P", "pane"))
+                                 ("L", "log"), ("T", "trapdoor"), ("D", "door"), ("P", "pane"), ("B", "button"), ("G", "fence_gate"))
                 if s in f.shapes
             )
-            tag = f"{f.name}[{shapes}]" if shapes else f.name
-            if f.loud:
-                tag += "!"
-            names.append(tag)
-        lines.append(f"{tone}: " + ", ".join(names))
+            styles = " ".join(sorted(f.styles - {"generic"})) or "any"
+            loud = " LOUD" if f.loud else ""
+            lines.append(f"{f.name} [{shapes}] {f.colour_words()}, {f.noise_word()}; fits: {styles}{loud}")
     return "\n".join(lines)

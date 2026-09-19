@@ -58,9 +58,9 @@ program:
       weathering: 0.8
       texture_rate: 0.3
     roof:
-      families: [{family: deepslate_tiles, weight: 1.0}]
+      families: [{family: deepslate_tiles, weight: 1.0}, {family: cobbled_deepslate, weight: 0.3}]
       texture_rate: 0.25
-      weathering: 0.6
+      weathering: 0.9
     trim:
       families: [{family: stone_bricks, weight: 1.0}]
     foundation:

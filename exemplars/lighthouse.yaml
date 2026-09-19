@@ -19,7 +19,7 @@ program:
       size: {width: 0.5, depth: 0.5}
       floors: 1
       floor_height: 4
-      roof: {type: gable, pitch: 1.0, overhang: 1, ridge_axis: x}
+      roof: {type: gable, pitch: 0.5, overhang: 1, ridge_axis: x}
       attach: {to: tower, side: east, align: center, overlap: 2}
   facade:
     bay_width: {min: 3, max: 4}

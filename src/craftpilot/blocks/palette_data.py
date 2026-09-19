@@ -105,7 +105,7 @@ _OVERRIDES: dict[str, FamilyInfo] = {
     "diorite": FamilyInfo((188, 188, 188), 0.6, "stone", {"generic", "classical"}),
     "polished_diorite": FamilyInfo((192, 192, 192), 0.2, "stone", {"generic", "classical", "modern"}),
     "calcite": FamilyInfo((223, 224, 220), 0.1, "stone", {"modern", "classical", "generic"}),
-    "bone": FamilyInfo((225, 221, 200), 0.3, "stone", {"fantasy", "desert"}),
+    "bone": FamilyInfo((225, 221, 200), 0.3, "organic", {"fantasy", "desert"}),
     # Copper and metal
     "copper": FamilyInfo((192, 107, 79), 0.3, "metal", {"generic", "steampunk", "modern", "roof"}),
     "exposed_copper": FamilyInfo((160, 125, 100), 0.35, "metal", {"generic", "steampunk", "roof"}),

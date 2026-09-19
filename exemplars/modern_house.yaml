@@ -40,11 +40,15 @@ program:
     foundation_outset: 0
     floor_lips: true
     corbels: false
+    string_courses: false
+    quoins: false
+    detail: 0.1
+    foliage: 0.1
   attachments: []
   palette:
     primary:
       families: [{family: white_concrete, weight: 1.0}]
-      texture_rate: 0.0
+      texture_rate: 0.08
     secondary:
       families: [{family: gray_concrete, weight: 1.0}]
       texture_rate: 0.0

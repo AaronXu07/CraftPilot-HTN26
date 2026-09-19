@@ -242,43 +242,54 @@ def test_exemplar_roofs_have_no_holes():
 
 
 def _staircases_walkable(grid) -> list[str]:
-    """Every interior staircase must be climbable: fh stair blocks in a straight run rising one per cell,
-    two clear cells above each step, the last step set into the upper floor row, and a solid landing."""
-    from craftpilot.grid.enums import DIR_VEC, Dir
+    """Every interior staircase must be climbable: steps rise one per cell, each step faces the
+    direction you arrive from (low half toward the previous step), three clear cells above each
+    step, a floor cell to start from, and a solid landing with clear head room."""
+    from craftpilot.grid.enums import DIR_VEC, HORIZONTAL, Dir
     problems = []
+    is_step = lambda x, y, z: grid.in_bounds(x, y, z) and grid.role[x, y, z] == Role.STAIRCASE and grid.shape[x, y, z] == BShape.STAIR
     seen = set()
     for x, y, z in zip(*np.nonzero((grid.role == Role.STAIRCASE) & (grid.shape == BShape.STAIR))):
         x, y, z = int(x), int(y), int(z)
+        # A bottom step has no step one below it in any neighbouring cell.
+        if any(is_step(x + DIR_VEC[d][0], y - 1, z + DIR_VEC[d][2]) for d in HORIZONTAL) or (x, y, z) in seen:
+            continue
         n = int(grid.normal[x, y, z])
         vx, _, vz = DIR_VEC[n]
-        # Only start from the bottom step of a run.
-        if grid.role[x - vx, y - 1, z - vz] == Role.STAIRCASE:
-            continue
-        if (x, y, z) in seen:
-            continue
+        ax, az = x - vx, z - vz
+        if grid.role[ax, y - 1, az] not in (Role.FLOOR, Role.FOUNDATION, Role.PARTITION) or grid.role[ax, y, az] != Role.INTERIOR:
+            problems.append(f"no floor cell to start from before {(x, y, z)}")
         cx, cy, cz = x, y, z
         steps = 0
-        while grid.in_bounds(cx, cy, cz) and grid.role[cx, cy, cz] == Role.STAIRCASE and grid.shape[cx, cy, cz] == BShape.STAIR:
+        while True:
             seen.add((cx, cy, cz))
+            steps += 1
             for yy in (cy + 1, cy + 2, cy + 3):
                 if grid.in_bounds(cx, yy, cz) and grid.role[cx, yy, cz] not in (Role.INTERIOR, Role.EMPTY, Role.LIGHT, Role.STAIRCASE):
                     problems.append(f"head hit above step at {(cx, cy, cz)}: {Role(int(grid.role[cx, yy, cz])).name} at y={yy}")
-            if steps == 0:
-                ax, az = cx - vx, cz - vz
-                if grid.role[ax, cy - 1, az] not in (Role.FLOOR, Role.FOUNDATION, Role.PARTITION) or grid.role[ax, cy, az] != Role.INTERIOR:
-                    problems.append(f"no floor cell to start from before {(cx, cy, cz)}")
-            steps += 1
-            # Follow this step's own facing (spirals turn).
-            n = int(grid.normal[cx, cy, cz])
-            vx, _, vz = DIR_VEC[n]
-            cx, cy, cz = cx + vx, cy + 1, cz + vz
-        # cy is now the landing row; the landing must be solid floor with clear head room.
-        lx, ly, lz = cx, cy - 1, cz
-        if grid.role[lx, ly, lz] not in (Role.FLOOR, Role.PARTITION, Role.WALL):
-            problems.append(f"no landing after run ending at {(lx, ly, lz)}: {Role(int(grid.role[lx, ly, lz])).name}")
-        for yy in (ly + 1, ly + 2):
-            if grid.in_bounds(lx, yy, lz) and grid.role[lx, yy, lz] not in (Role.INTERIOR, Role.EMPTY, Role.LIGHT):
-                problems.append(f"landing blocked at {(lx, yy, lz)}")
+            nxt = None
+            for d in HORIZONTAL:
+                dx, _, dz = DIR_VEC[d]
+                if is_step(cx + dx, cy + 1, cz + dz):
+                    nxt = (cx + dx, cy + 1, cz + dz, d)
+                    break
+            if nxt is None:
+                break
+            nx, ny, nz, d = nxt
+            if int(grid.normal[nx, ny, nz]) != d:
+                problems.append(f"step at {(nx, ny, nz)} faces {Dir(int(grid.normal[nx, ny, nz])).name}, arrival is {Dir(d).name}: a jump")
+            cx, cy, cz = nx, ny, nz
+        # Landing: a solid floor cell next to the top step at the same level as its top.
+        landing = None
+        for d in HORIZONTAL:
+            dx, _, dz = DIR_VEC[d]
+            lx, lz = cx + dx, cz + dz
+            if grid.in_bounds(lx, cy, lz) and grid.role[lx, cy, lz] in (Role.FLOOR, Role.PARTITION, Role.WALL) \
+                    and all(grid.role[lx, yy, lz] in (Role.INTERIOR, Role.EMPTY, Role.LIGHT) for yy in (cy + 1, cy + 2)):
+                landing = (lx, lz)
+                break
+        if landing is None:
+            problems.append(f"no landing after run ending at {(cx, cy, cz)}")
         if steps < 3:
             problems.append(f"run of {steps} steps at {(x, y, z)} is too short")
     return problems

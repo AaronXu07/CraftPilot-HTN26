@@ -43,8 +43,9 @@ program:
     framing:
       families: [{family: dark_oak, weight: 1.0}]
     roof:
-      families: [{family: dark_oak, weight: 1.0}]
-      texture_rate: 0.0
+      families: [{family: dark_oak, weight: 1.0}, {family: spruce, weight: 0.2}]
+      texture_rate: 0.15
+      weathering: 0.3
     foundation:
       families: [{family: cobblestone, weight: 0.6}, {family: stone_bricks, weight: 0.4}]
       gradient: vertical
