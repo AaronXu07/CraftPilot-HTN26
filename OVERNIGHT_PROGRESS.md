@@ -472,3 +472,4 @@ answered), and three spare edits.
   budget and per-variant `progress` prefixes (`[cp·v1·block …]`).
 - Cutaway render ("show me the inside") — add a `cut` option to `render` (drop voxels with z > centre or
   y > half height before rasterising) and a router phrasing for "inside"/"cutaway"/"section".
+ALL_TASKS_DONE

@@ -1,5 +1,17 @@
 # Morning checklist (needs the game)
 
+## Merge readiness: **yes, after the in-game checks below** — why
+- Every task T1–T7 is marked done on `overnight/20260919-0339` (T7: materials list + demo script shipped;
+  `/cp variants` and cutaway render not started, documented in OVERNIGHT_PROGRESS.md).
+- `pytest -q` 363 passed in ~11.5 s, `ruff check .` clean, `mypy copilot --ignore-missing-imports` clean,
+  `./gradlew build` green as of T5 (no Java changed since).
+- Nothing in this branch has run against the real game: async chat (T1), live preview / bottom-up placement
+  (T3) and the mod's 503-when-no-world change (T5) are the items most worth 10 minutes in-game before merging.
+- Bench: full 20-prompt mean 6.81 (baseline) → 6.66 (after T4) is within noise; median wall time is under
+  the 150 s target (T2 numbers in OVERNIGHT_PROGRESS.md). No quality regression is known, no improvement is
+  proven either.
+- Branch history is linear on top of `main` (no rewrites); merge with a normal PR.
+
 Start the agent first: `cd agent && ../.venv/bin/python -m copilot.server --port 8000` (real LLM needs `.env`;
 `COPILOT_LLM=mock` runs the scripted builder). Install `mod/build/libs/copilot-0.1.0.jar` + Fabric API in 1.21.1.
 
