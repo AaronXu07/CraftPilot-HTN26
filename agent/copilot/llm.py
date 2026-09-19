@@ -243,7 +243,7 @@ class AzureLLM:
         api_key: Optional[str] = None,
         api_version: Optional[str] = None,
         timeout: float = 120.0,
-        max_attempts: int = 3,
+        max_attempts: int = 6,
     ):
         self.endpoint = endpoint or os.environ.get("AZURE_OPENAI_ENDPOINT", "")
         self.api_key = api_key or os.environ.get("AZURE_OPENAI_API_KEY", "")
@@ -251,6 +251,13 @@ class AzureLLM:
         self.deployment = deployment or os.environ.get("AZURE_OPENAI_DEPLOYMENT", "")
         self.vision_deployment = vision_deployment or os.environ.get("AZURE_OPENAI_VISION_DEPLOYMENT") or self.deployment
         self.supports_vision = os.environ.get("AZURE_OPENAI_VISION", "1").lower() not in ("0", "false", "no")
+        # "chat" (chat.completions), "responses" (Responses API; required by some newer deployments such as
+        # gpt-5.x on Azure AI Foundry) or "auto": responses when the endpoint URL ends in /responses, else chat,
+        # switching to responses automatically if the deployment rejects chat completions.
+        self.api = (os.environ.get("AZURE_OPENAI_API", "auto") or "auto").lower()
+        if self.api == "auto":
+            self.api = "responses" if self.endpoint.rstrip("/").endswith("/responses") else "chat"
+        self.reasoning_effort = os.environ.get("AZURE_OPENAI_REASONING_EFFORT", "low")
         self.timeout = timeout
         self.max_attempts = max_attempts
         self.total_usage: Dict[str, int] = {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
@@ -264,13 +271,31 @@ class AzureLLM:
 
     @property
     def client(self):
+        """Lazily build the client. Accepts either a bare resource endpoint
+        (https://<res>.openai.azure.com/ → classic AzureOpenAI client with api-version) or any URL containing
+        /openai/v1 (e.g. a pasted .../openai/v1/responses URL → Azure's v1 API via the plain OpenAI client,
+        no api-version, deployment name as `model`). AZURE_OPENAI_USE_V1=1 forces the v1 form."""
         if self._client is None:
-            from openai import AzureOpenAI
+            from urllib.parse import urlparse
 
-            self._client = AzureOpenAI(
-                azure_endpoint=self.endpoint, api_key=self.api_key, api_version=self.api_version, timeout=self.timeout
-            )
+            from openai import AzureOpenAI, OpenAI
+
+            u = urlparse(self.endpoint if "://" in self.endpoint else "https://" + self.endpoint)
+            root = f"{u.scheme}://{u.netloc}"
+            use_v1 = "/openai/v1" in (u.path or "") or os.environ.get("AZURE_OPENAI_USE_V1", "").lower() in ("1", "true", "yes")
+            if use_v1:
+                self._client = OpenAI(base_url=f"{root}/openai/v1/", api_key=self.api_key, timeout=self.timeout)
+            else:
+                self._client = AzureOpenAI(
+                    azure_endpoint=root + "/", api_key=self.api_key, api_version=self.api_version, timeout=self.timeout
+                )
         return self._client
+
+    @staticmethod
+    def _is_reasoning_model(model: str) -> bool:
+        """gpt-5.x and o-series deployments reject `temperature` and want `max_completion_tokens`."""
+        m = (model or "").lower()
+        return m.startswith("gpt-5") or m.startswith("o1") or m.startswith("o3") or m.startswith("o4")
 
     def chat(
         self,
@@ -287,17 +312,19 @@ class AzureLLM:
             messages = strip_images(messages)
             has_images = False
         model = self.vision_deployment if has_images else self.deployment
-        kwargs: Dict[str, Any] = {
-            "model": model,
-            "messages": messages,
-            "temperature": temperature,
-            "max_tokens": max_tokens,
-        }
+        if self.api == "responses":
+            return self._chat_via_responses(messages, tools, temperature, tool_choice, max_tokens, model, has_images)
+        kwargs: Dict[str, Any] = {"model": model, "messages": messages}
+        if self._is_reasoning_model(model):
+            kwargs["max_completion_tokens"] = max_tokens
+        else:
+            kwargs["temperature"] = temperature
+            kwargs["max_tokens"] = max_tokens
         if tools:
             kwargs["tools"] = tools
             kwargs["tool_choice"] = tool_choice
             kwargs["parallel_tool_calls"] = True
-        delay = 1.0
+        delay = 2.0
         last_err: Optional[Exception] = None
         for attempt in range(self.max_attempts):
             try:
@@ -315,17 +342,113 @@ class AzureLLM:
                 if "parallel_tool_calls" in str(e) and "parallel_tool_calls" in kwargs:
                     kwargs.pop("parallel_tool_calls")
                     continue
+                msg = str(e)
+                if "not allowed in this deployment" in msg.lower() or "operation is not allowed" in msg.lower():
+                    # Responses-only deployment (e.g. gpt-5.x on Foundry): switch APIs and remember it
+                    self.api = "responses"
+                    return self._chat_via_responses(messages, tools, temperature, tool_choice, max_tokens, model, has_images)
+                if "max_tokens" in msg and "max_tokens" in kwargs:
+                    kwargs["max_completion_tokens"] = kwargs.pop("max_tokens")
+                    continue
+                if "temperature" in msg and "temperature" in kwargs:
+                    kwargs.pop("temperature")
+                    continue
                 raise
             except (openai.RateLimitError, openai.APIConnectionError, openai.APITimeoutError) as e:
                 last_err = e
+                delay = max(delay, _retry_after_seconds(e))
             except openai.APIStatusError as e:
                 if e.status_code and e.status_code >= 500:
                     last_err = e
                 else:
                     raise
             time.sleep(delay)
-            delay *= 2
+            delay = min(delay * 2, 60.0)
         raise RuntimeError(f"Azure OpenAI failed after {self.max_attempts} attempts: {last_err}")
+
+    # -- Responses API ------------------------------------------------------------------------
+    def _chat_via_responses(
+        self,
+        messages: List[Dict[str, Any]],
+        tools: Optional[List[Dict[str, Any]]],
+        temperature: float,
+        tool_choice: Any,
+        max_tokens: int,
+        model: str,
+        has_images: bool,
+    ) -> LLMResponse:
+        """Same contract as chat(), over `client.responses.create` (chat-style history converted)."""
+        import openai
+
+        instructions, items = messages_to_responses_input(messages)
+        kwargs: Dict[str, Any] = {"model": model, "input": items, "max_output_tokens": max_tokens}
+        if instructions:
+            kwargs["instructions"] = instructions
+        if self._is_reasoning_model(model):
+            if self.reasoning_effort and self.reasoning_effort != "none":
+                kwargs["reasoning"] = {"effort": self.reasoning_effort}
+        else:
+            kwargs["temperature"] = temperature
+        if tools:
+            kwargs["tools"] = tools_to_responses(tools)
+            kwargs["tool_choice"] = tool_choice_to_responses(tool_choice)
+            kwargs["parallel_tool_calls"] = True
+        delay = 2.0
+        last_err: Optional[Exception] = None
+        for attempt in range(self.max_attempts):
+            try:
+                resp = self.client.responses.create(**kwargs)
+                self.calls += 1
+                return self._parse_responses(resp)
+            except openai.BadRequestError as e:
+                msg = str(e)
+                if has_images and "image" in msg.lower():
+                    self.supports_vision = False
+                    _, kwargs["input"] = messages_to_responses_input(strip_images(messages))
+                    kwargs["model"] = self.deployment
+                    has_images = False
+                    continue
+                for key in ("parallel_tool_calls", "reasoning", "temperature"):
+                    if key in msg and key in kwargs:
+                        kwargs.pop(key)
+                        break
+                else:
+                    raise
+                continue
+            except (openai.RateLimitError, openai.APIConnectionError, openai.APITimeoutError) as e:
+                last_err = e
+                delay = max(delay, _retry_after_seconds(e))
+            except openai.APIStatusError as e:
+                if e.status_code and e.status_code >= 500:
+                    last_err = e
+                else:
+                    raise
+            time.sleep(delay)
+            delay = min(delay * 2, 60.0)
+        raise RuntimeError(f"Azure OpenAI (responses) failed after {self.max_attempts} attempts: {last_err}")
+
+    def _parse_responses(self, resp: Any) -> LLMResponse:
+        calls: List[ToolCall] = []
+        texts: List[str] = []
+        for i, item in enumerate(getattr(resp, "output", None) or []):
+            t = getattr(item, "type", None)
+            if t == "function_call":
+                calls.append(ToolCall(id=getattr(item, "call_id", None) or getattr(item, "id", None) or f"call_{i}", name=item.name, args=parse_args(item.arguments)))
+            elif t == "message":
+                for part in getattr(item, "content", None) or []:
+                    if getattr(part, "type", None) == "output_text" and getattr(part, "text", None):
+                        texts.append(part.text)
+        usage: Dict[str, int] = {}
+        if getattr(resp, "usage", None):
+            usage = {
+                "prompt_tokens": int(getattr(resp.usage, "input_tokens", 0) or 0),
+                "completion_tokens": int(getattr(resp.usage, "output_tokens", 0) or 0),
+                "total_tokens": int(getattr(resp.usage, "total_tokens", 0) or 0),
+            }
+            for k, v in usage.items():
+                self.total_usage[k] = self.total_usage.get(k, 0) + v
+        text = "\n".join(texts) if texts else None
+        return LLMResponse(text=text, tool_calls=calls, usage=usage, raw=resp)
 
     def _parse(self, resp: Any) -> LLMResponse:
         choice = resp.choices[0]
@@ -346,6 +469,104 @@ class AzureLLM:
             for k, v in usage.items():
                 self.total_usage[k] = self.total_usage.get(k, 0) + v
         return LLMResponse(text=msg.content, tool_calls=calls, usage=usage, raw=resp)
+
+
+def _retry_after_seconds(e: Any) -> float:
+    """Seconds to wait from a Retry-After header (or the seconds mentioned in the message), else 0."""
+    try:
+        resp = getattr(e, "response", None)
+        ra = resp.headers.get("retry-after") if resp is not None else None
+        if ra:
+            return float(ra)
+    except Exception:  # noqa: BLE001
+        pass
+    import re as _re
+
+    m = _re.search(r"retry after (\d+) second", str(e), _re.I)
+    return float(m.group(1)) if m else 0.0
+
+
+def messages_to_responses_input(messages: Sequence[Dict[str, Any]]) -> Tuple[str, List[Dict[str, Any]]]:
+    """Convert chat-completions style history into (instructions, Responses API input items).
+
+    system → instructions; user/assistant text → role messages (image_url parts → input_image);
+    assistant tool_calls → function_call items; tool results → function_call_output items.
+    """
+    instructions: List[str] = []
+    items: List[Dict[str, Any]] = []
+    for m in messages:
+        role = m.get("role")
+        content = m.get("content")
+        if role == "system":
+            if isinstance(content, str) and content:
+                instructions.append(content)
+            elif isinstance(content, list):
+                instructions.append("\n".join(p.get("text", "") for p in content if isinstance(p, dict)))
+            continue
+        if role == "tool":
+            items.append({"type": "function_call_output", "call_id": str(m.get("tool_call_id", "")), "output": _content_to_text(content)})
+            continue
+        if role == "assistant":
+            if content:
+                items.append({"role": "assistant", "content": _content_to_text(content)})
+            for tc in m.get("tool_calls") or []:
+                fn = tc.get("function", {}) if isinstance(tc, dict) else {}
+                args = fn.get("arguments", "{}")
+                if not isinstance(args, str):
+                    args = json.dumps(args, default=_json_default)
+                items.append({"type": "function_call", "call_id": str(tc.get("id", "")), "name": fn.get("name", ""), "arguments": args})
+            continue
+        # user (and anything else) --------------------------------------------------------
+        if isinstance(content, list):
+            parts: List[Dict[str, Any]] = []
+            for p in content:
+                if not isinstance(p, dict):
+                    continue
+                if p.get("type") == "image_url":
+                    iu = p.get("image_url") or {}
+                    url = iu.get("url") if isinstance(iu, dict) else iu
+                    part: Dict[str, Any] = {"type": "input_image", "image_url": url}
+                    if isinstance(iu, dict) and iu.get("detail"):
+                        part["detail"] = iu["detail"]
+                    parts.append(part)
+                elif p.get("type") in ("text", "input_text"):
+                    parts.append({"type": "input_text", "text": p.get("text", "")})
+            items.append({"role": "user", "content": parts})
+        else:
+            items.append({"role": "user", "content": str(content or "")})
+    return "\n\n".join(instructions), items
+
+
+def _content_to_text(content: Any) -> str:
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        return "\n".join(str(p.get("text", "")) for p in content if isinstance(p, dict))
+    return "" if content is None else str(content)
+
+
+def tools_to_responses(tools: Sequence[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """Chat-completions function tools → Responses API flat function tools."""
+    out: List[Dict[str, Any]] = []
+    for t in tools:
+        if t.get("type") == "function" and "function" in t:
+            fn = t["function"]
+            out.append({
+                "type": "function",
+                "name": fn.get("name"),
+                "description": fn.get("description", ""),
+                "parameters": fn.get("parameters", {"type": "object", "properties": {}}),
+                "strict": bool(fn.get("strict", False)),
+            })
+        else:
+            out.append(t)
+    return out
+
+
+def tool_choice_to_responses(tool_choice: Any) -> Any:
+    if isinstance(tool_choice, dict) and "function" in tool_choice:
+        return {"type": "function", "name": tool_choice["function"].get("name")}
+    return tool_choice
 
 
 def _messages_have_images(messages: Sequence[Dict[str, Any]]) -> bool:

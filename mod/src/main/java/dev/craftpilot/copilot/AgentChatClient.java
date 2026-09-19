@@ -18,7 +18,10 @@ import java.util.concurrent.Executors;
  * timeout is generous; progress arrives separately through the mod's {@code /say} endpoint.
  */
 public final class AgentChatClient {
+    // HTTP/1.1 only: the default HTTP_2 client sends an `Upgrade: h2c` header on plain-http requests,
+    // which the agent's uvicorn server answers with 500 Internal Server Error.
     private static final HttpClient HTTP = HttpClient.newBuilder()
+            .version(HttpClient.Version.HTTP_1_1)
             .connectTimeout(Duration.ofSeconds(5))
             .build();
     private static final ExecutorService POOL = Executors.newCachedThreadPool(r -> {

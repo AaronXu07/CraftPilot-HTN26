@@ -135,7 +135,7 @@ def test_strip_images_replaces_parts_with_note():
 
 
 def test_azure_llm_requires_config(monkeypatch):
-    for k in ("AZURE_OPENAI_ENDPOINT", "AZURE_OPENAI_API_KEY", "AZURE_OPENAI_DEPLOYMENT"):
+    for k in ("AZURE_OPENAI_ENDPOINT", "AZURE_OPENAI_API_KEY", "AZURE_OPENAI_DEPLOYMENT", "AZURE_OPENAI_VISION_DEPLOYMENT", "AZURE_OPENAI_API"):
         monkeypatch.delenv(k, raising=False)
     import pytest
 
