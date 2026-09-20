@@ -42,10 +42,16 @@ def _cache_key(payload: dict[str, Any]) -> str:
 
 
 def structured_call(deployment: str, instructions: str, messages: list[dict[str, str]], fmt: dict[str, Any],
-                    effort: str, cache: bool = True, tag: str = "compose") -> tuple[str, dict[str, Any]]:
-    """Returns (output_text, meta). Caches by (deployment, instructions, messages, effort)."""
+                    effort: str, cache: bool = True, tag: str = "compose", timeout: float | None = None,
+                    max_retries: int | None = None, max_output_tokens: int | None = None) -> tuple[str, dict[str, Any]]:
+    """Returns (output_text, meta). Caches by (deployment, instructions, messages, effort[, max_output_tokens]).
+
+    ``timeout`` / ``max_retries`` override the client defaults (SETTINGS.llm_timeout, 1 retry) for small calls
+    that must not wait out a compose-sized timeout; ``max_output_tokens`` caps hidden reasoning plus the answer."""
     payload = {"deployment": deployment, "instructions": instructions, "messages": messages, "effort": effort,
                "schema": fmt.get("name")}
+    if max_output_tokens is not None:
+        payload["max_output_tokens"] = max_output_tokens
     key = _cache_key(payload)
     CACHE_DIR.mkdir(parents=True, exist_ok=True)
     cache_path = CACHE_DIR / f"{tag}_{key}.json"
@@ -53,7 +59,8 @@ def structured_call(deployment: str, instructions: str, messages: list[dict[str,
         data = json.loads(cache_path.read_text())
         return data["output"], {"cached": True, "request_id": data.get("request_id"), "seconds": 0.0}
 
-    c = client()
+    c = client(timeout=timeout, max_retries=1 if max_retries is None else max_retries)
+    extra: dict[str, Any] = {} if max_output_tokens is None else {"max_output_tokens": max_output_tokens}
     t0 = time.time()
     try:
         resp = c.responses.create(
@@ -62,6 +69,7 @@ def structured_call(deployment: str, instructions: str, messages: list[dict[str,
             input=messages,
             text={"format": fmt},
             reasoning={"effort": effort},
+            **extra,
         )
     except Exception as exc:
         msg = str(exc)
@@ -81,5 +89,9 @@ def structured_call(deployment: str, instructions: str, messages: list[dict[str,
     with (LOG_DIR / "llm.jsonl").open("a") as f:
         f.write(json.dumps({"tag": tag, "time": time.time(), "deployment": deployment, "effort": effort,
                             "messages": messages, "output": text, "meta": meta}) + "\n")
-    cache_path.write_text(json.dumps({"output": text, "request_id": meta["request_id"]}))
+    # Never cache an empty or cut-off answer (a token cap that ate the reasoning) - it would be returned forever.
+    if text and text.strip() and getattr(resp, "status", "completed") in (None, "completed"):
+        cache_path.write_text(json.dumps({"output": text, "request_id": meta["request_id"]}))
+    else:
+        meta["incomplete"] = True
     return text, meta

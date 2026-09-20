@@ -326,6 +326,25 @@ def object_undo(undo_file: Path = typer.Argument(..., help="placed.json written 
 
 
 @app.command()
+def route(
+    text: str = typer.Argument(..., help="A build request"),
+    no_llm: bool = typer.Option(False, "--no-llm", help="Word rules only; never ask the model"),
+    as_json: bool = typer.Option(False, "--json", help="Print the full Route as JSON"),
+) -> None:
+    """Show which path a request takes (building generator or image->3D objects) and why."""
+    from craftpilot.route import classify
+
+    r = classify(text, use_llm=False if no_llm else None)
+    if as_json:
+        typer.echo(json.dumps(r.to_dict(), indent=2))
+        return
+    typer.echo(f"{r.kind}  ({r.source}, confidence {r.confidence:.2f})")
+    typer.echo(f"  reason:  {r.reason}")
+    typer.echo(f"  matched: {', '.join(r.matched) or '-'}")
+    typer.echo(f"  scores:  building {r.scores[0]}, object {r.scores[1]}")
+
+
+@app.command()
 def catalog() -> None:
     """Print the block family catalog summary given to the LLM."""
     from craftpilot.blocks.catalog import catalog_summary
