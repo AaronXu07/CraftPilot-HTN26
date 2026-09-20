@@ -1,6 +1,11 @@
 # CraftPilot Implementation Plan
 
-> **Status (2026-09-19):** milestones M0 to M3 and M5 are implemented; M4 (the Fabric mod) is next.
+> **Status (2026-09-19):** milestones M0 to M5 are implemented. M4 landed as a thin bridge: the Fabric
+> mod hosts an HTTP server inside the game and Python pushes world-space blocks to it (`/setblocks`),
+> so the mod never parses a `.litematic`; `/build` in chat calls the service, which places the result
+> in front of the player layer by layer. An animated wireframe of the build box shows while a build is in
+> flight (placeholder at once, exact box from the service, scan line tracking placed rows). Wand selection
+> and undo are deferred.
 > Engine: layout with side and stacked attachment, massing with taper, jetty and thick walls, all twelve
 > roof types, all sixteen attachment kinds, the silhouette budget, facade grammar with six window
 > styles and four framing modes, depth pass, basic interiors (stairs, ladders, doorways, partitions),
@@ -25,10 +30,10 @@ Procedural Minecraft building generator. A player types `/build <natural
 language>` in a singleplayer world, a Fabric mod forwards it to a local Python
 service, an LLM composes a structured **build program** from the text, a
 deterministic engine renders the program as a voxel grid inside a bounding box,
-litemapy writes a `.litematic`, and the mod places it in the world.
+litemapy writes a `.litematic`, and the service streams the blocks back through
+the mod, which places them in the world one layer per tick.
 
-Scope for now: buildings of any kind. No terrain generation, roads, or settlements
-(buildings are seated on existing terrain, §8.4).
+Scope for now: buildings of any kind. No terrain, roads, or settlements.
 
 ---
 
@@ -36,9 +41,9 @@ Scope for now: buildings of any kind. No terrain generation, roads, or settlemen
 
 | Area | Decision | Notes |
 |---|---|---|
-| Minecraft | Java Edition **26.2** | 26.3 released 2026-09-15; Litematica's latest stable targets 26.2. Bump when Litematica and Fabric API ship 26.3. Block catalog is generated from the game jar, so a bump is a config change. |
+| Minecraft | Java Edition **1.21.1** in-game (mod); catalogs shipped for 1.21.1 and 26.2 | The block catalog is generated from the game jar and selected by `CRAFTPILOT_MC_VERSION`, so a version bump is `scripts/gen_catalog.py` plus the mod's `gradle.properties`. |
 | World | Singleplayer, integrated server | All in-game integration goes through a Fabric mod. |
-| Mod | Fabric mod (`mod/`), Gradle + Fabric Loom | `/build` commands, wand selection with outline, async service calls, placement, undo, auto-launch of the service. |
+| Mod | Fabric mod (`mod/`), Gradle + Fabric Loom, client side | Hosts the HTTP bridge on 7777 (`/player`, `/setblocks`, `/scan`, `/say`); `/build` chat command calls the service; `/outline` animates the in-progress box. Wand, undo and auto-launch deferred. |
 | Language | Python 3.12+, `uv` | `pyproject.toml`, hatchling, ruff, pytest. numpy, scipy, pydantic, FastAPI. |
 | Schematic | litemapy 0.11.x | Confirm the data version it writes matches 26.2. |
 | LLM | Azure OpenAI, GPT-5.4 line, Responses API, structured outputs | Deployment names come from env. `gpt-5.4` composes the build program; `gpt-5.4-mini` handles follow-up edits. See section 6. |
@@ -69,8 +74,10 @@ Coordinates follow Minecraft: `x` east, `y` up, `z` south, north is `-z`.
    |
    |-- [export] litemapy -> .minecraft/schematics/craftpilot/build_<id>.litematic
    |
+   |-- [place]  grid -> world blocks anchored in front of the player -> POST /setblocks to the mod
+   |
    v
-[mod]     reads the .litematic, places in batches per tick, records undo
+[mod]     drains the queue one layer-chunk per tick with FORCE_STATE (states arrive fully baked)
 ```
 
 Three hard boundaries:
@@ -81,7 +88,8 @@ Three hard boundaries:
 2. **Semantic grid vs blocks.** Geometry stages write roles and tags. Only the
    materials stage writes concrete block states. Every Minecraft build
    technique (gradient, texturing, depth) is a function over tags.
-3. **Python vs mod.** The `.litematic` file is the only contract.
+3. **Python vs mod.** The mod's HTTP bridge (`mod/README.md`) is the only contract: Python sends
+   fully specified block states; the mod never computes anything.
 
 The key property the engine must have: **closure**. Every `BuildProgram` that
 passes schema validation renders to a complete, valid building. Ugly is
@@ -439,7 +447,8 @@ Description carries the program, bounds, and seed. Verify the data version.
 
 | Command | Behavior |
 |---|---|
-| `/build <text>` | Compose, generate, place at the player facing their yaw, inside the wand selection if one exists. |
+| `/build <text>` | (implemented) An outline box follows the player; the lock key (G) freezes it and sends `/build {ghost:true}` with that pose. The service composes and generates and answers with a voxel cloud; the mod shows it as a translucent hologram (`GhostRender`) where the box was locked. G again commits via `/regenerate {seed, place}` (same seed, same grid); H lets the hologram follow the player first. Blocks stream in bottom-up and hide the hologram row by row. |
+| `/build plan <text>` | (implemented) Compose only; the service describes the program (`program/describe.py`) and the mod prints it. `/build edit` then refines the plan without building; `/build go` aims a box of the plan's size and builds it via `/regenerate`. |
 | `/build wand` | Gives the selection wand (a stick with a custom name and NBT tag). Left click sets corner 1, right click sets corner 2. |
 | `/build bounds <w> <h> <d>` | Selection without corners, anchored at the player. |
 | `/build clear` | Clears the selection. |
@@ -449,55 +458,40 @@ Description carries the program, bounds, and seed. Verify the data version.
 | `/build preview <text>` | Generates and saves the schematic without placing. |
 | `/build save <name>` | Saves the last program as an exemplar. |
 
-### 8.2 Selection outline
+### 8.2 Build outline (implemented)
 
-Client-side rendering of the selected box as a wireframe (Fabric's world
-render events, `WorldRenderEvents.AFTER_TRANSLUCENT` or similar), with the
-dimensions shown in the action bar. Corners persist per player across
-sessions in the mod's config.
+`BuildOutline` draws a wireframe of the box a build will fill, in `WorldRenderEvents.BEFORE_DEBUG_RENDER`
+(vanilla flushes the lines layer right after it). `/build` shows a placeholder at once (default bounds,
+the same anchor math as `place/anchor.py`); the service posts the exact box through `POST /outline` after
+compose (`generating`) and again with the trimmed box before queueing (`placing`); a scan line sweeps
+while waiting and tracks the highest placed row while blocks land; the box flashes green and clears when
+the queue drains, on cancel, or on a service error. A wand *selection* outline (persisted corners,
+dimensions in the action bar) is still deferred.
 
-### 8.3 Service client and auto-launch
+### 8.3 Service client (implemented)
 
-- On world load, `GET /health` on the configured port. If nothing answers,
-  spawn `uv run craftpilot serve` from the configured project path and wait
-  up to 20 s, reporting in chat. Shut it down on world unload if the mod
-  started it.
-- HTTP calls on a worker thread; results marshalled back with
-  `server.execute(...)`. Progress messages: composing, generating, placing.
+- `/build ...` posts to `craftpilot serve` on 7778 from a worker thread and prints `summary`, `notes`
+  and any `invalid` block-state warning in chat. No auto-launch: the player starts the service.
 
-### 8.4 Placement
+### 8.4 Placement (implemented as a bridge)
 
-- Before calling `/build`, sample the surface around the player and send it as
-  `terrain` (see §9): for every column in a square of radius ~48 around the
-  player, `level.getHeight(Heightmap.Types.MOTION_BLOCKING_NO_LEAVES, x, z) - 1`
-  (the y of the top solid block; water surfaces count, leaves do not) and that
-  block's state. Send `origin` = the player's position and `yaw`.
-- The response's `placement` says where the schematic goes and what the ground
-  needs: apply `placement.edits` (world `[x, y, z, state]`, already bottom-up:
-  the hill cut out of the base, a foundation down to the terrain, the apron
-  graded and re-topped, steps from the door), then paste the schematic's
-  non-air blocks with its corner at `placement.origin`. The two never overlap.
-- Parse `.litematic` NBT: region palette and packed `BlockStates` long array.
-- Place in batches of a few thousand per tick with the no-neighbor-update
-  flag, then a final pass for doors, attachables, and waterloggable blocks.
-- Record prior states for undo (edits included), one entry per build per player.
+- The mod hosts `POST /setblocks` on 7777. The service (`src/craftpilot/place/`) reads `/player`,
+  rotates the grid to face them, anchors it `gap` blocks ahead at feet level, converts the grid to
+  `[x, y, z, "minecraft:id[props]"]`, and groups blocks into whole bottom-up layers of at most 1500
+  blocks (attachables last within a layer). One chunk is placed per tick with
+  `NOTIFY_LISTENERS | FORCE_STATE` and no post-process, because the engine already bakes stair
+  shapes, hinges, connections and support into every state. The `.litematic` is still written.
+- Undo is not implemented yet; `/build cancel` drops what is still queued.
 
 ---
 
 ## 9. Local service
 
-`craftpilot serve` on `127.0.0.1:7777`:
+`craftpilot serve` on `127.0.0.1:7778` (the mod owns 7777):
 
-- `POST /build` -> `BuildRequest` in (`text, player, origin = player pos, yaw,
-  terrain?, bounds?, seed?`), `{schematic, program, blocks, bounds, seed, facing,
-  notes, placement}` out. `placement = {origin, facing, footprint, schematic_size,
-  site, edits}`: `origin` is the world position of the schematic's (0, 0, 0)
-  corner, 2 blocks in front of the player with the door facing them and its
-  ground row seated on the terrain (`src/craftpilot/terrain.py`: a little below
-  the median surface height under the base, sunk further if the build would pass
-  y=319); `edits` are the world blocks the mod sets besides pasting (cut, fill,
-  graded apron, door steps); `site` summarises the survey. Without `terrain` the
-  origin is at the player's feet and `edits` is empty.
+- `POST /build` -> `BuildRequest` in (`place: true` streams the blocks into the game),
+  `{schematic, summary, notes, seed, bounds, placement?}` out.
+- `POST /cancel` -> drops the mod's placement queue.
 - `POST /edit` -> `{player, text}` patches the last program.
 - `POST /regenerate` -> `{player, seed?}`.
 - `POST /exemplars` -> saves the last program under a name.
@@ -536,7 +530,7 @@ CLI mirrors it: `craftpilot build "..." --bounds 30x20x30 --seed 7 --preview`,
 | M1 | `BuildProgram` model, layout, massing, gable/hip/flat roofs, facade, depth, materials, postprocess | The cottage exemplar renders well at three bounds |
 | M2 | Attachments and remaining roof types | Chimney, dormer, balcony, porch, cupola, tower, cone, dome, pagoda, shed, mansard; closure test passes |
 | M3 | Azure compose + edit, exemplar retrieval, fallback, CLI, service | `craftpilot build "a lighthouse"` produces a valid program and building with no lighthouse-specific code |
-| M4 | Fabric mod | `/build` in-game with wand selection and outline, auto-launch, undo, edit, save |
+| M4 | Fabric mod | `/build` in-game places the building in front of the player (done); wand selection, outline, auto-launch and undo deferred |
 | M5 | Exemplar library to ten, remaining attachment kinds | All ten exemplars pass gallery review; LLM eval on unseen building types |
 | M6 | Polish | Basic interiors, critique loop from preview PNG, WFC facade fill |
 

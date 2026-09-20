@@ -14,7 +14,7 @@ from craftpilot.config import SETTINGS
 from craftpilot.program.model import Bounds, BuildProgram
 
 if TYPE_CHECKING:
-    from craftpilot.terrain import PlacementRequest
+    from craftpilot.place.placer import PlaceContext
 
 app = typer.Typer(add_completion=False, help="Procedural Minecraft buildings from natural language.")
 
@@ -34,9 +34,8 @@ def _slug(text: str) -> str:
 
 def run_build(program: BuildProgram, bounds: Bounds | None, seed: int, out: Path | None, preview: bool,
               author: str, source_text: str, extra_notes: list[str], facing: str = "south",
-              placement: PlacementRequest | None = None) -> dict:
-    """Compose nothing; render `program`, write the schematic, and (with `placement`) site it on the
-    player's terrain: the result then carries `placement` = {origin, facing, footprint, site, edits}."""
+              place_ctx: PlaceContext | None = None) -> dict:
+    """Generate, write the schematic, and (with ``place_ctx``) stream the blocks into the running game."""
     from craftpilot.engine.pipeline import generate
     from craftpilot.export.litematic import save
     from craftpilot.grid.ops import quarter_turns_for_facing, rotate_cw
@@ -49,6 +48,8 @@ def run_build(program: BuildProgram, bounds: Bounds | None, seed: int, out: Path
     bounds, err = clamp_bounds(bounds, SETTINGS.safety_limit)
     if err:
         raise typer.BadParameter(err)
+    if place_ctx is not None:
+        notes += _outline_bounds(place_ctx, bounds, facing)
     t0 = time.time()
     grid = generate(program, bounds, seed)
     if facing in ("north", "east", "west"):
@@ -76,23 +77,34 @@ def run_build(program: BuildProgram, bounds: Bounds | None, seed: int, out: Path
         "notes": notes + grid.report["notes"],
         "attachments": [s for s in grid.report["stages"] if s["stage"].startswith("attachments")],
     }
+    if place_ctx is not None:
+        from craftpilot.place.placer import place_grid
+
+        placement = place_grid(grid, place_ctx, program.label)
+        result["placement"] = placement
+        result["notes"] = result["notes"] + placement["warnings"]
     if preview:
         from craftpilot.preview.render import render
         png = out.with_suffix(".png")
         render(grid, png)
         result["preview"] = str(png)
-    if placement is not None:
-        from craftpilot.blocks.catalog import known_blocks
-        from craftpilot.terrain import place
-
-        try:
-            result["placement"] = place(grid, placement, facing=facing, known=known_blocks())
-        except ValueError as exc:
-            raise typer.BadParameter(f"cannot place here: {exc}") from exc
-        site = result["placement"].get("site")
-        if site:
-            result["notes"].append("Site: " + site["summary"])
     return result
+
+
+def _outline_bounds(place_ctx: PlaceContext, bounds: Bounds, facing: str) -> list[str]:
+    """Show the box the build will occupy as soon as the bounds are known, before generation.
+
+    The engine builds facing south and is rotated afterwards, so an east or west facing swaps
+    width and depth. The trimmed box replaces this one when the blocks are queued."""
+    from craftpilot.place.anchor import plan_origin
+    from craftpilot.place.placer import show_outline
+
+    w, h, d = bounds.width, bounds.height, bounds.depth
+    if facing in ("east", "west"):
+        w, d = d, w
+    bbox = (0, 0, 0, w - 1, h - 1, d - 1)
+    ox, oy, oz = plan_origin(place_ctx.player, bbox, gap=place_ctx.opts.gap, sink=place_ctx.opts.sink)
+    return show_outline(place_ctx.bridge, (ox, oy, oz), (ox + w - 1, oy + h - 1, oz + d - 1), "generating")
 
 
 @app.command()
@@ -107,20 +119,25 @@ def build(
     author: str = typer.Option("craftpilot", "--author"),
     facing: str = typer.Option("south", "--facing", "-f", help="Which way the front door faces: north, east, south, west"),
     show_program: bool = typer.Option(False, "--show-program", help="Print the composed program"),
-    placement: Path = typer.Option(None, "--placement", help="JSON {pos:[x,y,z], yaw, terrain:{x0,z0,heights,tops?}} "
-                                   "describing the player and the ground: sites the build on it and adds "
-                                   "'placement' (origin + terrain edits) to the output; the facing then follows the yaw"),
+    place: bool = typer.Option(False, "--place", "-P", help="Also place the blocks in the running game via the mod"),
+    gap: int = typer.Option(None, "--gap", help="Air blocks between you and the building (place only)"),
+    sink: int = typer.Option(None, "--sink", help="Blocks the plinth row sinks below your feet (place only)"),
+    no_clear: bool = typer.Option(False, "--no-clear", help="Do not clear terrain inside the bounding box"),
+    delay_ms: int = typer.Option(None, "--delay-ms", help="Pause between placed chunks (place only)"),
+    chunk: int = typer.Option(None, "--chunk", help="Blocks per game tick (place only)"),
+    flags: int = typer.Option(None, "--flags", help="setBlockState flags; default 18 = force state, no updates"),
 ) -> None:
     """Compose a build program from TEXT, generate it, and write a Litematica schematic."""
     from craftpilot.llm.compose import compose
     from craftpilot.program.exemplars import load_one
 
-    place_req = None
-    if placement is not None:
-        from craftpilot.terrain import PlacementRequest, facing_from_yaw
+    place_ctx = None
+    if place:
+        place_ctx = _place_context(gap, sink, not no_clear, delay_ms, chunk, flags)
+        from craftpilot.place.anchor import facing_from_yaw
 
-        place_req = PlacementRequest.model_validate_json(placement.read_text())
-        facing = facing_from_yaw(place_req.yaw)
+        facing = facing_from_yaw(place_ctx.player["yaw"])
+        typer.echo(f"placing in front of {place_ctx.player['name']}, building faces {facing}", err=True)
 
     if seed is None:
         seed = int(time.time()) % 1_000_000
@@ -140,13 +157,76 @@ def build(
     if facing not in ("north", "east", "south", "west"):
         raise typer.BadParameter("facing must be north, east, south, or west")
     compose_s = time.time() - t_start
-    result = run_build(program, b, seed, out, preview, author, text, notes, facing, place_req)
+    result = run_build(program, b, seed, out, preview, author, text, notes, facing, place_ctx)
     result["source"] = source
     result["compose_seconds"] = round(compose_s, 3)
     result["total_seconds"] = round(time.time() - t_start, 3)
     typer.echo(json.dumps(result, indent=2))
     typer.echo(f"Built in {result['total_seconds']:.1f}s: compose {compose_s:.1f}s, generate {result['generate_seconds']:.2f}s, "
                f"export {result['export_seconds']:.2f}s", err=True)
+
+
+def _place_context(gap: int | None, sink: int | None, clear: bool, delay_ms: int | None, chunk: int | None,
+                   flags: int | None):
+    from craftpilot.place.bridge import BridgeError, HttpBridge
+    from craftpilot.place.placer import PlaceContext, PlaceOptions
+
+    bridge = HttpBridge()
+    try:
+        player = bridge.player()
+    except BridgeError as exc:
+        raise typer.BadParameter(
+            f"mod not reachable at {bridge.base_url} ({exc}); is Minecraft running with the CraftPilot mod "
+            "and a world open?") from exc
+    opts = PlaceOptions(clear=clear)
+    if gap is not None:
+        opts.gap = gap
+    if sink is not None:
+        opts.sink = sink
+    if delay_ms is not None:
+        opts.delay_ms = delay_ms
+    if chunk is not None:
+        opts.chunk_blocks = chunk
+    if flags is not None:
+        opts.flags = flags
+    return PlaceContext(bridge=bridge, player=player, opts=opts)
+
+
+@app.command()
+def plan(
+    text: str = typer.Argument(..., help="What to build, in plain language"),
+    bounds: str = typer.Option(None, "--bounds", "-b", help="Bounding box WxHxD"),
+    no_llm: bool = typer.Option(False, "--no-llm", help="Skip Azure OpenAI and use the nearest exemplar"),
+) -> None:
+    """Compose a build program from TEXT and describe it, without generating anything."""
+    from craftpilot.llm.compose import compose
+    from craftpilot.program.describe import describe
+    from craftpilot.program.validate import repair
+
+    program, source, notes = compose(text, use_llm=not no_llm, bounds_hint=_parse_bounds(bounds))
+    program, r_notes = repair(program, SETTINGS.safety_limit)
+    for line in describe(program, _parse_bounds(bounds) or program.bounds):
+        typer.echo(line)
+    for note in notes + r_notes:
+        typer.echo(f"  note: {note}", err=True)
+    typer.echo(f"  source: {source}", err=True)
+
+
+@app.command("place-status")
+def place_status() -> None:
+    """Show the mod's health and placement queue."""
+    from craftpilot.place.bridge import HttpBridge
+
+    bridge = HttpBridge()
+    typer.echo(json.dumps({"health": bridge.health(), "status": bridge.status()}, indent=2))
+
+
+@app.command("place-cancel")
+def place_cancel() -> None:
+    """Drop everything still queued for placement in the game."""
+    from craftpilot.place.bridge import HttpBridge
+
+    typer.echo(json.dumps(HttpBridge().cancel()))
 
 
 @app.command()

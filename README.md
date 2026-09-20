@@ -2,8 +2,9 @@
 
 Procedural Minecraft buildings from natural language. A description is composed into a
 `BuildProgram` by Azure OpenAI, a deterministic engine renders it as blocks using Minecraft
-build techniques (palettes, gradients, texturing, depth, silhouette), and litemapy writes a
-Litematica schematic. See `PLAN.md` for the design.
+build techniques (palettes, gradients, texturing, depth, silhouette), and the result is either
+placed straight into your open world through a small Fabric mod or written as a Litematica
+schematic. See `PLAN.md` for the design.
 
 ## Setup
 
@@ -33,7 +34,6 @@ Useful flags:
 | `--exemplar castle`    | Render an exemplar program directly (see `exemplars/`).                                        |
 | `--facing east`        | Which way the front door faces (default south).                                                |
 | `--show-program`       | Print the composed program JSON.                                                               |
-| `--placement site.json`| Site the build on real terrain: `{pos, yaw, terrain}` as the mod sends it (see below); adds `placement` (origin + terrain edits) to the output. |
 | `--out path.litematic` | Write somewhere else.                                                                          |
 
 Render every exemplar to `out/exemplars/` for a quick gallery:
@@ -42,28 +42,50 @@ Render every exemplar to `out/exemplars/` for a quick gallery:
 uv run craftpilot render
 ```
 
-## Placing it in Minecraft
+## Build in-game
+
+The `mod/` folder is a client-side Fabric mod (Minecraft **1.21.1**) that lets the Python side place
+blocks directly in the world you have open, bottom up, one layer per game tick. See `mod/README.md`.
+
+1. Build and install the mod: `cd mod && ./gradlew build` (Java 21), then copy
+   `mod/build/libs/copilot-<version>.jar` and the matching Fabric API into your `mods/` folder and open a
+   singleplayer world. The mod listens on `127.0.0.1:7777`.
+2. Start the service in a terminal: `uv run craftpilot serve` (listens on `127.0.0.1:7778`).
+3. Either type in chat:
+
+   ```
+   /build a cozy two storey cottage with a stone chimney   # aim the box, G; a hologram appears, G builds it (H moves it)
+   /build plan a timber church with a bell tower           # see the plan in chat first ...
+   /build edit make it three floors                        # ... refine it ...
+   /build go                                               # ... then aim and press G to build it
+   /build again 7            # same program, new seed
+   /build edit make the roof red
+   /build preview <text>     # schematic only
+   /build cancel             # abandon the pending build or stop a placement that is still streaming in
+   ```
+
+   or from the terminal (no service needed):
+
+   ```sh
+   uv run craftpilot build "a stone lighthouse" --place
+   ```
+
+The building lands two blocks in front of you, centred, with its door facing you and its plinth at your
+feet. Terrain inside the bounding box is cleared. Placement flags: `--gap`, `--sink`, `--no-clear`,
+`--delay-ms`, `--chunk`; `craftpilot place-status` and `craftpilot place-cancel` talk to the mod directly.
+The `.litematic` is still written every time.
+
+The game version matters: the block catalog the engine draws from is `data/blocks_<version>.json`,
+selected by `CRAFTPILOT_MC_VERSION` in `.env` (1.21.1 and 26.2 are shipped; generate others with
+`scripts/gen_catalog.py`). If the game rejects a state the service reports it as `invalid`.
+`uv run python scripts/verify_bridge.py` smoke-tests the bridge with the game open.
+
+## Placing a schematic by hand
 
 1. In game, open the Litematica menu (default key `M`), choose **Load Schematics**, open the
    `craftpilot` folder and load the file.
 2. In creative, open **Schematic Placements**, select it, and use **Paste Schematic in World**
    (or the Litematica paste hotkey). The building faces south unless you passed `--facing`.
-
-The Fabric mod that does this automatically from a `/build` command is milestone 4 in `PLAN.md`.
-
-### Non-flat terrain
-
-A build is rendered on a flat grid; on a hill it would sit half buried, half floating. The service
-fixes that when the request carries a surface heightmap (`terrain`: `{x0, z0, heights[row][col],
-tops?}` — the y of the top solid block per column around the player, water counting as ground,
-leaves not). The response's `placement` then has the schematic `origin` seated on the terrain (ground
-row a little below the median surface height under the building, sunk if needed to stay under
-y=319) and `edits`: the hill cut out of the base, a foundation down to the terrain in the building's
-own foundation block (a solid plinth on gentle sites, perimeter wall + pillars over a big drop), the
-surrounding ground ramped one block per column and re-topped with its own surface block, and steps
-from the door down to it. The mod applies `edits` and pastes the schematic's non-air blocks at
-`origin`; the two never overlap. Everything is `src/craftpilot/terrain.py`, tested on synthetic
-slopes and cliffs in `tests/test_terrain.py`.
 
 ## Development
 
@@ -85,6 +107,7 @@ lighthouse, pagoda, watchtower, townhouse.
 - `src/craftpilot/blocks/` block family catalog (filtered by `data/blocks_<version>.json`); each family carries its colour, texture noise, material and style tags from `palette_data.py`, which also holds the curated palette library
 - `src/craftpilot/llm/` Azure OpenAI compose/edit, strict schema, offline fallback
 - `src/craftpilot/export/` litemapy export
-- `src/craftpilot/terrain.py` siting on real terrain: origin from the player's position and yaw, ground level from the heightmap, cut / fill / grading / steps as world edits for the mod
+- `src/craftpilot/place/` in-game placement: bridge client, anchoring in front of the player, layer chunking
+- `mod/` the Fabric bridge mod (`/build` command, `/setblocks` HTTP endpoint)
 - `src/craftpilot/preview/` isometric PNG renderer
 - `exemplars/` complete programs used as few-shot examples, fallback, and goldens

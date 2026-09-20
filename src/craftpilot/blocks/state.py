@@ -28,6 +28,12 @@ class BlockRef:
     def as_dict(self) -> dict[str, str]:
         return dict(self.props)
 
+    def state_string(self) -> str:
+        """The block state as the game's command syntax: ``minecraft:oak_stairs[facing=north,half=bottom]``."""
+        if not self.props:
+            return self.block_id
+        return self.block_id + "[" + ",".join(f"{k}={v}" for k, v in self.props) + "]"
+
     def is_stairs(self) -> bool:
         return self.block_id.endswith("_stairs")
 

@@ -1,0 +1,21 @@
+{
+  "schemaVersion": 1,
+  "id": "copilot",
+  "version": "${version}",
+  "name": "CraftPilot Bridge",
+  "description": "HTTP bridge that lets the CraftPilot service place generated buildings in the world, plus the /build chat command. No build logic lives here.",
+  "authors": ["CraftPilot HTN26"],
+  "contact": {},
+  "license": "MIT",
+  "icon": "assets/copilot/icon.png",
+  "environment": "client",
+  "entrypoints": {
+    "client": ["dev.craftpilot.copilot.CopilotClientMod"]
+  },
+  "depends": {
+    "fabricloader": ">=0.16.0",
+    "minecraft": "~1.21.1",
+    "java": ">=21",
+    "fabric-api": "*"
+  }
+}
