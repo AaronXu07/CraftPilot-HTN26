@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import hashlib
 import json
+import threading
 import time
+from pathlib import Path
 from typing import Any
 
 from craftpilot.config import PROJECT_ROOT, SETTINGS
@@ -41,6 +43,17 @@ def _cache_key(payload: dict[str, Any]) -> str:
     return hashlib.sha256(json.dumps(payload, sort_keys=True).encode()).hexdigest()[:24]
 
 
+# One model call per cache key at a time: a second caller for the same prompt (the mod's /prepare warm-up
+# followed by the real /build a few seconds later) waits for the first and reads its cached answer.
+_inflight: dict[str, threading.Event] = {}
+_inflight_lock = threading.Lock()
+
+
+def _read_cache(cache_path: Path, waited: bool = False) -> tuple[str, dict[str, Any]]:
+    data = json.loads(cache_path.read_text())
+    return data["output"], {"cached": True, "waited": waited, "request_id": data.get("request_id"), "seconds": 0.0}
+
+
 def structured_call(deployment: str, instructions: str, messages: list[dict[str, str]], fmt: dict[str, Any],
                     effort: str, cache: bool = True, tag: str = "compose", timeout: float | None = None,
                     max_retries: int | None = None, max_output_tokens: int | None = None) -> tuple[str, dict[str, Any]]:
@@ -56,9 +69,32 @@ def structured_call(deployment: str, instructions: str, messages: list[dict[str,
     CACHE_DIR.mkdir(parents=True, exist_ok=True)
     cache_path = CACHE_DIR / f"{tag}_{key}.json"
     if cache and cache_path.exists():
-        data = json.loads(cache_path.read_text())
-        return data["output"], {"cached": True, "request_id": data.get("request_id"), "seconds": 0.0}
+        return _read_cache(cache_path)
+    leader = False
+    if cache:
+        with _inflight_lock:
+            event = _inflight.get(cache_path.name)
+            if event is None:
+                event = _inflight[cache_path.name] = threading.Event()
+                leader = True
+        if not leader:
+            event.wait(timeout=(SETTINGS.llm_timeout if timeout is None else timeout) + 30)
+            if cache_path.exists():
+                return _read_cache(cache_path, waited=True)
+            # the first caller failed or timed out: make the call ourselves
+    try:
+        return _call(deployment, instructions, messages, fmt, effort, tag, timeout, max_retries, max_output_tokens,
+                     cache_path)
+    finally:
+        if leader:
+            with _inflight_lock:
+                _inflight.pop(cache_path.name, None)
+            event.set()
 
+
+def _call(deployment: str, instructions: str, messages: list[dict[str, str]], fmt: dict[str, Any], effort: str,
+          tag: str, timeout: float | None, max_retries: int | None, max_output_tokens: int | None,
+          cache_path: Path) -> tuple[str, dict[str, Any]]:
     c = client(timeout=timeout, max_retries=1 if max_retries is None else max_retries)
     extra: dict[str, Any] = {} if max_output_tokens is None else {"max_output_tokens": max_output_tokens}
     t0 = time.time()

@@ -36,6 +36,27 @@ public final class ServiceClient {
     private ServiceClient() {
     }
 
+    /**
+     * POST {@code body} to {@code path} and ignore the answer (only a failed connection is logged). Used to
+     * warm the service's composer the moment {@code /build <text>} is typed, so the model call overlaps the
+     * seconds the player spends aiming the box instead of starting when G is pressed.
+     */
+    public static void postQuiet(String path, JsonObject body) {
+        POOL.submit(() -> {
+            String url = CopilotClientMod.SERVICE_URL + path;
+            try {
+                HttpRequest req = HttpRequest.newBuilder(URI.create(url))
+                        .timeout(Duration.ofMinutes(10))
+                        .header("Content-Type", "application/json")
+                        .POST(HttpRequest.BodyPublishers.ofString(body.toString(), StandardCharsets.UTF_8))
+                        .build();
+                HTTP.send(req, HttpResponse.BodyHandlers.discarding());
+            } catch (Exception e) {
+                CopilotClientMod.LOGGER.info("[craftpilot] prepare skipped: {}", e.toString());
+            }
+        });
+    }
+
     /** POST {@code body} to {@code path} on the service and print the result in chat. */
     public static void postAsync(String path, JsonObject body) {
         POOL.submit(() -> {

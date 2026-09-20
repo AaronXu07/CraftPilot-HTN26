@@ -273,6 +273,12 @@ class Bounds(BaseModel):
 
 
 class BuildProgram(BaseModel):
+    design: str = Field(
+        default="", description="Written first, before the parts: three or four sentences deciding the building. "
+                                "The massing (which parts, their shapes and how they attach), the roof types and "
+                                "pitches, what the real building is made of and which catalog families stand in for "
+                                "each material, and where every feature the request named goes. Then express exactly "
+                                "that in the fields below.")
     label: str = Field(description="Free text name of the building type, e.g. lighthouse")
     bounds: Bounds = Field(description="Suggested bounding box; the player's selection overrides it")
     parts: list[PartSpec]

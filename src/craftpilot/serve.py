@@ -46,6 +46,8 @@ class Pending:
     brief: ObjectBrief | None = None          # object: the plan (editable without drawing)
     result: ObjectResult | None = None        # object: the cached draw, grid facing south; None = not drawn yet
     stale: bool = False                       # object: the brief changed after the cached draw
+    grid: Any = None                          # building: the grid rendered for the hologram (reused by the commit)
+    grid_seed: int | None = None
 
 
 _pending: dict[str, Pending] = {}
@@ -226,9 +228,13 @@ def _run(player: str, program: BuildProgram, bounds: Bounds | None, seed: int | 
     place_ctx = _place_context(req) if req.place else None
     if place_ctx is not None:
         yaw = float(place_ctx.player.get("yaw", yaw))
+    prev = _pending.get(player)
+    grid = None
+    if prev is not None and prev.grid is not None and prev.grid_seed == seed and prev.program is program:
+        grid, prev.grid = prev.grid, None  # the hologram's grid: same program, bounds and seed, so no second render
     try:
         result = run_build(program, bounds, seed, None, preview, player, text, notes, facing_from_yaw(yaw),
-                           place_ctx)
+                           place_ctx, grid=grid)
     except HTTPException:
         raise
     except Exception as exc:
@@ -259,7 +265,7 @@ def _ghost_result(player: str, program: BuildProgram, text: str, seed: int | Non
     t0 = time.time()
     grid = generate(program, b, seed)
     flat, height, n = ghost_cloud(grid)
-    _remember(player, kind="building", text=text, program=program, route=route or {})
+    _remember(player, kind="building", text=text, program=program, route=route or {}, grid=grid, grid_seed=seed)
     lines = describe(program, b)
     return {
         "kind": "building",
@@ -497,6 +503,26 @@ def regenerate(req: RegenerateRequest) -> dict:
         return _ghost_result(req.player, p.program, p.text, req.seed, "previous", [], None, p.route)
     return _run(req.player, p.program, None, req.seed, False, p.text, [], "previous", _yaw(req, p.yaw), req,
                 p.route)
+
+
+class PrepareRequest(BaseModel):
+    text: str
+    player: str = "player"
+    bounds: Bounds | None = None
+    use_llm: bool | None = None
+    kind: KindArg = "auto"
+
+
+@app.post("/prepare")
+def prepare(req: PrepareRequest) -> dict:
+    """Warm the composer while the player is still aiming: the mod posts this the moment `/build <text>` is
+    typed, so by the time G arrives the model's answer is already in the cache (single-flight: a G that lands
+    mid-call waits for this one instead of starting another). Objects are not drawn speculatively."""
+    t0 = time.time()
+    route, text = _route(req.text, req.kind, req.use_llm, req.bounds)
+    if route.kind == "building":
+        _compose(text, req.use_llm, req.bounds)
+    return {"ok": True, "kind": route.kind, "seconds": round(time.time() - t0, 2), "route": route.to_dict()}
 
 
 @app.post("/cancel")

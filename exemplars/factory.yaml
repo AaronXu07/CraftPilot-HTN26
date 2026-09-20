@@ -5,6 +5,8 @@ description: >
   around the base, and a stone plinth.
 tags: [factory, industrial, warehouse, mill, soviet, brick, abandoned, derelict, run, down, plant, foundry, urban]
 program:
+  design: >
+    A run-down industrial factory: a long rectangular two-storey production hall as the root under a gable at pitch 1.0, and a two-storey parapet office block attached to its south side. Two tall chimneys rise above the ridge as smokestacks and the windows are tall industrial ones. Brick walls from the red brick palette with a deepslate tile roof, a polished deepslate base and dark oak accents.
   label: run down brick factory
   bounds: {width: 45, height: 26, depth: 29}
   parts:

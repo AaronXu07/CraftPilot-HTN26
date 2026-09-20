@@ -86,6 +86,8 @@ def describe(program: BuildProgram, bounds: Bounds | None = None) -> list[str]:
     interior = [k for k, v in (("stairs", program.interior.stairs), ("doorways", program.interior.doorways),
                                ("partitions", program.interior.partitions), ("lighting", program.interior.lighting)) if v]
     lines.append("interior: " + (", ".join(interior) if interior else "empty shell"))
+    if program.design.strip():
+        lines.append("design: " + " ".join(program.design.split())[:200])
     if program.material_reasoning.strip():
         lines.append("why these materials: " + " ".join(program.material_reasoning.split())[:160])
     if program.notes.strip():

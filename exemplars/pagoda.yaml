@@ -4,6 +4,8 @@ description: >
   spire finial on top, and a stone plinth.
 tags: [pagoda, japanese, temple, shrine, asian, tiered, oriental, tower, chinese, zen]
 program:
+  design: >
+    A Japanese pagoda: one square two-storey base as the root under a pagoda roof of three stacked tiers at pitch 1.0 with a spire on top. Tudor framing draws the timber grid on the walls. White plaster walls are white concrete and calcite with dark oak framing, trim and roof, a stone brick and andesite base, and red concrete as the accent.
   label: pagoda
   bounds: {width: 21, height: 34, depth: 21}
   parts:

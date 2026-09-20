@@ -39,6 +39,7 @@ class Settings:
     route_deployment: str | None
     route_timeout: float
     route_llm: bool
+    compose_effort: str
 
     @property
     def llm_configured(self) -> bool:
@@ -114,6 +115,10 @@ def load_settings() -> Settings:
         route_deployment=_first("CRAFTPILOT_ROUTE_DEPLOYMENT"),
         route_timeout=float(os.environ.get("CRAFTPILOT_ROUTE_TIMEOUT", "12")),
         route_llm=os.environ.get("CRAFTPILOT_ROUTE_LLM", "1").lower() not in ("0", "false", "no", "off"),
+        # Reasoning effort for composing a building. "low" answers in ~8 s; "medium" spends thousands of hidden
+        # reasoning tokens (30-100 s) for marginally different programs. An answer that fails validation is
+        # retried one level up before the offline fallback, whatever this is set to.
+        compose_effort=os.environ.get("CRAFTPILOT_COMPOSE_EFFORT", "low").strip().lower() or "low",
     )
 
 

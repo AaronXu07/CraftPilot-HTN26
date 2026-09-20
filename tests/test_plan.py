@@ -128,3 +128,103 @@ def test_preview_colours_do_not_load_the_objects_toolchain():
             "assert 'trimesh' not in sys.modules, 'trimesh imported by preview'; print('ok')")
     out = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True, check=True)
     assert out.stdout.strip() == "ok"
+
+
+def test_prepare_warms_the_composer_and_routes(monkeypatch):
+    from craftpilot import serve
+
+    monkeypatch.setattr(serve, "_pending", {})
+    client = TestClient(serve.app)
+    r = client.post("/prepare", json={"text": "a small stone cottage", "player": "p", "use_llm": False})
+    assert r.status_code == 200 and r.json()["ok"] and r.json()["kind"] == "building"
+    assert "p" not in serve._pending  # warming composes; it does not become the player's pending build
+    r = client.post("/prepare", json={"text": "a dragon statue", "player": "p", "use_llm": False})
+    assert r.status_code == 200 and r.json()["kind"] == "object"  # objects are never drawn speculatively
+
+
+def test_commit_reuses_the_hologram_grid(monkeypatch, tmp_path):
+    """The G commit places the very grid the hologram showed instead of generating it a second time."""
+    import craftpilot.engine.pipeline as pipeline_mod
+    import craftpilot.place.bridge as bridge_mod
+    from craftpilot import serve
+    from craftpilot.place.bridge import FakeBridge
+
+    live = FakeBridge(pos=(0.5, 64.0, 0.5), yaw=180.0)
+    monkeypatch.setattr(bridge_mod, "HttpBridge", lambda *a, **k: live)
+    monkeypatch.setattr(SETTINGS, "schematics_dir", tmp_path)
+    monkeypatch.setattr(serve, "_pending", {})
+    real = pipeline_mod.generate
+    calls = []
+    monkeypatch.setattr(pipeline_mod, "generate", lambda *a, **k: calls.append(a) or real(*a, **k))
+    client = TestClient(serve.app)
+    ghost = client.post("/build", json={"text": "small cottage", "player": "p", "use_llm": False, "ghost": True,
+                                        "seed": 5, "pos": [0.5, 64.0, 0.5], "yaw": 180.0}).json()
+    assert len(calls) == 1
+    built = client.post("/regenerate", json={"player": "p", "place": True, "seed": 5, "pos": [0.5, 64.0, 0.5],
+                                             "yaw": 180.0}).json()
+    assert len(calls) == 1 and built["blocks"] == ghost["blocks"]
+    assert serve._pending["p"].grid is None  # consumed
+    again = client.post("/regenerate", json={"player": "p", "place": True, "seed": 6, "pos": [0.5, 64.0, 0.5],
+                                             "yaw": 180.0}).json()
+    assert len(calls) == 2 and again["seed"] == 6  # a different seed renders again
+
+
+def test_structured_call_runs_one_model_call_per_prompt(monkeypatch, tmp_path):
+    """Single flight: a /prepare warm-up and the real /build for the same text share one model call."""
+    import threading
+    import time
+    import types
+
+    import craftpilot.llm.azure as azure
+
+    monkeypatch.setattr(azure, "CACHE_DIR", tmp_path / "cache")
+    monkeypatch.setattr(azure, "LOG_DIR", tmp_path / "logs")
+    created = []
+
+    class FakeResponses:
+        def create(self, **kw):
+            created.append(kw)
+            time.sleep(0.3)
+            return types.SimpleNamespace(output_text='{"ok": 1}', id="r1", usage=None, status="completed")
+
+    monkeypatch.setattr(azure, "client", lambda timeout=None, max_retries=1: types.SimpleNamespace(responses=FakeResponses()))
+    fmt = {"type": "json_schema", "name": "t", "schema": {"type": "object"}}
+    results = []
+
+    def go():
+        results.append(azure.structured_call("dep", "sys", [{"role": "user", "content": "x"}], fmt, "low", tag="t"))
+
+    threads = [threading.Thread(target=go) for _ in range(3)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+    assert len(created) == 1 and len(results) == 3
+    assert all(out == '{"ok": 1}' for out, _ in results)
+    assert sum(1 for _, meta in results if meta.get("waited")) == 2
+    out, meta = azure.structured_call("dep", "sys", [{"role": "user", "content": "x"}], fmt, "low", tag="t")
+    assert meta["cached"] and len(created) == 1
+
+
+def test_compose_escalates_effort_when_the_answer_does_not_validate(monkeypatch):
+    import craftpilot.llm.azure as azure
+    from craftpilot.llm import compose as compose_mod
+
+    efforts = []
+
+    def fake(deployment, instructions, messages, fmt, effort, cache=True, tag="compose", **kw):
+        efforts.append(effort)
+        if effort == "low":
+            return "{not json", {"cached": False, "seconds": 1.0}
+        ex = load_all(SETTINGS.exemplars_dir)[0]
+        return ex.program.model_dump_json(), {"cached": False, "seconds": 2.0}
+
+    monkeypatch.setattr(azure, "structured_call", fake)
+    monkeypatch.setattr(SETTINGS, "compose_effort", "low")
+    monkeypatch.setattr(SETTINGS, "azure_endpoint", "https://x.openai.azure.com")
+    monkeypatch.setattr(SETTINGS, "azure_api_key", "k")
+    monkeypatch.setattr(SETTINGS, "compose_deployment", "dep")
+    monkeypatch.setattr(SETTINGS, "edit_deployment", "dep")
+    program, source, notes = compose_mod.compose("a cottage", use_llm=True)
+    assert efforts == ["low", "medium"] and source == "llm"
+    assert any("did not validate" in n for n in notes) and any("effort medium" in n for n in notes)

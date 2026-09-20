@@ -5,6 +5,8 @@ description: >
   front slope, and a small porch over the door.
 tags: [cottage, house, cabin, home, cozy, small, medieval, rustic, village]
 program:
+  design: >
+    A cozy cottage: one rectangular two-storey part under a gable roof at pitch 1.0 with a dark oak field and spruce edges. A stone chimney on a gable end, two dormers on the slopes and a porch over the door. Timber walls are oak planks with dark oak corner framing on a cobblestone and stone brick base.
   label: cottage
   bounds: {width: 19, height: 20, depth: 15}
   parts:

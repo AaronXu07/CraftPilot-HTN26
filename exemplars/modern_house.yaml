@@ -4,6 +4,8 @@ description: >
   dark oak accents, thin slab lips at the storey line, no framing and deliberate asymmetry.
 tags: [modern, contemporary, minimalist, villa, flat, roof, glass, concrete, house, mansion]
 program:
+  design: >
+    A modern minimalist house: a one-storey flat-roofed ground box as the root and a one-storey parapet box stacked on top of it, offset so it cantilevers past the ground floor. Floor-to-ceiling glass walls and no framing, no attachments, no chimney. White concrete walls, grey concrete base and secondary, polished deepslate roof and dark oak trim.
   label: modern house
   bounds: {width: 27, height: 16, depth: 21}
   parts:

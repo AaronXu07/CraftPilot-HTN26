@@ -5,6 +5,8 @@ description: >
   posts, and brick walls on a stone brick base.
 tags: [mansion, manor, estate, grand, victorian, georgian, brick, wings, symmetric, large, house]
 program:
+  design: >
+    A grand symmetric brick mansion: a rectangular three-storey central block as the root under a hip roof at pitch 1.5, with two-storey hip-roofed wings at pitch 1.0 attached to its west and east sides. A cupola on the ridge, a balcony over the portal, four dormers, two chimneys and a porch. Brick walls with stone brick trim and base, dark oak bay framing and deepslate tile roofs.
   label: mansion
   bounds: {width: 45, height: 34, depth: 25}
   parts:

@@ -3,6 +3,8 @@ description: >
   hay accents, and a low stone footing. Spruce trim and a dark roof.
 tags: [barn, farm, agricultural, gambrel, silo, rural, stable, shed, red, wooden]
 program:
+  design: >
+    A red timber barn: one rectangular two-storey barn as the root with a gambrel roof at pitch 1.0, and a round five-floor silo attached to its east side under a dome. Painted wood means red concrete and red terracotta walls with spruce framing, a spruce roof, an andesite and granite base and hay as the accent. The dormer on the roof and the cupola on the ridge give it a farm silhouette.
   label: barn
   bounds: {width: 29, height: 26, depth: 21}
   parts:

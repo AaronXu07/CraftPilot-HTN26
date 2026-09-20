@@ -4,6 +4,8 @@ description: >
   walls, a red accent, a spire finial, and a stone plinth with lamp posts on the approach.
 tags: [temple, shrine, japanese, chinese, asian, hall, tea, house, dojo, pavilion, zen, curved, roof]
 program:
+  design: >
+    A single-storey East Asian temple hall: one wide rectangular hall as the root under a hip roof at pitch 1.0 with a concave profile, curled eaves and a spire finial, double doors for the entrance and tudor framing on the walls. White concrete and calcite walls with dark oak framing, a dark oak and spruce roof, an andesite base and red concrete accents.
   label: east asian temple hall
   bounds: {width: 29, height: 22, depth: 23}
   parts:

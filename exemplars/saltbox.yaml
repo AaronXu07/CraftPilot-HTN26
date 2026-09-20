@@ -4,6 +4,8 @@ description: >
   brick chimney with smoke, stone window surrounds, shutters, window boxes, and lamp posts.
 tags: [saltbox, colonial, new, england, clapboard, house, farmhouse, american, asymmetric, gable]
 program:
+  design: >
+    A New England saltbox: one rectangular two-storey house under a gable at pitch 1.5 whose ridge is offset toward one eave so the back slope runs long and low, with a single chimney. Clapboard walls are birch planks with spruce corner framing, a dark oak and spruce roof, a stone brick and granite base, brick secondary and dark oak accents.
   label: saltbox house
   bounds: {width: 23, height: 24, depth: 19}
   parts:

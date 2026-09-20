@@ -114,6 +114,8 @@ public class CopilotClientMod implements ClientModInitializer {
         body.addProperty("ghost", true);
         PendingBuild.clearPlan();
         PendingBuild.arm("/build", body, "\"" + text + "\"", 0, 0, 0);
+        // Start composing now, while the player aims: the G press then finds the answer already cached.
+        ServiceClient.postQuiet("/prepare", body.deepCopy());
         return 1;
     }
 

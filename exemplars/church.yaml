@@ -5,6 +5,8 @@ description: >
   roof.
 tags: [church, chapel, cathedral, nave, steeple, bell, tower, spire, religious, gothic, stone]
 program:
+  design: >
+    A village church: a long rectangular nave as the root under a steep gable at pitch 2.0, a square six-floor bell tower on its west end rising well above the nave with a spire, and a polygonal one-storey apse on the east end under a cone. Buttresses along the base, tall arched windows. Stone walls are cobblestone and stone bricks on a tuff brick base with a dark spruce roof.
   label: church
   bounds: {width: 41, height: 44, depth: 19}
   parts:

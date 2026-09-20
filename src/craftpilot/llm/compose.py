@@ -31,6 +31,17 @@ def _few_shot(exemplars: list[Exemplar]) -> list[dict[str, str]]:
     return msgs
 
 
+_EFFORTS = ("minimal", "low", "medium", "high")
+
+
+def _efforts(first: str) -> list[str]:
+    """The configured effort, then one level up as the retry for an answer that failed validation."""
+    if first not in _EFFORTS:
+        first = "low"
+    i = _EFFORTS.index(first)
+    return list(dict.fromkeys([first, _EFFORTS[min(i + 1, len(_EFFORTS) - 1)]]))
+
+
 def _user_message(text: str, bounds_hint: Bounds | None) -> str:
     if bounds_hint is not None:
         return (f"{text}\n\nThe player selected a bounding box of {bounds_hint.width} wide, "
@@ -52,25 +63,34 @@ def compose(text: str, use_llm: bool = True, bounds_hint: Bounds | None = None,
             deployments = [SETTINGS.compose_deployment]
             if SETTINGS.edit_deployment and SETTINGS.edit_deployment != SETTINGS.compose_deployment:
                 deployments.append(SETTINGS.edit_deployment)
-            out = meta = None
-            used = None
-            for dep in deployments:
+            program = None
+            for effort in _efforts(SETTINGS.compose_effort):
+                out = meta = None
+                used = None
+                for dep in deployments:
+                    try:
+                        out, meta = structured_call(dep, system_prompt(), messages, response_format(),
+                                                    effort=effort, tag="compose")
+                        used = dep
+                        break
+                    except DeploymentUnavailable as exc:
+                        notes.append(f"{exc}; trying the next deployment.")
+                if out is None:
+                    raise RuntimeError("no usable Azure deployment")
                 try:
-                    out, meta = structured_call(dep, system_prompt(), messages, response_format(),
-                                                effort="medium", tag="compose")
-                    used = dep
-                    break
-                except DeploymentUnavailable as exc:
-                    notes.append(f"{exc}; trying the next deployment.")
-            if out is None:
-                raise RuntimeError("no usable Azure deployment")
-            program = BuildProgram.model_validate_json(out)
-            source = "llm-cache" if meta.get("cached") else "llm"
-            if meta.get("seconds"):
-                notes.append(f"Composed by {used} in {meta['seconds']}s.")
-            return program, source, notes
-        except (ValidationError, json.JSONDecodeError) as exc:
-            notes.append(f"LLM output did not validate ({type(exc).__name__}); used the offline fallback.")
+                    program = BuildProgram.model_validate_json(out)
+                except (ValidationError, json.JSONDecodeError) as exc:
+                    # a cut-off or malformed answer: think harder once before giving up on the model
+                    notes.append(f"LLM output at effort {effort} did not validate ({type(exc).__name__}).")
+                    continue
+                break
+            if program is None:
+                notes.append("Used the offline fallback.")
+            else:
+                source = "llm-cache" if meta.get("cached") else "llm"
+                if meta.get("seconds"):
+                    notes.append(f"Composed by {used} in {meta['seconds']}s (effort {effort}).")
+                return program, source, notes
         except Exception as exc:  # network, auth, timeout
             notes.append(f"LLM call failed ({type(exc).__name__}: {str(exc)[:120]}); used the offline fallback.")
     elif use_llm:

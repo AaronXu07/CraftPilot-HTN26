@@ -380,14 +380,25 @@ the catalog before export.
 
 | Step | Deployment | Effort | When |
 |---|---|---|---|
-| Compose `BuildProgram` | `gpt-5.4` | `medium` | Every new `/build`. This is architectural reasoning plus palette design in one call. |
+| Compose `BuildProgram` | `gpt-5.4-mini` | `low` (`CRAFTPILOT_COMPOSE_EFFORT`) | Every new `/build`. Architectural reasoning plus palette design in one call, ~8 s. |
 | Edit program | `gpt-5.4-mini` | `low` | "same but taller", "make the roof red": patch the previous program. |
-| Critique (optional, M6) | `gpt-5.4` with the preview PNG | `medium` | Score and suggest program edits from a rendered preview. |
+| Route (unsure cases only) | `gpt-5.4-mini` | `low` | Building or object, when the word rules are not confident (section 9.1). |
 
 Palette composition is folded into the compose call because palette choices
 depend on the form (a pagoda roof wants a different family than a gable) and
 one call is simpler than two. Deployment names come from
-`AZURE_OPENAI_COMPOSE_DEPLOYMENT` and `AZURE_OPENAI_EDIT_DEPLOYMENT`.
+`AZURE_OPENAI_COMPOSE_DEPLOYMENT` and `AZURE_OPENAI_EDIT_DEPLOYMENT`
+(`AZURE_OPENAI_DEPLOYMENT` is accepted for both).
+
+Why `low` works: with strict structured outputs the model emits keys in schema order, so `BuildProgram.design`
+- three or four sentences deciding the massing, roofs, materials and where each named feature goes - is
+written *first* and the rest of the program follows from it. That visible plan (~100 tokens) replaces the
+thousands of hidden reasoning tokens `medium` spent (6k-16k per call, 30-100 s) for programs of the same
+fidelity; every exemplar carries a `design` so the few-shot turns show it filled. An answer that fails
+validation is retried one effort level up before the offline fallback. The service also starts composing the
+moment the mod sees `/build <text>` (`POST /prepare`, single-flight with the real request), so the call
+overlaps the seconds the player spends aiming, and the G commit places the grid rendered for the hologram
+instead of generating it again.
 
 ### 6.2 Client
 
@@ -397,7 +408,7 @@ resp = client.responses.parse(
     model=COMPOSE_DEPLOYMENT,
     input=[{"role": "system", "content": SYSTEM}, *exemplar_messages, {"role": "user", "content": text}],
     text_format=BuildProgram,
-    reasoning={"effort": "medium"},
+    reasoning={"effort": SETTINGS.compose_effort},
 )
 program = resp.output_parsed
 ```

@@ -4,6 +4,8 @@ description: >
   small stone keeper's hut attached at the base.
 tags: [lighthouse, tower, coastal, beacon, round, tall, cylinder, striped, sea, harbour]
 program:
+  design: >
+    A coastal lighthouse: a round seven-floor tower as the root that tapers under a copper cone, with a glazed gallery ring around the top storey as the lantern room, and a one-storey keeper's hut with a shallow gable at pitch 0.5 attached to its east side. Round porthole windows. The tower is painted in white and red horizontal bands of concrete on a cobbled deepslate base.
   label: lighthouse
   bounds: {width: 19, height: 44, depth: 15}
   parts:

@@ -14,6 +14,7 @@ from craftpilot.config import SETTINGS
 from craftpilot.program.model import Bounds, BuildProgram
 
 if TYPE_CHECKING:
+    from craftpilot.grid.semantic import SemanticGrid
     from craftpilot.place.placer import PlaceContext
 
 app = typer.Typer(add_completion=False, help="Procedural Minecraft buildings from natural language.")
@@ -34,8 +35,10 @@ def _slug(text: str) -> str:
 
 def run_build(program: BuildProgram, bounds: Bounds | None, seed: int, out: Path | None, preview: bool,
               author: str, source_text: str, extra_notes: list[str], facing: str = "south",
-              place_ctx: PlaceContext | None = None) -> dict:
-    """Generate, write the schematic, and (with ``place_ctx``) stream the blocks into the running game."""
+              place_ctx: PlaceContext | None = None, grid: SemanticGrid | None = None) -> dict:
+    """Generate, write the schematic, and (with ``place_ctx``) stream the blocks into the running game.
+    ``grid`` skips generation: the service passes the grid it already rendered for the hologram (same
+    program, bounds and seed, so the build is the preview block for block)."""
     from craftpilot.engine.pipeline import generate
     from craftpilot.export.litematic import save
     from craftpilot.grid.ops import quarter_turns_for_facing, rotate_cw
@@ -51,7 +54,8 @@ def run_build(program: BuildProgram, bounds: Bounds | None, seed: int, out: Path
     if place_ctx is not None:
         notes += _outline_bounds(place_ctx, bounds, facing)
     t0 = time.time()
-    grid = generate(program, bounds, seed)
+    if grid is None:
+        grid = generate(program, bounds, seed)
     if facing in ("north", "east", "west"):
         rotate_cw(grid, quarter_turns_for_facing(facing))
     gen_s = time.time() - t0

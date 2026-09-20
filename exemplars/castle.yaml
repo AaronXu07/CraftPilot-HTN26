@@ -5,6 +5,8 @@ description: >
   bricks at the top.
 tags: [castle, keep, fortress, medieval, stone, towers, crenellations, battlements, stronghold, fort]
 program:
+  design: >
+    A medieval stone keep: a rectangular four-floor keep as the root under a crenellated parapet with machicolations, and a two-storey parapet gatehouse attached to its south side for the entrance. Four round corner towers rise above the roof and eight buttresses step the walls; arrow slits instead of windows. Masonry is cobblestone, stone bricks and andesite with a cobbled deepslate base and deepslate tile roofs.
   label: castle keep
   bounds: {width: 41, height: 40, depth: 41}
   parts:

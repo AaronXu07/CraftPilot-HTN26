@@ -4,6 +4,8 @@ description: >
   weathering into clean stone bricks.
 tags: [watchtower, tower, lookout, guard, octagonal, stone, fortification, keep, turret, outpost]
 program:
+  design: >
+    A tall octagonal stone watchtower: one ngon five-floor tower as the root under a crenellated parapet, with a flagpole on top and four buttresses at the base. Slit windows. Masonry is cobblestone, stone bricks and polished andesite with a cobbled deepslate and mossy cobblestone base, spruce framing and trim and a red banner accent.
   label: watchtower
   bounds: {width: 17, height: 32, depth: 17}
   parts:
