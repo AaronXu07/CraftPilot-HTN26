@@ -1,131 +1,0 @@
-{"event": "listening", "port": 7790}
-{"event": "loaded", "seconds": 11.9, "device": "mps"}
-{"event": "warm", "seconds": 1.0}
-{"event": "listening", "port": 7790}
-{"event": "loaded", "seconds": 3.7, "device": "mps"}
-{"event": "warm", "seconds": 0.9}
-{"event": "listening", "port": 7790}
-{"event": "loaded", "seconds": 3.6, "device": "mps"}
-{"event": "warm", "seconds": 0.8}
-{"event": "listening", "port": 7790}
-{"event": "loaded", "seconds": 3.2, "device": "mps"}
-{"event": "warm", "seconds": 0.7}
-{"event": "listening", "port": 7790}
-{"event": "loaded", "seconds": 3.5, "device": "mps"}
-{"event": "rembg", "seconds": 0.8}
-{"event": "warm", "seconds": 0.8}
-{"event": "listening", "port": 7790}
-{"event": "loaded", "seconds": 3.2, "device": "mps"}
-{"event": "rembg", "seconds": 0.6}
-{"event": "warm", "seconds": 0.6}
-2026-09-19 19:19:18,315 - hy3dgen.shapgen - INFO - Try to load model from local path: /Users/aaronxu/.cache/hy3dgen/tencent/Hunyuan3D-2mini/hunyuan3d-dit-v2-mini-turbo
-2026-09-19 19:19:18,315 - hy3dgen.shapgen - INFO - Model path not exists, try to download from huggingface
-Fetching 3 files:   0%|          | 0/3 [00:00<?, ?it/s]Fetching 3 files: 100%|██████████| 3/3 [00:00<00:00, 3236.35it/s]
-2026-09-19 19:19:18,405 - hy3dgen.shapgen - INFO - Loading model from /Users/aaronxu/.cache/huggingface/hub/models--tencent--Hunyuan3D-2mini/snapshots/f90a0f7df7d5e6f71109cf333f6a95a0ae3194a6/hunyuan3d-dit-v2-mini-turbo/model.fp16.safetensors
-2026-09-19 19:19:33,181 - hy3dgen.shapgen - INFO - Try to load model from local path: /Users/aaronxu/.cache/hy3dgen/tencent/Hunyuan3D-2mini/hunyuan3d-vae-v2-mini-turbo
-2026-09-19 19:19:33,182 - hy3dgen.shapgen - INFO - Model path not exists, try to download from huggingface
-PointCrossAttentionEncoder INFO: pc_sharpedge_size is given, using pc_size=5120, pc_sharpedge_size=5120
-Fetching 3 files:   0%|          | 0/3 [00:00<?, ?it/s]Fetching 3 files: 100%|██████████| 3/3 [00:00<00:00, 5338.53it/s]
-2026-09-19 19:19:33,236 - hy3dgen.shapgen - INFO - Loading model from /Users/aaronxu/.cache/huggingface/hub/models--tencent--Hunyuan3D-2mini/snapshots/f90a0f7df7d5e6f71109cf333f6a95a0ae3194a6/hunyuan3d-vae-v2-mini-turbo/model.fp16.safetensors
-PointCrossAttentionEncoder INFO: pc_sharpedge_size is given, using pc_size=5120, pc_sharpedge_size=5120
-{"event": "hunyuan_failed", "error": "zero-size array to reduction operation minimum which has no identity"}
-/Users/aaronxu/.local/share/uv/python/cpython-3.11.16-macos-aarch64-none/lib/python3.11/multiprocessing/resource_tracker.py:254: UserWarning: resource_tracker: There appear to be 1 leaked semaphore objects to clean up at shutdown
-  warnings.warn('resource_tracker: There appear to be %d '
-{"event": "listening", "port": 7790}
-{"event": "loaded", "seconds": 3.1, "device": "mps"}
-{"event": "rembg", "seconds": 0.6}
-{"event": "warm", "seconds": 0.6}
-2026-09-19 19:21:43,631 - hy3dgen.shapgen - INFO - Try to load model from local path: /Users/aaronxu/.cache/hy3dgen/tencent/Hunyuan3D-2mini/hunyuan3d-dit-v2-mini-turbo
-2026-09-19 19:21:43,631 - hy3dgen.shapgen - INFO - Model path not exists, try to download from huggingface
-Fetching 3 files:   0%|          | 0/3 [00:00<?, ?it/s]Fetching 3 files: 100%|██████████| 3/3 [00:00<00:00, 3461.60it/s]
-2026-09-19 19:21:43,695 - hy3dgen.shapgen - INFO - Loading model from /Users/aaronxu/.cache/huggingface/hub/models--tencent--Hunyuan3D-2mini/snapshots/f90a0f7df7d5e6f71109cf333f6a95a0ae3194a6/hunyuan3d-dit-v2-mini-turbo/model.fp16.safetensors
-2026-09-19 19:21:57,474 - hy3dgen.shapgen - INFO - Try to load model from local path: /Users/aaronxu/.cache/hy3dgen/tencent/Hunyuan3D-2mini/hunyuan3d-vae-v2-mini-turbo
-2026-09-19 19:21:57,474 - hy3dgen.shapgen - INFO - Model path not exists, try to download from huggingface
-PointCrossAttentionEncoder INFO: pc_sharpedge_size is given, using pc_size=5120, pc_sharpedge_size=5120
-Fetching 3 files:   0%|          | 0/3 [00:00<?, ?it/s]Fetching 3 files: 100%|██████████| 3/3 [00:00<00:00, 6213.78it/s]
-2026-09-19 19:21:57,523 - hy3dgen.shapgen - INFO - Loading model from /Users/aaronxu/.cache/huggingface/hub/models--tencent--Hunyuan3D-2mini/snapshots/f90a0f7df7d5e6f71109cf333f6a95a0ae3194a6/hunyuan3d-vae-v2-mini-turbo/model.fp16.safetensors
-PointCrossAttentionEncoder INFO: pc_sharpedge_size is given, using pc_size=5120, pc_sharpedge_size=5120
-Diffusion Sampling::   0%|          | 0/1 [00:00<?, ?it/s]Diffusion Sampling:: 100%|██████████| 1/1 [00:01<00:00,  1.69s/it]Diffusion Sampling:: 100%|██████████| 1/1 [00:01<00:00,  1.69s/it]
-2026-09-19 19:22:03,403 - hy3dgen.shapgen - INFO - FlashVDMVolumeDecoding Resolution: [63]
-FlashVDM Volume Decoding:   0%|          | 0/64 [00:00<?, ?it/s]FlashVDM Volume Decoding:   2%|▏         | 1/64 [00:00<00:30,  2.09it/s]FlashVDM Volume Decoding: 100%|██████████| 64/64 [00:00<00:00, 129.32it/s]
-{"event": "hunyuan", "seconds": 21.2}
-Diffusion Sampling::   0%|          | 0/5 [00:00<?, ?it/s]Diffusion Sampling::  20%|██        | 1/5 [00:01<00:04,  1.22s/it]Diffusion Sampling::  60%|██████    | 3/5 [00:02<00:01,  1.30it/s]Diffusion Sampling::  80%|████████  | 4/5 [00:03<00:00,  1.09it/s]Diffusion Sampling:: 100%|██████████| 5/5 [00:04<00:00,  1.01s/it]Diffusion Sampling:: 100%|██████████| 5/5 [00:04<00:00,  1.03it/s]
-2026-09-19 19:22:13,333 - hy3dgen.shapgen - INFO - FlashVDMVolumeDecoding Resolution: [63, 126, 252]
-FlashVDM Volume Decoding:   0%|          | 0/64 [00:00<?, ?it/s]FlashVDM Volume Decoding: 100%|██████████| 64/64 [00:00<00:00, 3844.29it/s]
-Diffusion Sampling::   0%|          | 0/5 [00:00<?, ?it/s]Diffusion Sampling::  20%|██        | 1/5 [00:01<00:04,  1.22s/it]Diffusion Sampling::  60%|██████    | 3/5 [00:02<00:01,  1.31it/s]Diffusion Sampling::  80%|████████  | 4/5 [00:03<00:00,  1.09it/s]Diffusion Sampling:: 100%|██████████| 5/5 [00:04<00:00,  1.01s/it]Diffusion Sampling:: 100%|██████████| 5/5 [00:04<00:00,  1.03it/s]
-2026-09-19 19:22:26,868 - hy3dgen.shapgen - INFO - FlashVDMVolumeDecoding Resolution: [63, 126, 252]
-FlashVDM Volume Decoding:   0%|          | 0/64 [00:00<?, ?it/s]FlashVDM Volume Decoding: 100%|██████████| 64/64 [00:00<00:00, 3239.86it/s]
-Diffusion Sampling::   0%|          | 0/5 [00:00<?, ?it/s]Diffusion Sampling::  20%|██        | 1/5 [00:01<00:04,  1.22s/it]Diffusion Sampling::  60%|██████    | 3/5 [00:02<00:01,  1.31it/s]Diffusion Sampling::  80%|████████  | 4/5 [00:03<00:00,  1.09it/s]Diffusion Sampling:: 100%|██████████| 5/5 [00:04<00:00,  1.01s/it]Diffusion Sampling:: 100%|██████████| 5/5 [00:04<00:00,  1.03it/s]
-2026-09-19 19:23:43,115 - hy3dgen.shapgen - INFO - FlashVDMVolumeDecoding Resolution: [63, 126, 252]
-FlashVDM Volume Decoding:   0%|          | 0/64 [00:00<?, ?it/s]FlashVDM Volume Decoding: 100%|██████████| 64/64 [00:00<00:00, 3478.86it/s]
-Diffusion Sampling::   0%|          | 0/5 [00:00<?, ?it/s]Diffusion Sampling::  20%|██        | 1/5 [00:01<00:04,  1.22s/it]Diffusion Sampling::  60%|██████    | 3/5 [00:02<00:01,  1.30it/s]Diffusion Sampling::  80%|████████  | 4/5 [00:03<00:00,  1.09it/s]Diffusion Sampling:: 100%|██████████| 5/5 [00:04<00:00,  1.01s/it]Diffusion Sampling:: 100%|██████████| 5/5 [00:04<00:00,  1.03it/s]
-2026-09-19 19:23:58,538 - hy3dgen.shapgen - INFO - FlashVDMVolumeDecoding Resolution: [63, 126, 252]
-FlashVDM Volume Decoding:   0%|          | 0/64 [00:00<?, ?it/s]FlashVDM Volume Decoding: 100%|██████████| 64/64 [00:00<00:00, 3307.04it/s]
-Diffusion Sampling::   0%|          | 0/5 [00:00<?, ?it/s]Diffusion Sampling::  20%|██        | 1/5 [00:01<00:04,  1.23s/it]Diffusion Sampling::  60%|██████    | 3/5 [00:02<00:01,  1.30it/s]Diffusion Sampling::  80%|████████  | 4/5 [00:03<00:00,  1.09it/s]Diffusion Sampling:: 100%|██████████| 5/5 [00:04<00:00,  1.02s/it]Diffusion Sampling:: 100%|██████████| 5/5 [00:04<00:00,  1.03it/s]
-2026-09-19 19:24:13,455 - hy3dgen.shapgen - INFO - FlashVDMVolumeDecoding Resolution: [63, 126, 252]
-FlashVDM Volume Decoding:   0%|          | 0/64 [00:00<?, ?it/s]FlashVDM Volume Decoding: 100%|██████████| 64/64 [00:00<00:00, 3336.43it/s]
-/Users/aaronxu/.local/share/uv/python/cpython-3.11.16-macos-aarch64-none/lib/python3.11/multiprocessing/resource_tracker.py:254: UserWarning: resource_tracker: There appear to be 1 leaked semaphore objects to clean up at shutdown
-  warnings.warn('resource_tracker: There appear to be %d '
-{"event": "listening", "port": 7790}
-{"event": "loaded", "seconds": 3.2, "device": "mps"}
-{"event": "rembg", "seconds": 0.6}
-{"event": "warm", "seconds": 0.6}
-2026-09-19 19:28:51,237 - hy3dgen.shapgen - INFO - Try to load model from local path: /Users/aaronxu/.cache/hy3dgen/tencent/Hunyuan3D-2mini/hunyuan3d-dit-v2-mini-turbo
-2026-09-19 19:28:51,237 - hy3dgen.shapgen - INFO - Model path not exists, try to download from huggingface
-Fetching 3 files:   0%|          | 0/3 [00:00<?, ?it/s]Fetching 3 files: 100%|██████████| 3/3 [00:00<00:00, 2841.03it/s]
-2026-09-19 19:28:51,397 - hy3dgen.shapgen - INFO - Loading model from /Users/aaronxu/.cache/huggingface/hub/models--tencent--Hunyuan3D-2mini/snapshots/f90a0f7df7d5e6f71109cf333f6a95a0ae3194a6/hunyuan3d-dit-v2-mini-turbo/model.fp16.safetensors
-2026-09-19 19:29:06,277 - hy3dgen.shapgen - INFO - Try to load model from local path: /Users/aaronxu/.cache/hy3dgen/tencent/Hunyuan3D-2mini/hunyuan3d-vae-v2-mini-turbo
-2026-09-19 19:29:06,277 - hy3dgen.shapgen - INFO - Model path not exists, try to download from huggingface
-PointCrossAttentionEncoder INFO: pc_sharpedge_size is given, using pc_size=5120, pc_sharpedge_size=5120
-Fetching 3 files:   0%|          | 0/3 [00:00<?, ?it/s]Fetching 3 files: 100%|██████████| 3/3 [00:00<00:00, 5562.74it/s]
-2026-09-19 19:29:06,328 - hy3dgen.shapgen - INFO - Loading model from /Users/aaronxu/.cache/huggingface/hub/models--tencent--Hunyuan3D-2mini/snapshots/f90a0f7df7d5e6f71109cf333f6a95a0ae3194a6/hunyuan3d-vae-v2-mini-turbo/model.fp16.safetensors
-PointCrossAttentionEncoder INFO: pc_sharpedge_size is given, using pc_size=5120, pc_sharpedge_size=5120
-Diffusion Sampling::   0%|          | 0/1 [00:00<?, ?it/s]Diffusion Sampling:: 100%|██████████| 1/1 [00:01<00:00,  1.23s/it]Diffusion Sampling:: 100%|██████████| 1/1 [00:01<00:00,  1.23s/it]
-2026-09-19 19:29:11,250 - hy3dgen.shapgen - INFO - FlashVDMVolumeDecoding Resolution: [63]
-FlashVDM Volume Decoding:   0%|          | 0/64 [00:00<?, ?it/s]FlashVDM Volume Decoding: 100%|██████████| 64/64 [00:00<00:00, 2862.24it/s]
-{"event": "hunyuan", "seconds": 20.9}
-Diffusion Sampling::   0%|          | 0/5 [00:00<?, ?it/s]Diffusion Sampling::  20%|██        | 1/5 [00:01<00:04,  1.22s/it]Diffusion Sampling::  60%|██████    | 3/5 [00:02<00:01,  1.31it/s]Diffusion Sampling::  80%|████████  | 4/5 [00:03<00:00,  1.09it/s]Diffusion Sampling:: 100%|██████████| 5/5 [00:04<00:00,  1.01s/it]Diffusion Sampling:: 100%|██████████| 5/5 [00:04<00:00,  1.03it/s]
-2026-09-19 19:29:20,140 - hy3dgen.shapgen - INFO - FlashVDMVolumeDecoding Resolution: [63, 126, 252]
-FlashVDM Volume Decoding:   0%|          | 0/64 [00:00<?, ?it/s]FlashVDM Volume Decoding: 100%|██████████| 64/64 [00:00<00:00, 3689.58it/s]
-Diffusion Sampling::   0%|          | 0/5 [00:00<?, ?it/s]Diffusion Sampling::  20%|██        | 1/5 [00:01<00:04,  1.22s/it]Diffusion Sampling::  60%|██████    | 3/5 [00:02<00:01,  1.30it/s]Diffusion Sampling::  80%|████████  | 4/5 [00:04<00:01,  1.16s/it]Diffusion Sampling:: 100%|██████████| 5/5 [00:20<00:00,  6.13s/it]Diffusion Sampling:: 100%|██████████| 5/5 [00:20<00:00,  4.10s/it]
-2026-09-19 19:29:52,282 - hy3dgen.shapgen - INFO - FlashVDMVolumeDecoding Resolution: [63, 126, 252]
-FlashVDM Volume Decoding:   0%|          | 0/64 [00:00<?, ?it/s]FlashVDM Volume Decoding: 100%|██████████| 64/64 [00:00<00:00, 3228.72it/s]
-Diffusion Sampling::   0%|          | 0/5 [00:00<?, ?it/s]Diffusion Sampling::  20%|██        | 1/5 [00:01<00:05,  1.34s/it]Diffusion Sampling::  60%|██████    | 3/5 [00:02<00:01,  1.25it/s]Diffusion Sampling::  80%|████████  | 4/5 [00:03<00:00,  1.06it/s]Diffusion Sampling:: 100%|██████████| 5/5 [00:04<00:00,  1.03s/it]Diffusion Sampling:: 100%|██████████| 5/5 [00:04<00:00,  1.00it/s]
-2026-09-19 19:34:23,701 - hy3dgen.shapgen - INFO - FlashVDMVolumeDecoding Resolution: [63, 126, 252]
-FlashVDM Volume Decoding:   0%|          | 0/64 [00:00<?, ?it/s]FlashVDM Volume Decoding: 100%|██████████| 64/64 [00:00<00:00, 2817.78it/s]
-Diffusion Sampling::   0%|          | 0/5 [00:00<?, ?it/s]Diffusion Sampling::  20%|██        | 1/5 [00:01<00:04,  1.22s/it]Diffusion Sampling::  60%|██████    | 3/5 [00:02<00:01,  1.30it/s]Diffusion Sampling::  80%|████████  | 4/5 [00:03<00:00,  1.08it/s]Diffusion Sampling:: 100%|██████████| 5/5 [00:04<00:00,  1.02s/it]Diffusion Sampling:: 100%|██████████| 5/5 [00:04<00:00,  1.03it/s]
-2026-09-19 19:34:34,327 - hy3dgen.shapgen - INFO - FlashVDMVolumeDecoding Resolution: [63, 126, 252]
-FlashVDM Volume Decoding:   0%|          | 0/64 [00:00<?, ?it/s]FlashVDM Volume Decoding: 100%|██████████| 64/64 [00:00<00:00, 3133.11it/s]
-Diffusion Sampling::   0%|          | 0/5 [00:00<?, ?it/s]Diffusion Sampling::  20%|██        | 1/5 [00:01<00:04,  1.23s/it]Diffusion Sampling::  60%|██████    | 3/5 [00:02<00:01,  1.29it/s]Diffusion Sampling::  80%|████████  | 4/5 [00:03<00:00,  1.08it/s]Diffusion Sampling:: 100%|██████████| 5/5 [00:04<00:00,  1.02s/it]Diffusion Sampling:: 100%|██████████| 5/5 [00:04<00:00,  1.02it/s]
-2026-09-19 19:34:45,187 - hy3dgen.shapgen - INFO - FlashVDMVolumeDecoding Resolution: [63, 126, 252]
-FlashVDM Volume Decoding:   0%|          | 0/64 [00:00<?, ?it/s]FlashVDM Volume Decoding: 100%|██████████| 64/64 [00:00<00:00, 2977.46it/s]
-Diffusion Sampling::   0%|          | 0/5 [00:00<?, ?it/s]Diffusion Sampling::  20%|██        | 1/5 [00:01<00:04,  1.24s/it]Diffusion Sampling::  60%|██████    | 3/5 [00:02<00:01,  1.29it/s]Diffusion Sampling::  80%|████████  | 4/5 [00:03<00:00,  1.08it/s]Diffusion Sampling:: 100%|██████████| 5/5 [00:04<00:00,  1.02s/it]Diffusion Sampling:: 100%|██████████| 5/5 [00:04<00:00,  1.02it/s]
-2026-09-19 19:34:55,892 - hy3dgen.shapgen - INFO - FlashVDMVolumeDecoding Resolution: [95, 190]
-FlashVDM Volume Decoding:   0%|          | 0/64 [00:00<?, ?it/s]FlashVDM Volume Decoding: 100%|██████████| 64/64 [00:00<00:00, 1522.98it/s]
-Diffusion Sampling::   0%|          | 0/5 [00:00<?, ?it/s]Diffusion Sampling::  20%|██        | 1/5 [00:01<00:06,  1.64s/it]Diffusion Sampling::  60%|██████    | 3/5 [00:02<00:01,  1.10it/s]Diffusion Sampling::  80%|████████  | 4/5 [00:04<00:01,  1.03s/it]Diffusion Sampling:: 100%|██████████| 5/5 [00:05<00:00,  1.11s/it]Diffusion Sampling:: 100%|██████████| 5/5 [00:05<00:00,  1.10s/it]
-2026-09-19 19:48:10,747 - hy3dgen.shapgen - INFO - FlashVDMVolumeDecoding Resolution: [63, 126, 252]
-FlashVDM Volume Decoding:   0%|          | 0/64 [00:00<?, ?it/s]FlashVDM Volume Decoding: 100%|██████████| 64/64 [00:00<00:00, 767.80it/s]
-Diffusion Sampling::   0%|          | 0/5 [00:00<?, ?it/s]Diffusion Sampling::  20%|██        | 1/5 [00:01<00:06,  1.66s/it]Diffusion Sampling::  60%|██████    | 3/5 [00:02<00:01,  1.09it/s]Diffusion Sampling::  80%|████████  | 4/5 [00:04<00:01,  1.06s/it]Diffusion Sampling:: 100%|██████████| 5/5 [00:05<00:00,  1.14s/it]Diffusion Sampling:: 100%|██████████| 5/5 [00:05<00:00,  1.12s/it]
-2026-09-19 19:49:24,016 - hy3dgen.shapgen - INFO - FlashVDMVolumeDecoding Resolution: [63, 126, 252]
-FlashVDM Volume Decoding:   0%|          | 0/64 [00:00<?, ?it/s]FlashVDM Volume Decoding:  30%|██▉       | 19/64 [00:00<00:00, 188.75it/s]FlashVDM Volume Decoding: 100%|██████████| 64/64 [00:00<00:00, 336.76it/s]
-Diffusion Sampling::   0%|          | 0/5 [00:00<?, ?it/s]Diffusion Sampling::  20%|██        | 1/5 [00:01<00:06,  1.59s/it]Diffusion Sampling::  60%|██████    | 3/5 [00:02<00:01,  1.11it/s]Diffusion Sampling::  80%|████████  | 4/5 [00:04<00:01,  1.03s/it]Diffusion Sampling:: 100%|██████████| 5/5 [00:05<00:00,  1.12s/it]Diffusion Sampling:: 100%|██████████| 5/5 [00:05<00:00,  1.09s/it]
-2026-09-19 19:50:29,964 - hy3dgen.shapgen - INFO - FlashVDMVolumeDecoding Resolution: [63, 126, 252]
-FlashVDM Volume Decoding:   0%|          | 0/64 [00:00<?, ?it/s]FlashVDM Volume Decoding: 100%|██████████| 64/64 [00:00<00:00, 682.04it/s]
-Diffusion Sampling::   0%|          | 0/5 [00:00<?, ?it/s]Diffusion Sampling::  20%|██        | 1/5 [00:01<00:06,  1.59s/it]Diffusion Sampling::  60%|██████    | 3/5 [00:02<00:01,  1.11it/s]Diffusion Sampling::  80%|████████  | 4/5 [00:04<00:01,  1.03s/it]Diffusion Sampling:: 100%|██████████| 5/5 [00:05<00:00,  1.12s/it]Diffusion Sampling:: 100%|██████████| 5/5 [00:05<00:00,  1.10s/it]
-2026-09-19 19:53:49,761 - hy3dgen.shapgen - INFO - FlashVDMVolumeDecoding Resolution: [63, 126, 252]
-FlashVDM Volume Decoding:   0%|          | 0/64 [00:00<?, ?it/s]FlashVDM Volume Decoding:  89%|████████▉ | 57/64 [00:00<00:00, 560.79it/s]FlashVDM Volume Decoding: 100%|██████████| 64/64 [00:00<00:00, 566.61it/s]
-Diffusion Sampling::   0%|          | 0/5 [00:00<?, ?it/s]Diffusion Sampling::  20%|██        | 1/5 [00:01<00:06,  1.69s/it]Diffusion Sampling::  60%|██████    | 3/5 [00:03<00:01,  1.07it/s]Diffusion Sampling::  80%|████████  | 4/5 [00:04<00:01,  1.05s/it]Diffusion Sampling:: 100%|██████████| 5/5 [00:05<00:00,  1.13s/it]Diffusion Sampling:: 100%|██████████| 5/5 [00:05<00:00,  1.12s/it]
-2026-09-19 19:55:42,201 - hy3dgen.shapgen - INFO - FlashVDMVolumeDecoding Resolution: [63, 126, 252]
-FlashVDM Volume Decoding:   0%|          | 0/64 [00:00<?, ?it/s]FlashVDM Volume Decoding:  75%|███████▌  | 48/64 [00:00<00:00, 472.71it/s]FlashVDM Volume Decoding: 100%|██████████| 64/64 [00:00<00:00, 517.17it/s]
-Diffusion Sampling::   0%|          | 0/5 [00:00<?, ?it/s]Diffusion Sampling::  20%|██        | 1/5 [00:01<00:07,  1.80s/it]Diffusion Sampling::  60%|██████    | 3/5 [00:03<00:01,  1.05it/s]Diffusion Sampling::  80%|████████  | 4/5 [00:04<00:01,  1.08s/it]Diffusion Sampling:: 100%|██████████| 5/5 [00:05<00:00,  1.14s/it]Diffusion Sampling:: 100%|██████████| 5/5 [00:05<00:00,  1.14s/it]
-2026-09-19 20:03:54,697 - hy3dgen.shapgen - INFO - FlashVDMVolumeDecoding Resolution: [63, 126, 252]
-FlashVDM Volume Decoding:   0%|          | 0/64 [00:00<?, ?it/s]FlashVDM Volume Decoding:  75%|███████▌  | 48/64 [00:00<00:00, 475.59it/s]FlashVDM Volume Decoding: 100%|██████████| 64/64 [00:00<00:00, 482.29it/s]
-Diffusion Sampling::   0%|          | 0/5 [00:00<?, ?it/s]Diffusion Sampling::  20%|██        | 1/5 [00:01<00:06,  1.61s/it]Diffusion Sampling::  60%|██████    | 3/5 [00:02<00:01,  1.10it/s]Diffusion Sampling::  80%|████████  | 4/5 [00:04<00:01,  1.03s/it]Diffusion Sampling:: 100%|██████████| 5/5 [00:05<00:00,  1.12s/it]Diffusion Sampling:: 100%|██████████| 5/5 [00:05<00:00,  1.10s/it]
-2026-09-19 20:07:05,834 - hy3dgen.shapgen - INFO - FlashVDMVolumeDecoding Resolution: [63, 126, 252]
-FlashVDM Volume Decoding:   0%|          | 0/64 [00:00<?, ?it/s]FlashVDM Volume Decoding: 100%|██████████| 64/64 [00:00<00:00, 725.92it/s]
-Diffusion Sampling::   0%|          | 0/5 [00:00<?, ?it/s]Diffusion Sampling::  20%|██        | 1/5 [00:01<00:06,  1.68s/it]Diffusion Sampling::  60%|██████    | 3/5 [00:03<00:01,  1.08it/s]Diffusion Sampling::  80%|████████  | 4/5 [00:04<00:01,  1.05s/it]Diffusion Sampling:: 100%|██████████| 5/5 [00:05<00:00,  1.12s/it]Diffusion Sampling:: 100%|██████████| 5/5 [00:05<00:00,  1.12s/it]
-2026-09-19 20:15:28,495 - hy3dgen.shapgen - INFO - FlashVDMVolumeDecoding Resolution: [63, 126, 252]
-FlashVDM Volume Decoding:   0%|          | 0/64 [00:00<?, ?it/s]FlashVDM Volume Decoding:  97%|█████████▋| 62/64 [00:00<00:00, 613.09it/s]FlashVDM Volume Decoding: 100%|██████████| 64/64 [00:00<00:00, 619.88it/s]
-Diffusion Sampling::   0%|          | 0/5 [00:00<?, ?it/s]Diffusion Sampling::  20%|██        | 1/5 [00:01<00:06,  1.69s/it]Diffusion Sampling::  60%|██████    | 3/5 [00:03<00:01,  1.06it/s]Diffusion Sampling::  80%|████████  | 4/5 [00:04<00:01,  1.06s/it]Diffusion Sampling:: 100%|██████████| 5/5 [00:05<00:00,  1.14s/it]Diffusion Sampling:: 100%|██████████| 5/5 [00:05<00:00,  1.14s/it]
-2026-09-19 20:24:39,947 - hy3dgen.shapgen - INFO - FlashVDMVolumeDecoding Resolution: [63, 126, 252]
-FlashVDM Volume Decoding:   0%|          | 0/64 [00:00<?, ?it/s]FlashVDM Volume Decoding:  39%|███▉      | 25/64 [00:00<00:00, 245.73it/s]FlashVDM Volume Decoding: 100%|██████████| 64/64 [00:00<00:00, 348.08it/s]

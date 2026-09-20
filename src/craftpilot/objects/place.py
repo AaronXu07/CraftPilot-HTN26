@@ -1,6 +1,6 @@
 """Place an object grid in the running game through the Fabric mod's HTTP bridge (mod/, port 7777).
 
-The bridge API (see agent/copilot/bridge.py): GET /health, GET /player -> {pos, yaw, facing}, POST /setblocks
+The bridge API (see src/craftpilot/place/bridge.py): GET /health, GET /player -> {pos, yaw, facing}, POST /setblocks
 {"chunks": [{"blocks": [[x, y, z, state], …], "delay_ms": n}], "flags": 3}, GET /setblocks/status.
 Objects contain only full blocks, so rotation is a coordinate rotation with no block-state remapping.
 """

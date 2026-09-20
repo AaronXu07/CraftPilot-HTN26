@@ -1,26 +1,28 @@
 .venv/
 __pycache__/
 *.pyc
+*.egg-info/
 .env
+.DS_Store
 logs/
+runs/
 out/
 *.litematic
 *.program.json
 .pytest_cache/
 .ruff_cache/
+.hypothesis/
 .cache/
 
 # Fabric mod build output
 mod/build/
 mod/.gradle/
 mod/run/
-*.egg-info/
-runs/
-/out/
-agent/copilot/data/cache/
-agent/bench/out/
 mod/.idea/
+
+# local 3D reconstruction tooling (tools/README.md)
 tools/.venv-3d/
 tools/triposr/
-tools/out_smoke/
 tools/hunyuan3d/
+tools/out_smoke/
+tools/*.log

@@ -8,12 +8,13 @@ schematic. See `PLAN.md` for the design.
 
 ## Repository map
 
-Two subsystems share this repo and the same Azure resource:
+Three parts share this repo and the same Azure resource:
 
 | Directory | What | Entry point |
 |---|---|---|
-| `src/craftpilot/` | **Buildings** — LLM composes a `BuildProgram`, a deterministic engine renders it, litemapy exports a schematic (this README, `PLAN.md`) | `uv run craftpilot build "…"` / `uv run craftpilot serve` |
-| `agent/` + `mod/` | **Live copilot** — Fabric mod `/cp …` chat, async jobs, live animated placement, CAD-style scene with undo/edits; the object (statue/vehicle/prop) path lives here | `agent/README.md`, `agent/plan.md` |
+| `src/craftpilot/` | **Buildings** — Azure OpenAI composes a `BuildProgram`, a deterministic engine renders it, litemapy exports a schematic (this README, `PLAN.md`) | `uv run craftpilot build "…"` / `uv run craftpilot serve` |
+| `src/craftpilot/objects/` + `tools/` | **Objects** (statues, creatures, vehicles, props, named landmarks) — FLUX reference image, local Hunyuan3D reconstruction (`tools/recon_server.py`, see `tools/README.md`), coloured voxels | `uv run craftpilot object "…"` |
+| `mod/` | **Fabric mod** — `/build` chat command, outline + hologram preview, HTTP bridge on 7777 that places blocks (`mod/README.md`) | `cd mod && ./gradlew build` |
 
 ## Setup
 
