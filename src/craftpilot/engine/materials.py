@@ -6,7 +6,7 @@ import numpy as np
 
 from craftpilot.blocks import catalog
 from craftpilot.blocks.catalog import Family
-from craftpilot.blocks.palette_data import WEATHERED_COMPANIONS, closest_family_with_shape
+from craftpilot.blocks.palette_data import WEATHERED_COMPANIONS
 from craftpilot.blocks.state import BlockRef
 from craftpilot.engine.noise import clustered
 from craftpilot.grid.enums import OPPOSITE, DIR_NAME, DIR_VEC, HORIZONTAL, BShape, Dir, Flag, Role
@@ -99,6 +99,10 @@ def shade_family(name: str) -> str | None:
     for fam in catalog.FAMILIES.values():
         if fam.name == name or fam.loud or fam.tone == "glass" or fam.material == "organic":
             continue
+        # Only ordinary building blocks may stand in for a wall: never bookshelves, ores, pots or
+        # themed blocks, however well their colour matches.
+        if fam.use != catalog.USE_STRUCTURAL or "full" not in fam.shapes:
+            continue
         if kin.get(fam.material, fam.material) != kin.get(src.material, src.material):
             continue
         h, l, s_ = colorsys.rgb_to_hls(*(c / 255.0 for c in fam.rgb))
@@ -106,10 +110,12 @@ def shade_family(name: str) -> str | None:
         if not (0.05 <= drop <= 0.22):
             continue
         dh = min(abs(h - h0), 1 - abs(h - h0))          # 0..0.5 of a turn
-        if s0 > 0.25 and dh > 30 / 360:
-            continue                                     # a coloured block must stay in its hue
+        if s0 > 0.25 and (dh > 30 / 360 or s_ < 0.12):
+            continue                                     # a coloured block must stay in its hue, never go grey
+        if fam.name.startswith(("cracked_", "mossy_", "chiseled_")):
+            continue                                     # shade with a plain block, not a worn variant
         # Prefer a small drop, the same hue and saturation, and the same texture character.
-        d = abs(drop - 0.12) * 3 + dh * 4 * max(s_, s0) + abs(s_ - s0) + abs(fam.noise - src.noise)
+        d = abs(drop - 0.10) * 3 + dh * 4 * max(s_, s0) + abs(s_ - s0) + abs(fam.noise - src.noise) * 2.5
         if d < best_d:
             best, best_d = fam.name, d
     _SHADE_CACHE[name] = best
@@ -232,7 +238,8 @@ def roof_companion(name: str) -> str | None:
     h0, l0, s0 = colorsys.rgb_to_hls(*(c / 255.0 for c in src.rgb))
     best, best_d = None, 1e9
     for fam in catalog.FAMILIES.values():
-        if fam.name == name or fam.loud or fam.material != src.material or not (fam.has("stairs") and fam.has("slab")):
+        if fam.name == name or fam.loud or fam.material != src.material or not (fam.has("stairs") and fam.has("slab")) \
+                or fam.use != catalog.USE_STRUCTURAL:
             continue
         h, l, s_ = colorsys.rgb_to_hls(*(c / 255.0 for c in fam.rgb))
         if abs(l - l0) > 0.16:
@@ -240,7 +247,7 @@ def roof_companion(name: str) -> str | None:
         dh = min(abs(h - h0), 1 - abs(h - h0))
         if max(s_, s0) > 0.25 and dh > 20 / 360:
             continue
-        d = abs(l - l0) * 3 + dh * 8 * max(s_, s0) + abs(s_ - s0) + abs(fam.noise - src.noise) * 0.5
+        d = abs(l - l0) * 3 + dh * 8 * max(s_, s0) + abs(s_ - s0) + abs(fam.noise - src.noise) * 0.8
         if l > l0:
             d += 0.15          # a slightly darker tile reads as shadow; a lighter one reads as a patch
         themed = {"nether", "end", "ocean"}
@@ -277,38 +284,24 @@ _BLOCK_TO_FAMILY: dict[str, Family] = {}
 _WOOD_MATERIALS = {"wood"}
 
 
-def _piece_family(spec: PaletteSpec, wall_fam: Family, want: str) -> Family | None:
-    """Which family supplies a button, trapdoor or gate on this wall.
-
-    Wood walls take the wood closest in colour. Stone, brick, plaster and terracotta walls take the
-    palette's trim or framing wood (what builders do), except buttons, which come in stone."""
-    from craftpilot.blocks.palette_data import info as _info
-
-    wall_info = _info(wall_fam.name, wall_fam.tone)
-    if wall_info.material in _WOOD_MATERIALS or want == "button" and wall_fam.has("button"):
-        match = closest_family_with_shape(wall_fam.name, want) if wall_info.material in _WOOD_MATERIALS else wall_fam.name
-        fam = catalog.family(match) if match else None
-        if fam is not None and fam.has(want):
-            return fam
-    for role in ("trim", "framing", "accent"):
-        rp = getattr(spec, role)
-        if rp is None:
-            continue
-        for fw in rp.families:
-            fam = catalog.family(fw.family)
-            if fam is not None and fam.has(want) and _info(fam.name, fam.tone).material in _WOOD_MATERIALS:
-                return fam
-    match = closest_family_with_shape(wall_fam.name, want)
-    return catalog.family(match) if match else None
+_BLOCK_TO_FAMILY: dict[str, Family] = {}
 
 
 def _family_of_block(block_id: str) -> Family | None:
-    """Family whose full block or variant is this block id."""
+    """Family whose full block, shape or variant is this block id."""
     if not _BLOCK_TO_FAMILY:
         for fam in catalog.FAMILIES.values():
             for bid in list(fam.shapes.values()) + [v.block_id for v in fam.variants]:
                 _BLOCK_TO_FAMILY.setdefault(bid, fam)
     return _BLOCK_TO_FAMILY.get(block_id)
+
+
+def _piece_family(spec: PaletteSpec, wall_fam: Family, want: str) -> Family | None:
+    """Which family supplies a button, trapdoor or gate on this wall: the block of that shape
+    closest in colour to the wall block, across every family (same material is a small bonus).
+    Precious and functional pieces only when nothing else comes close."""
+    hit = catalog.nearest_with_shape(want, wall_fam.rgb, wall_fam.material)
+    return hit[0] if hit else None
 
 
 def _connections(grid: SemanticGrid, x: int, y: int, z: int, kind: str) -> dict[str, str]:
@@ -428,6 +421,8 @@ def _block_for(res: _Resolver, grid: SemanticGrid, x: int, y: int, z: int) -> Bl
     chain = ROLE_PALETTE.get(role, ["primary"])
     shape_name = SHAPE_NAME.get(shape, "full")
     need = shape_name if role in (Role.DOOR, Role.SHUTTER) else None
+    if role == Role.WINDOW and shape == BShape.FENCE:
+        chain, need = ["framing", "trim", "accent", "primary"], "fence"
     rp = _role_palette(res.spec, chain, need)
     is_roof = role in (Role.ROOF, Role.ROOF_FILL, Role.ROOF_TRIM, Role.ROOF_EDGE)
     fam = res.pick_family(rp, x, y, z, speckle=is_roof)
@@ -455,6 +450,12 @@ def _block_for(res: _Resolver, grid: SemanticGrid, x: int, y: int, z: int) -> Bl
         return BlockRef.make(block)
 
     block_id = catalog.resolve_shape(fam, shape_name)
+    if block_id is not None and shape_name in ("stairs", "slab") and not fam.has(shape_name):
+        # Borrowed from another family by colour: keep the family's own full block if the borrowed
+        # colour is far off (a mushroom cap stays mushroom rather than turning into orange stairs).
+        other = catalog.block_rgb(block_id)
+        if other is not None and catalog.colour_distance(fam.rgb, other) > 0.25 and "full" in fam.shapes:
+            block_id = None
     if block_id is None:
         if shape_name == "door":
             block_id = catalog.DOOR_FALLBACK
@@ -475,6 +476,9 @@ def _block_for(res: _Resolver, grid: SemanticGrid, x: int, y: int, z: int) -> Bl
             axis = "x" if normal in (Dir.EAST, Dir.WEST) else "z"
         return BlockRef.make(block_id, axis=axis)
     if block_id.endswith("_trapdoor"):
+        if flags & Flag.PROTRUDE:   # arch shoulder: a thin closed plate at the bottom of the cell
+            return BlockRef.make(block_id, facing=facing, half="bottom", open="false", powered="false",
+                                 waterlogged="false")
         return BlockRef.make(block_id, facing=facing, half="bottom", open="true", powered="false",
                              waterlogged="false")
     if block_id.endswith("_door"):

@@ -15,7 +15,7 @@ import colorsys
 import re
 
 from craftpilot.blocks import catalog
-from craftpilot.blocks.palette_data import LIBRARY, info
+from craftpilot.blocks.palette_data import LIBRARY
 from craftpilot.program.model import FamilyWeight, PaletteSpec, RolePalette
 
 ROLES_30 = ("roof", "foundation", "secondary", "framing")
@@ -29,11 +29,18 @@ def _hsl(rgb: tuple[int, int, int]) -> tuple[float, float, float]:
     return h * 360.0, s, l
 
 
+class _Info:
+    __slots__ = ("rgb", "noise", "material", "styles")
+
+    def __init__(self, fam):
+        self.rgb, self.noise, self.material, self.styles = fam.rgb, fam.noise, fam.material, set(fam.styles)
+
+
 def _fam_info(name: str):
     fam = catalog.family(name)
     if fam is None:
         return None, None
-    return fam, info(name, fam.tone)
+    return fam, _Info(fam)
 
 
 def _hue_distance(a: float, b: float) -> float:
@@ -60,9 +67,9 @@ def _shares_style(name: str, primary_styles: set[str]) -> bool:
 def _candidates(material: str | None, shapes: tuple[str, ...], styles: set[str]) -> list[str]:
     out = []
     for fam in catalog.FAMILIES.values():
-        if fam.tone == "glass" or fam.loud:
+        if fam.tone == "glass" or fam.loud or fam.use != catalog.USE_STRUCTURAL:
             continue
-        fi = info(fam.name, fam.tone)
+        fi = _Info(fam)
         if material and fi.material != material:
             continue
         if any(not fam.has(s) for s in shapes):
@@ -106,10 +113,11 @@ def check_and_repair(spec: PaletteSpec, label: str = "") -> list[str]:
     rustic = bool(re.search(r"rustic|ruin|cabin|hut|cottage|barn|medieval|castle|fort|old|ancient|abandoned", label.lower()))
 
     # 1. Primary noisiness: the dominant wall block must be calm unless the building is rustic.
-    limit = 0.75 if rustic else 0.6
+    #    (Derived texture noise: concrete ~0.02, stone bricks ~0.27, planks ~0.42, cobblestone ~0.57.)
+    limit = 0.65 if rustic else 0.5
     if prim_info.noise > limit:
         options = _candidates(prim_info.material, ("full",), primary_styles)
-        options = [o for o in options if info(o, catalog.family(o).tone).noise <= limit]
+        options = [o for o in options if _Info(catalog.family(o)).noise <= limit]
         swap = _closest(prim_name, options)
         if swap and swap != prim_name:
             for fw in spec.primary.families:
@@ -122,6 +130,32 @@ def check_and_repair(spec: PaletteSpec, label: str = "") -> list[str]:
             prim_fam, prim_info = _fam_info(prim_name)
             ph, ps, pl = _hsl(prim_info.rgb)
             primary_styles = set(prim_info.styles)
+
+    # 1a. Precious and functional blocks never make up walls, roofs, foundations or framing; as an
+    #     accent or trim they may stay, in small amounts.
+    for role in ("primary", "roof", "foundation", "secondary", "framing"):
+        rp = getattr(spec, role)
+        if rp is None:
+            continue
+        for fw in list(rp.families):
+            fam = catalog.family(fw.family)
+            if fam is None or fam.use not in (catalog.USE_PRECIOUS, catalog.USE_FUNCTIONAL, catalog.USE_NATURAL):
+                continue
+            shapes = ("stairs", "slab") if role == "roof" else ("full",)
+            options = _candidates(fam.material if fam.material != "metal" else None, shapes, primary_styles) or \
+                _candidates(None, shapes, primary_styles)
+            swap = _closest(fw.family, options)
+            if swap:
+                notes.append(f"'{fw.family}' is a {fam.use} block, not a building material; used '{swap}' for {role}.")
+                fw.family = swap
+            elif len(rp.families) > 1:
+                rp.families.remove(fw)
+    prim_name = _dominant(spec.primary) or prim_name
+    prim_fam, prim_info = _fam_info(prim_name)
+    if prim_info is None:
+        return notes
+    ph, ps, pl = _hsl(prim_info.rgb)
+    primary_styles = set(prim_info.styles)
 
     # 1b. A mixed wall must mix kin: same material and close in colour to the dominant block.
     #     Ordered gradients and bands are deliberate (lighthouse stripes), so they are exempt.
@@ -139,7 +173,7 @@ def check_and_repair(spec: PaletteSpec, label: str = "") -> list[str]:
         close = abs(l - pl) <= 0.1 and (s <= NEUTRAL_SAT or ps <= NEUTRAL_SAT or _hue_distance(h, ph) <= 25)
         if far or (not same_kin and not close):
             options = [o for o in _candidates(prim_info.material, ("full",), primary_styles) if o != fw.family]
-            options = [o for o in options if abs(_hsl(info(o, catalog.family(o).tone).rgb)[2] - pl) <= 0.22]
+            options = [o for o in options if abs(_hsl(_Info(catalog.family(o)).rgb)[2] - pl) <= 0.22]
             swap = _closest(prim_name, options)
             if swap and swap != fw.family and swap != prim_name:
                 notes.append(f"Wall mix '{fw.family}' clashes with '{prim_name}'; used '{swap}'.")
@@ -151,8 +185,8 @@ def check_and_repair(spec: PaletteSpec, label: str = "") -> list[str]:
     # 1c. No foundation given: derive a rougher, slightly darker stone relative of the wall.
     if spec.foundation is None or not spec.foundation.families:
         options = [o for o in _candidates("stone", ("full",), primary_styles)
-                   if info(o, catalog.family(o).tone).noise >= 0.4]
-        options = [o for o in options if _hsl(info(o, catalog.family(o).tone).rgb)[2] <= pl + 0.05]
+                   if _Info(catalog.family(o)).noise >= 0.4]
+        options = [o for o in options if _hsl(_Info(catalog.family(o)).rgb)[2] <= pl + 0.05]
         swap = _closest(prim_name, options, want_darker_than=pl + 0.05)
         if swap:
             spec.foundation = RolePalette(families=[FamilyWeight(family=swap, weight=1.0)], weathering=0.6, texture_rate=0.3)
@@ -226,7 +260,7 @@ def check_and_repair(spec: PaletteSpec, label: str = "") -> list[str]:
                 if s > NEUTRAL_SAT and not any(_hue_distance(h, g) <= 35 for g in keep):
                     shapes = ("stairs", "slab") if role in ("roof", "trim") else ("full",)
                     options = [o for o in _candidates(fi.material, shapes, primary_styles)
-                               if _hsl(info(o, catalog.family(o).tone).rgb)[1] <= NEUTRAL_SAT]
+                               if _hsl(_Info(catalog.family(o)).rgb)[1] <= NEUTRAL_SAT]
                     swap = _closest(fw.family, options)
                     if swap:
                         notes.append(f"Too many colours: '{fw.family}' in {role} replaced by neutral '{swap}'.")
@@ -245,13 +279,21 @@ def check_and_repair(spec: PaletteSpec, label: str = "") -> list[str]:
     return notes
 
 
-def library_match(text: str) -> tuple[str, dict] | None:
-    """Best curated palette for a description, by tag overlap."""
+def library_score(text: str, name: str) -> int:
+    """How well a curated palette's tags fit a description. Building-type words outrank
+    feature words such as "glass" or "roof" (see exemplars.GENERIC)."""
+    from craftpilot.program.exemplars import tag_score
+
     words = set(re.findall(r"[a-z]+", text.lower()))
-    best, best_score = None, 0
-    for name, entry in LIBRARY.items():
-        tags = set(entry["tags"].split())
-        score = len(words & tags) + (2 if name in text.lower() else 0)
+    entry = LIBRARY[name]
+    return tag_score(words, set(entry["tags"].split())) + (2 if name in text.lower() else 0)
+
+
+def library_match(text: str, min_score: int = 1) -> tuple[str, dict] | None:
+    """Best curated palette for a description, by weighted tag overlap."""
+    best, best_score = None, min_score - 1
+    for name in LIBRARY:
+        score = library_score(text, name)
         if score > best_score:
             best, best_score = name, score
     return (best, LIBRARY[best]) if best else None

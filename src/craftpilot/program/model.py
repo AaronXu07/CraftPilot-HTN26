@@ -66,6 +66,8 @@ class WindowStyle(str, Enum):
     stair_slit = "stair_slit"   # two stairs meeting at the seam: a half-wide arrow slit
     boarded = "boarded"         # opening closed with wooden trapdoors flush in the wall (shuttered, abandoned)
     gate = "gate"               # fence gates set in the wall (barns, stables, rustic)
+    bars = "bars"               # iron bars in the opening (castles, dungeons, prisons, cellars, industrial)
+    fence = "fence"             # wooden fence in the opening (barns, stables, open sheds, rustic)
     wall = "wall"
     round = "round"
 

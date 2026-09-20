@@ -49,14 +49,18 @@ def fallback_program(text: str, exemplars: list[Exemplar]) -> tuple[BuildProgram
             program.bounds = Bounds(width=w, height=second, depth=int(m.group(3)))
         else:
             program.bounds = Bounds(width=w, height=program.bounds.height, depth=second)
-    from craftpilot.program.palette import library_match, library_palette
-    m2 = library_match(text)
+    from craftpilot.program.palette import library_match, library_palette, library_score
+    # A curated palette replaces the exemplar's own palette only when the request matches it on a
+    # building-type word (score >= 3) and fits it better than the exemplar's own description does.
+    m2 = library_match(text, min_score=3)
     if m2 is not None and m2[0] not in best.description.lower():
-        lib = library_palette(m2[0])
-        if lib is not None:
-            program.palette = lib
-            program.palette_name = m2[0]
-            notes.append(f"Used the '{m2[0]}' palette.")
+        exemplar_text = f"{best.description} {' '.join(best.tags)}"
+        if library_score(text, m2[0]) > library_score(exemplar_text, m2[0]):
+            lib = library_palette(m2[0])
+            if lib is not None:
+                program.palette = lib
+                program.palette_name = m2[0]
+                notes.append(f"Used the '{m2[0]}' palette.")
     for word, fam in sorted(_MATERIALS.items(), key=lambda kv: -len(kv[0])):
         if re.search(rf"\b{re.escape(word)}\b", low) and catalog.family(fam):
             program.palette.primary = RolePalette(families=[FamilyWeight(family=fam, weight=1.0)],

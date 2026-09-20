@@ -64,6 +64,11 @@ def structured_call(deployment: str, instructions: str, messages: list[dict[str,
         )
     except Exception as exc:
         msg = str(exc)
+        LOG_DIR.mkdir(parents=True, exist_ok=True)
+        with (LOG_DIR / "llm.jsonl").open("a") as f:
+            f.write(json.dumps({"tag": tag, "time": time.time(), "deployment": deployment, "effort": effort,
+                                "error": f"{type(exc).__name__}: {msg[:300]}",
+                                "seconds": round(time.time() - t0, 2)}) + "\n")
         if "not allowed in this deployment" in msg or "DeploymentNotFound" in msg or "Error code: 404" in msg:
             raise DeploymentUnavailable(f"deployment '{deployment}' rejected the request: {msg[:160]}") from exc
         raise

@@ -40,7 +40,7 @@ _ALIASES = {
 def _resolve_family(name: str) -> str | None:
     n = name.strip().lower().replace("minecraft:", "").replace(" ", "_")
     if catalog.family(n):
-        return n
+        return catalog.family(n).name
     if n in _ALIASES and catalog.family(_ALIASES[n]):
         return _ALIASES[n]
     for suffix in ("_planks", "_block", "_bricks_family", "_log"):
@@ -50,6 +50,12 @@ def _resolve_family(name: str) -> str | None:
     for fam in catalog.FAMILIES.values():
         if fam.tone == n and not fam.loud:
             return fam.name
+    # A loose word: any family whose name contains it, preferring structural then thematic.
+    hits = [f for f in catalog.FAMILIES.values() if n in f.name and f.use in (catalog.USE_STRUCTURAL, catalog.USE_THEMATIC,
+                                                                            catalog.USE_DECORATIVE)]
+    if hits:
+        hits.sort(key=lambda f: ({catalog.USE_STRUCTURAL: 0, catalog.USE_THEMATIC: 1}.get(f.use, 2), len(f.name)))
+        return hits[0].name
     return None
 
 
@@ -191,7 +197,7 @@ def repair(program: BuildProgram, safety_limit: tuple[int, int, int]) -> tuple[B
     if pal.roof is not None:
         for fw in pal.roof.families:
             fam = catalog.family(fw.family)
-            if fam is not None and not fam.has("stairs"):
+            if fam is not None and not fam.has("stairs") and catalog.resolve_shape(fam, "stairs") is None:
                 notes.append(f"Roof family '{fw.family}' has no stairs; slopes will use full blocks.")
 
     # A roof edge palette implies an edge of one row when none was given.

@@ -117,6 +117,9 @@ def build(
     result["compose_seconds"] = round(compose_s, 3)
     result["total_seconds"] = round(time.time() - t_start, 3)
     typer.echo(json.dumps(result, indent=2))
+    if source == "fallback":
+        typer.echo("WARNING: the model was not used; this build came from the offline fallback. " + " ".join(notes),
+                   err=True)
     typer.echo(f"Built in {result['total_seconds']:.1f}s: compose {compose_s:.1f}s, generate {result['generate_seconds']:.2f}s, "
                f"export {result['export_seconds']:.2f}s", err=True)
 

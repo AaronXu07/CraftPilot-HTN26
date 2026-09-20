@@ -262,38 +262,15 @@ for _dye in ("white", "light_gray", "gray", "black", "brown", "red", "orange", "
     WEATHERED_COMPANIONS[f"{_dye}_concrete"] = [f"{_dye}_terracotta"]
 
 
-_SHAPE_MATCH_CACHE: dict[tuple[str, str], str | None] = {}
-
-
 def closest_family_with_shape(family_name: str, shape: str) -> str | None:
-    """The family that has `shape` whose colour is closest to `family_name` (lightness first, then hue)."""
-    import colorsys
-
+    """The family that has `shape` whose colour is closest to `family_name`, colour-first across all
+    structural and decorative families (same material is only a small bonus)."""
     from craftpilot.blocks import catalog
 
-    key = (family_name, shape)
-    if key in _SHAPE_MATCH_CACHE:
-        return _SHAPE_MATCH_CACHE[key]
     src = catalog.family(family_name)
     if src is None:
         return None
     if src.has(shape):
-        _SHAPE_MATCH_CACHE[key] = family_name
         return family_name
-
-    def hsl(rgb):
-        h, l, s_ = colorsys.rgb_to_hls(*(c / 255.0 for c in rgb))
-        return h * 360.0, s_, l
-
-    h0, s0, l0 = hsl(info(src.name, src.tone).rgb)
-    best, best_d = None, 1e9
-    for fam in catalog.FAMILIES.values():
-        if not fam.has(shape) or fam.tone == "glass" or fam.loud:
-            continue
-        h, s_, l = hsl(info(fam.name, fam.tone).rgb)
-        dh = min(abs(h - h0), 360 - abs(h - h0)) / 180.0
-        d = 2.0 * abs(l - l0) + abs(s_ - s0) + dh * min(s_, s0) * 2.0
-        if d < best_d:
-            best, best_d = fam.name, d
-    _SHAPE_MATCH_CACHE[key] = best
-    return best
+    hit = catalog.nearest_with_shape(shape, src.rgb, src.material)
+    return hit[0].name if hit else None
