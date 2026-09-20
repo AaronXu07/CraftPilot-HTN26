@@ -3,7 +3,9 @@
 > **Status (2026-09-19):** milestones M0 to M5 are implemented. M4 landed as a thin bridge: the Fabric
 > mod hosts an HTTP server inside the game and Python pushes world-space blocks to it (`/setblocks`),
 > so the mod never parses a `.litematic`; `/build` in chat calls the service, which places the result
-> in front of the player layer by layer. Wand selection, outline and undo are deferred.
+> in front of the player layer by layer. An animated wireframe of the build box shows while a build is in
+> flight (placeholder at once, exact box from the service, scan line tracking placed rows). Wand selection
+> and undo are deferred.
 > Engine: layout with side and stacked attachment, massing with taper, jetty and thick walls, all twelve
 > roof types, all sixteen attachment kinds, the silhouette budget, facade grammar with six window
 > styles and four framing modes, depth pass, basic interiors (stairs, ladders, doorways, partitions),
@@ -41,7 +43,7 @@ Scope for now: buildings of any kind. No terrain, roads, or settlements.
 |---|---|---|
 | Minecraft | Java Edition **1.21.1** in-game (mod); catalogs shipped for 1.21.1 and 26.2 | The block catalog is generated from the game jar and selected by `CRAFTPILOT_MC_VERSION`, so a version bump is `scripts/gen_catalog.py` plus the mod's `gradle.properties`. |
 | World | Singleplayer, integrated server | All in-game integration goes through a Fabric mod. |
-| Mod | Fabric mod (`mod/`), Gradle + Fabric Loom, client side | Hosts the HTTP bridge on 7777 (`/player`, `/setblocks`, `/scan`, `/say`); `/build` chat command calls the service. Wand, outline, undo and auto-launch deferred. |
+| Mod | Fabric mod (`mod/`), Gradle + Fabric Loom, client side | Hosts the HTTP bridge on 7777 (`/player`, `/setblocks`, `/scan`, `/say`); `/build` chat command calls the service; `/outline` animates the in-progress box. Wand, undo and auto-launch deferred. |
 | Language | Python 3.12+, `uv` | `pyproject.toml`, hatchling, ruff, pytest. numpy, scipy, pydantic, FastAPI. |
 | Schematic | litemapy 0.11.x | Confirm the data version it writes matches 26.2. |
 | LLM | Azure OpenAI, GPT-5.4 line, Responses API, structured outputs | Deployment names come from env. `gpt-5.4` composes the build program; `gpt-5.4-mini` handles follow-up edits. See section 6. |
@@ -445,7 +447,8 @@ Description carries the program, bounds, and seed. Verify the data version.
 
 | Command | Behavior |
 |---|---|
-| `/build <text>` | Compose, generate, place at the player facing their yaw, inside the wand selection if one exists. |
+| `/build <text>` | (implemented) An outline box follows the player; the lock key (G) freezes it and sends `/build {ghost:true}` with that pose. The service composes and generates and answers with a voxel cloud; the mod shows it as a translucent hologram (`GhostRender`) where the box was locked. G again commits via `/regenerate {seed, place}` (same seed, same grid); H lets the hologram follow the player first. Blocks stream in bottom-up and hide the hologram row by row. |
+| `/build plan <text>` | (implemented) Compose only; the service describes the program (`program/describe.py`) and the mod prints it. `/build edit` then refines the plan without building; `/build go` aims a box of the plan's size and builds it via `/regenerate`. |
 | `/build wand` | Gives the selection wand (a stick with a custom name and NBT tag). Left click sets corner 1, right click sets corner 2. |
 | `/build bounds <w> <h> <d>` | Selection without corners, anchored at the player. |
 | `/build clear` | Clears the selection. |
@@ -455,12 +458,15 @@ Description carries the program, bounds, and seed. Verify the data version.
 | `/build preview <text>` | Generates and saves the schematic without placing. |
 | `/build save <name>` | Saves the last program as an exemplar. |
 
-### 8.2 Selection outline
+### 8.2 Build outline (implemented)
 
-Client-side rendering of the selected box as a wireframe (Fabric's world
-render events, `WorldRenderEvents.AFTER_TRANSLUCENT` or similar), with the
-dimensions shown in the action bar. Corners persist per player across
-sessions in the mod's config.
+`BuildOutline` draws a wireframe of the box a build will fill, in `WorldRenderEvents.BEFORE_DEBUG_RENDER`
+(vanilla flushes the lines layer right after it). `/build` shows a placeholder at once (default bounds,
+the same anchor math as `place/anchor.py`); the service posts the exact box through `POST /outline` after
+compose (`generating`) and again with the trimmed box before queueing (`placing`); a scan line sweeps
+while waiting and tracks the highest placed row while blocks land; the box flashes green and clears when
+the queue drains, on cancel, or on a service error. A wand *selection* outline (persisted corners,
+dimensions in the action bar) is still deferred.
 
 ### 8.3 Service client (implemented)
 

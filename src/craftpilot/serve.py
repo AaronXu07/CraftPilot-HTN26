@@ -29,27 +29,44 @@ class PlaceFields(BaseModel):
     clear: bool = True
     gap: int | None = None
     sink: int | None = None
+    # Where the player stood when the command was typed. When given, the build is anchored there (where
+    # the mod drew its placeholder outline) instead of wherever the player is once composing finishes.
+    pos: list[float] | None = None
+    yaw: float | None = None
+    # Return the generated building as a voxel cloud for the mod's hologram instead of placing it.
+    ghost: bool = False
 
 
 class BuildRequest(PlaceFields):
     text: str
     player: str = "player"
-    yaw: float = 0.0
     bounds: Bounds | None = None
     seed: int | None = None
     preview: bool = False
     use_llm: bool | None = None  # None: use the LLM when it is configured
 
 
+class PlanRequest(BaseModel):
+    text: str
+    player: str = "player"
+    bounds: Bounds | None = None
+    use_llm: bool | None = None
+
+
 class EditRequest(PlaceFields):
     player: str = "player"
     text: str
     seed: int | None = None
+    plan: bool = False  # update the pending plan and describe it; do not build
 
 
 class RegenerateRequest(PlaceFields):
     player: str = "player"
     seed: int | None = None
+
+
+def _yaw(req: PlaceFields, fallback: float) -> float:
+    return fallback if req.yaw is None else req.yaw
 
 
 class SaveExemplarRequest(BaseModel):
@@ -80,6 +97,10 @@ def _place_context(req: PlaceFields):
         player = bridge.player()
     except BridgeError as exc:
         raise HTTPException(status_code=503, detail=f"mod not reachable: {exc}") from exc
+    if req.pos is not None and len(req.pos) == 3:
+        player["pos"] = [float(v) for v in req.pos]
+    if req.yaw is not None:
+        player["yaw"] = float(req.yaw)
     opts = PlaceOptions(clear=req.clear)
     if req.gap is not None:
         opts.gap = req.gap
@@ -121,13 +142,92 @@ def _run(player: str, program: BuildProgram, bounds: Bounds | None, seed: int | 
     return result
 
 
+def _ghost_result(player: str, program: BuildProgram, text: str, seed: int | None, source: str,
+                  notes: list[str], bounds: Bounds | None) -> dict:
+    """Generate (facing south, unrotated) and return the blocks as a flat [x, y, z, rgb, ...] cloud.
+
+    Nothing is placed. The mod shows the cloud, rotates it with the player, and commits with
+    /regenerate {seed}: generation is deterministic, so the build is the ghost, block for block."""
+    import numpy as np
+
+    from craftpilot.engine.pipeline import generate
+    from craftpilot.preview.render import block_color
+    from craftpilot.program.describe import describe
+    from craftpilot.program.validate import clamp_bounds, repair
+
+    program, r_notes = repair(program, SETTINGS.safety_limit)
+    b, err = clamp_bounds(bounds or program.bounds, SETTINGS.safety_limit)
+    if err:
+        raise HTTPException(status_code=400, detail=err)
+    seed = seed if seed is not None else int(time.time()) % 1_000_000
+    t0 = time.time()
+    grid = generate(program, b, seed)
+    colors = []
+    for ref in grid.palette:
+        r, g, bl = block_color(ref.block_id)
+        colors.append((r << 16) | (g << 8) | bl)
+    xs, ys, zs = np.nonzero(grid.block >= 0)
+    rgb = np.array(colors, dtype=np.int64)[grid.block[xs, ys, zs]]
+    flat = np.stack([xs, ys, zs, rgb], axis=1).reshape(-1).tolist()
+    height = int(ys.max()) + 1 if ys.size else 1
+    _last_program[player] = program
+    _last_text[player] = text
+    lines = describe(program, b)
+    return {
+        "ghost": {"width": grid.W, "height": height, "depth": grid.D, "blocks": flat},
+        "seed": seed,
+        "bounds": {"width": b.width, "height": b.height, "depth": b.depth},
+        "blocks": int(xs.size),
+        "generate_seconds": round(time.time() - t0, 3),
+        "plan": lines,
+        "source": source,
+        "notes": notes + r_notes,
+        "summary": f"{program.label} #{seed}: {int(xs.size)} blocks, {b.width}x{b.height}x{b.depth} - preview ready",
+    }
+
+
+def _plan_result(player: str, program: BuildProgram, text: str, source: str, notes: list[str],
+                 bounds: Bounds | None) -> dict:
+    """Store the program as the player's pending plan and describe it; nothing is generated or placed."""
+    from craftpilot.program.describe import describe
+    from craftpilot.program.validate import clamp_bounds, repair
+
+    program, r_notes = repair(program, SETTINGS.safety_limit)
+    b, err = clamp_bounds(bounds or program.bounds, SETTINGS.safety_limit)
+    if err:
+        raise HTTPException(status_code=400, detail=err)
+    program.bounds = b
+    _last_program[player] = program
+    _last_text[player] = text
+    lines = describe(program, b)
+    return {
+        "plan": lines,
+        "bounds": {"width": b.width, "height": b.height, "depth": b.depth},
+        "source": source,
+        "notes": notes + r_notes,
+        "summary": f"Plan: {lines[0]}",
+    }
+
+
+@app.post("/plan")
+def plan(req: PlanRequest) -> dict:
+    """Compose only. The plan waits for /edit {plan: true} refinements and /regenerate {place: true} to build."""
+    from craftpilot.llm.compose import compose
+
+    use_llm = SETTINGS.llm_configured if req.use_llm is None else req.use_llm
+    program, source, notes = compose(req.text, use_llm=use_llm, bounds_hint=req.bounds)
+    return _plan_result(req.player, program, req.text, source, notes, req.bounds)
+
+
 @app.post("/build")
 def build(req: BuildRequest) -> dict:
     from craftpilot.llm.compose import compose
 
     use_llm = SETTINGS.llm_configured if req.use_llm is None else req.use_llm
     program, source, notes = compose(req.text, use_llm=use_llm, bounds_hint=req.bounds)
-    return _run(req.player, program, req.bounds, req.seed, req.preview, req.text, notes, source, req.yaw, req)
+    if req.ghost:
+        return _ghost_result(req.player, program, req.text, req.seed, source, notes, req.bounds)
+    return _run(req.player, program, req.bounds, req.seed, req.preview, req.text, notes, source, _yaw(req, 0.0), req)
 
 
 @app.post("/edit")
@@ -138,8 +238,13 @@ def edit(req: EditRequest) -> dict:
     if prev is None:
         raise HTTPException(status_code=404, detail="No previous build for this player")
     program, source, notes = llm_edit(prev, req.text)
-    return _run(req.player, program, None, req.seed, False, f"{_last_text.get(req.player, '')} / {req.text}", notes,
-                source, _last_yaw.get(req.player, 0.0), req)
+    text = f"{_last_text.get(req.player, '')} / {req.text}"
+    if req.plan:
+        return _plan_result(req.player, program, text, source, notes, None)
+    if req.ghost:
+        return _ghost_result(req.player, program, text, req.seed, source, notes, None)
+    return _run(req.player, program, None, req.seed, False, text, notes,
+                source, _yaw(req, _last_yaw.get(req.player, 0.0)), req)
 
 
 @app.post("/regenerate")
@@ -147,8 +252,10 @@ def regenerate(req: RegenerateRequest) -> dict:
     prev = _last_program.get(req.player)
     if prev is None:
         raise HTTPException(status_code=404, detail="No previous build for this player")
+    if req.ghost:
+        return _ghost_result(req.player, prev, _last_text.get(req.player, ""), req.seed, "previous", [], None)
     return _run(req.player, prev, None, req.seed, False, _last_text.get(req.player, ""), [], "previous",
-                _last_yaw.get(req.player, 0.0), req)
+                _yaw(req, _last_yaw.get(req.player, 0.0)), req)
 
 
 @app.post("/cancel")

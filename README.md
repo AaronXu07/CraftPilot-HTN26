@@ -54,11 +54,14 @@ blocks directly in the world you have open, bottom up, one layer per game tick. 
 3. Either type in chat:
 
    ```
-   /build a cozy two storey cottage with a stone chimney
+   /build a cozy two storey cottage with a stone chimney   # aim the box, G; a hologram appears, G builds it (H moves it)
+   /build plan a timber church with a bell tower           # see the plan in chat first ...
+   /build edit make it three floors                        # ... refine it ...
+   /build go                                               # ... then aim and press G to build it
    /build again 7            # same program, new seed
    /build edit make the roof red
    /build preview <text>     # schematic only
-   /build cancel             # stop a placement that is still streaming in
+   /build cancel             # abandon the pending build or stop a placement that is still streaming in
    ```
 
    or from the terminal (no service needed):

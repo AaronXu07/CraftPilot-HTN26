@@ -10,7 +10,7 @@ import numpy as np
 from craftpilot.config import SETTINGS
 from craftpilot.grid.semantic import SemanticGrid
 from craftpilot.place.anchor import plan_origin, trimmed_bbox
-from craftpilot.place.bridge import FORCE_FLAGS, Block, Chunk
+from craftpilot.place.bridge import FORCE_FLAGS, Block, BridgeError, Chunk
 
 AIR = "minecraft:air"
 
@@ -33,13 +33,16 @@ def is_attachable(block_id: str) -> bool:
 class Bridge(Protocol):
     def player(self) -> dict: ...
     def setblocks(self, chunks: list[Chunk], flags: int = ..., postprocess: bool = ...) -> dict: ...
+    def outline(self, lo: tuple[int, int, int], hi: tuple[int, int, int], phase: str) -> None: ...
 
 
 @dataclass
 class PlaceOptions:
     gap: int = SETTINGS.place_gap
     sink: int = SETTINGS.place_sink
-    chunk_blocks: int = SETTINGS.place_chunk
+    chunk_blocks: int = SETTINGS.place_chunk          # the floor; big builds get fatter chunks (see chunk_size_for)
+    chunk_max: int = SETTINGS.place_chunk_max
+    target_seconds: float = SETTINGS.place_seconds
     delay_ms: int = SETTINGS.place_delay_ms
     flags: int = FORCE_FLAGS
     postprocess: bool = False
@@ -100,22 +103,47 @@ def layer_chunks(blocks: list[Block], max_blocks: int = 1500) -> list[list[Block
     return chunks
 
 
+def chunk_size_for(n_blocks: int, opts: PlaceOptions) -> int:
+    """Blocks per tick-chunk so the whole build lands in about ``opts.target_seconds``.
+
+    Never below ``opts.chunk_blocks`` (small builds keep their layer-by-layer pace) and never above
+    ``opts.chunk_max`` (one server tick must stay cheap)."""
+    import math
+
+    ticks_per_chunk = 1 + math.ceil(max(0, opts.delay_ms) / 50)
+    max_chunks = max(1.0, opts.target_seconds * 20 / ticks_per_chunk)
+    wanted = math.ceil(n_blocks / max_chunks)
+    return max(opts.chunk_blocks, min(opts.chunk_max, wanted))
+
+
+def show_outline(bridge: Bridge, lo: tuple[int, int, int], hi: tuple[int, int, int], phase: str) -> list[str]:
+    """Best effort: the in-game outline is a courtesy and must never fail a build. Returns warnings."""
+    try:
+        bridge.outline(lo, hi, phase)
+    except BridgeError as exc:
+        return [f"outline not shown ({exc})"]
+    return []
+
+
 def place_grid(grid: SemanticGrid, ctx: PlaceContext, label: str = "") -> dict[str, Any]:
     """Anchor the (already rotated) grid in front of the player and queue it on the mod. Returns immediately."""
     opts = ctx.opts
-    bbox = trimmed_bbox(grid)
-    origin = plan_origin(ctx.player, bbox, gap=opts.gap, sink=opts.sink)
+    # Anchor the full bounds box, not the trimmed one: it is what the outline and the mod's hologram
+    # were anchored with, so the blocks land exactly inside the preview.
+    origin = plan_origin(ctx.player, (0, 0, 0, grid.W - 1, grid.H - 1, grid.D - 1), gap=opts.gap, sink=opts.sink)
     blocks = grid_to_blocks(grid, origin, clear=opts.clear)
-    chunks = layer_chunks(blocks, opts.chunk_blocks)
+    chunk_blocks = chunk_size_for(len(blocks), opts)
+    chunks = layer_chunks(blocks, chunk_blocks)
+    ox, oy, oz = origin
+    x0, y0, z0, x1, y1, z1 = trimmed_bbox(grid)
+    warnings: list[str] = []
+    warnings += show_outline(ctx.bridge, (x0 + ox, y0 + oy, z0 + oz), (x1 + ox, y1 + oy, z1 + oz), "placing")
     resp = ctx.bridge.setblocks([(c, opts.delay_ms) for c in chunks], flags=opts.flags, postprocess=opts.postprocess)
     air = sum(1 for b in blocks if b[3] == AIR)
     invalid = int(resp.get("invalid", 0))
-    warnings: list[str] = []
     if invalid:
         samples = ", ".join(resp.get("invalid_samples", [])[:3])
         warnings.append(f"{invalid} block states were rejected by the game (version mismatch?): {samples}")
-    ox, oy, oz = origin
-    x0, y0, z0, x1, y1, z1 = bbox
     return {
         "label": label,
         "origin": [ox, oy, oz],
@@ -123,6 +151,7 @@ def place_grid(grid: SemanticGrid, ctx: PlaceContext, label: str = "") -> dict[s
         "blocks": len(blocks) - air,
         "air": air,
         "chunks": len(chunks),
+        "chunk_blocks": chunk_blocks,
         "queued": int(resp.get("queued", len(blocks))),
         "invalid": invalid,
         "invalid_samples": resp.get("invalid_samples", []),

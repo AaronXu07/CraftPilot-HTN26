@@ -48,6 +48,8 @@ def run_build(program: BuildProgram, bounds: Bounds | None, seed: int, out: Path
     bounds, err = clamp_bounds(bounds, SETTINGS.safety_limit)
     if err:
         raise typer.BadParameter(err)
+    if place_ctx is not None:
+        notes += _outline_bounds(place_ctx, bounds, facing)
     t0 = time.time()
     grid = generate(program, bounds, seed)
     if facing in ("north", "east", "west"):
@@ -87,6 +89,22 @@ def run_build(program: BuildProgram, bounds: Bounds | None, seed: int, out: Path
         render(grid, png)
         result["preview"] = str(png)
     return result
+
+
+def _outline_bounds(place_ctx: PlaceContext, bounds: Bounds, facing: str) -> list[str]:
+    """Show the box the build will occupy as soon as the bounds are known, before generation.
+
+    The engine builds facing south and is rotated afterwards, so an east or west facing swaps
+    width and depth. The trimmed box replaces this one when the blocks are queued."""
+    from craftpilot.place.anchor import plan_origin
+    from craftpilot.place.placer import show_outline
+
+    w, h, d = bounds.width, bounds.height, bounds.depth
+    if facing in ("east", "west"):
+        w, d = d, w
+    bbox = (0, 0, 0, w - 1, h - 1, d - 1)
+    ox, oy, oz = plan_origin(place_ctx.player, bbox, gap=place_ctx.opts.gap, sink=place_ctx.opts.sink)
+    return show_outline(place_ctx.bridge, (ox, oy, oz), (ox + w - 1, oy + h - 1, oz + d - 1), "generating")
 
 
 @app.command()
@@ -172,6 +190,26 @@ def _place_context(gap: int | None, sink: int | None, clear: bool, delay_ms: int
     if flags is not None:
         opts.flags = flags
     return PlaceContext(bridge=bridge, player=player, opts=opts)
+
+
+@app.command()
+def plan(
+    text: str = typer.Argument(..., help="What to build, in plain language"),
+    bounds: str = typer.Option(None, "--bounds", "-b", help="Bounding box WxHxD"),
+    no_llm: bool = typer.Option(False, "--no-llm", help="Skip Azure OpenAI and use the nearest exemplar"),
+) -> None:
+    """Compose a build program from TEXT and describe it, without generating anything."""
+    from craftpilot.llm.compose import compose
+    from craftpilot.program.describe import describe
+    from craftpilot.program.validate import repair
+
+    program, source, notes = compose(text, use_llm=not no_llm, bounds_hint=_parse_bounds(bounds))
+    program, r_notes = repair(program, SETTINGS.safety_limit)
+    for line in describe(program, _parse_bounds(bounds) or program.bounds):
+        typer.echo(line)
+    for note in notes + r_notes:
+        typer.echo(f"  note: {note}", err=True)
+    typer.echo(f"  source: {source}", err=True)
 
 
 @app.command("place-status")

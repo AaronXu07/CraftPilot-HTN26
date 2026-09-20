@@ -32,6 +32,8 @@ class Settings:
     place_gap: int
     place_sink: int
     place_chunk: int
+    place_chunk_max: int
+    place_seconds: float
     place_delay_ms: int
 
     @property
@@ -78,6 +80,9 @@ def load_settings() -> Settings:
         place_gap=int(os.environ.get("CRAFTPILOT_PLACE_GAP", "2")),
         place_sink=int(os.environ.get("CRAFTPILOT_PLACE_SINK", "0")),
         place_chunk=int(os.environ.get("CRAFTPILOT_PLACE_CHUNK", "1500")),
+        # Big builds get fatter chunks so they land in about place_seconds, capped per tick by chunk_max.
+        place_chunk_max=int(os.environ.get("CRAFTPILOT_PLACE_CHUNK_MAX", "6000")),
+        place_seconds=float(os.environ.get("CRAFTPILOT_PLACE_SECONDS", "6")),
         place_delay_ms=int(os.environ.get("CRAFTPILOT_PLACE_DELAY_MS", "60")),
     )
 

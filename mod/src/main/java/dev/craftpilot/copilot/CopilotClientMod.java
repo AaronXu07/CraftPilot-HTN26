@@ -38,6 +38,8 @@ public class CopilotClientMod implements ClientModInitializer {
     public void onInitializeClient() {
         BlockPlacer.register();
         CameraOrbit.register();
+        BuildOutline.register();
+        PendingBuild.register();
 
         try {
             bridge = new HttpBridgeServer(BRIDGE_HOST, BRIDGE_PORT);
@@ -59,6 +61,10 @@ public class CopilotClientMod implements ClientModInitializer {
                         .executes(ctx -> usage(ctx))
                         .then(ClientCommandManager.literal("status").executes(ctx -> status(ctx)))
                         .then(ClientCommandManager.literal("cancel").executes(ctx -> cancel(ctx)))
+                        .then(ClientCommandManager.literal("go").executes(ctx -> go(ctx)))
+                        .then(ClientCommandManager.literal("plan")
+                                .then(ClientCommandManager.argument("text", StringArgumentType.greedyString())
+                                        .executes(ctx -> plan(ctx, StringArgumentType.getString(ctx, "text")))))
                         .then(ClientCommandManager.literal("again")
                                 .executes(ctx -> regenerate(ctx, null))
                                 .then(ClientCommandManager.argument("seed", IntegerArgumentType.integer())
@@ -74,58 +80,119 @@ public class CopilotClientMod implements ClientModInitializer {
     }
 
     private static int usage(CommandContext<FabricClientCommandSource> ctx) {
-        ctx.getSource().sendFeedback(Text.literal("§6[craftpilot]§r /build <what to build>  |  /build again [seed]"
-                + "  |  /build edit <change>  |  /build preview <text>  |  /build cancel  |  /build status"));
+        ctx.getSource().sendFeedback(Text.literal("§6[craftpilot]§r /build <what to build>  |  /build plan <text>"
+                + "  |  /build go  |  /build again [seed]  |  /build edit <change>  |  /build preview <text>"
+                + "  |  /build cancel  |  /build status   (aim, press [" + PendingBuild.keyName()
+                + "]; when the preview shows, [" + PendingBuild.keyName() + "] builds it, [H] moves it)"));
         return 1;
     }
 
+    /**
+     * {@code /build <text>}: aim the wireframe, lock, the service composes and answers with a hologram
+     * held at that spot; lock again (or move first) and the service builds it there.
+     */
     private static int build(CommandContext<FabricClientCommandSource> ctx, String text, boolean place) {
         JsonObject body = base(ctx);
         body.addProperty("text", text);
         body.addProperty("place", place);
-        ctx.getSource().sendFeedback(Text.literal("§6[craftpilot]§7 composing \"" + text + "\"..."));
-        ServiceClient.postAsync("/build", body);
+        if (!place) {
+            ctx.getSource().sendFeedback(Text.literal("§6[craftpilot]§7 composing \"" + text + "\"..."));
+            ServiceClient.postAsync("/build", body);
+            return 1;
+        }
+        body.addProperty("ghost", true);
+        PendingBuild.clearPlan();
+        PendingBuild.arm("/build", body, "\"" + text + "\"", 0, 0, 0);
         return 1;
     }
 
+    /** {@code /build plan <text>}: compose and print the plan; nothing is built until {@code /build go}. */
+    private static int plan(CommandContext<FabricClientCommandSource> ctx, String text) {
+        JsonObject body = base(ctx);
+        body.addProperty("text", text);
+        PendingBuild.cancel();
+        ctx.getSource().sendFeedback(Text.literal("§6[craftpilot]§7 planning \"" + text + "\"..."));
+        ServiceClient.postAsync("/plan", body);
+        return 1;
+    }
+
+    /** {@code /build go}: preview the pending plan as a hologram, then lock to build it. */
+    private static int go(CommandContext<FabricClientCommandSource> ctx) {
+        if (!PendingBuild.hasPlan()) {
+            ctx.getSource().sendFeedback(Text.literal("§6[craftpilot]§c no plan pending; use /build plan <text> first"));
+            return 1;
+        }
+        JsonObject body = base(ctx);
+        body.addProperty("ghost", true);
+        ctx.getSource().sendFeedback(Text.literal("§6[craftpilot]§7 generating the preview..."));
+        ServiceClient.postAsync("/regenerate", body);
+        return 1;
+    }
+
+    /** {@code /build edit <change>}: refine the pending plan, or rebuild the last building with the change. */
     private static int edit(CommandContext<FabricClientCommandSource> ctx, String text) {
         JsonObject body = base(ctx);
         body.addProperty("text", text);
-        body.addProperty("place", true);
+        if (PendingBuild.hasPlan()) {
+            body.addProperty("place", false);
+            body.addProperty("plan", true);
+            ctx.getSource().sendFeedback(Text.literal("§6[craftpilot]§7 updating the plan: " + text + "..."));
+            ServiceClient.postAsync("/edit", body);
+            return 1;
+        }
+        body.addProperty("ghost", true);
+        PendingBuild.cancel();
         ctx.getSource().sendFeedback(Text.literal("§6[craftpilot]§7 editing: " + text + "..."));
         ServiceClient.postAsync("/edit", body);
         return 1;
     }
 
+    /** {@code /build again [seed]}: preview the last program with a new seed, then lock to build it. */
     private static int regenerate(CommandContext<FabricClientCommandSource> ctx, Integer seed) {
         JsonObject body = base(ctx);
         if (seed != null) {
             body.addProperty("seed", seed);
         }
-        body.addProperty("place", true);
-        ctx.getSource().sendFeedback(Text.literal("§6[craftpilot]§7 building again..."));
+        body.addProperty("ghost", true);
+        PendingBuild.cancel();
+        ctx.getSource().sendFeedback(Text.literal("§6[craftpilot]§7 generating the preview..."));
         ServiceClient.postAsync("/regenerate", body);
         return 1;
     }
 
     private static int cancel(CommandContext<FabricClientCommandSource> ctx) {
+        boolean armed = PendingBuild.isArmed();
+        boolean plan = PendingBuild.hasPlan();
+        PendingBuild.cancel();
         int n = BlockPlacer.clear();
-        ctx.getSource().sendFeedback(Text.literal("§6[craftpilot]§r cancelled " + n + " queued chunks"));
+        String what = armed ? "the pending build" : plan ? "the plan" : n + " queued chunks";
+        ctx.getSource().sendFeedback(Text.literal("§6[craftpilot]§r cancelled " + what));
         return 1;
     }
 
     private static int status(CommandContext<FabricClientCommandSource> ctx) {
         ctx.getSource().sendFeedback(Text.literal("§6[craftpilot]§r pending " + BlockPlacer.pendingChunks()
                 + " chunks / " + BlockPlacer.pendingBlocks() + " blocks, placed " + BlockPlacer.placedTotal()
+                + " (skipped " + BlockPlacer.skippedTotal() + " already right)"
                 + " total; service " + SERVICE_URL + ", bridge http://" + BRIDGE_HOST + ":" + BRIDGE_PORT));
         return 1;
     }
 
-    /** Body fields every service call carries. The service asks the bridge for position and yaw itself. */
+    /**
+     * Body fields every service call carries. Position and yaw are captured now, when the command is
+     * typed; {@link PendingBuild#lock()} overwrites them with the pose the player locked the box at,
+     * so the build lands where the outline was, even if they walk off while the service composes.
+     */
     private static JsonObject base(CommandContext<FabricClientCommandSource> ctx) {
         JsonObject body = new JsonObject();
-        body.addProperty("player", ctx.getSource().getPlayer().getGameProfile().getName());
-        body.addProperty("yaw", ctx.getSource().getPlayer().getYaw());
+        var player = ctx.getSource().getPlayer();
+        body.addProperty("player", player.getGameProfile().getName());
+        body.addProperty("yaw", player.getYaw());
+        com.google.gson.JsonArray pos = new com.google.gson.JsonArray();
+        pos.add(player.getX());
+        pos.add(player.getY());
+        pos.add(player.getZ());
+        body.add("pos", pos);
         return body;
     }
 

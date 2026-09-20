@@ -36,7 +36,9 @@ public final class BlockPlacer {
 
     private static final Deque<Chunk> QUEUE = new ArrayDeque<>();
     private static int waitTicks = 0;
+    private static boolean busy = false;   // a chunk was placed since the queue last ran dry
     private static long placedTotal = 0;
+    private static long skippedTotal = 0;
     private static long postprocessedTotal = 0;
 
     private BlockPlacer() {
@@ -66,6 +68,11 @@ public final class BlockPlacer {
         return placedTotal;
     }
 
+    /** Placements skipped because the world already held that exact state (mostly air over air). */
+    public static synchronized long skippedTotal() {
+        return skippedTotal;
+    }
+
     /** Blocks whose own connectivity (stairs shape, fence/wall/pane sides, ...) was corrected. */
     public static synchronized long postprocessedTotal() {
         return postprocessedTotal;
@@ -76,6 +83,8 @@ public final class BlockPlacer {
         int n = QUEUE.size();
         QUEUE.clear();
         waitTicks = 0;
+        busy = false;
+        BuildOutline.clear();
         return n;
     }
 
@@ -88,8 +97,13 @@ public final class BlockPlacer {
             }
             chunk = QUEUE.pollFirst();
             if (chunk == null) {
+                if (busy) {
+                    busy = false;
+                    BuildOutline.finish();
+                }
                 return;
             }
+            busy = true;
             waitTicks = Math.max(0, chunk.delayTicks());
         }
         ServerWorld world = server.getWorld(chunk.dimension());
@@ -97,8 +111,16 @@ public final class BlockPlacer {
             world = server.getOverworld();
         }
         int placed = 0;
+        int skipped = 0;
         for (Placement p : chunk.blocks()) {
             try {
+                // Block states are interned, so identity is exact. Skipping a no-op saves the lighting
+                // update, the client packet and the chunk rebuild; for the cleared air around a
+                // building that is most of the work.
+                if (world.getBlockState(p.pos()) == p.state()) {
+                    skipped++;
+                    continue;
+                }
                 if (world.setBlockState(p.pos(), p.state(), chunk.flags())) {
                     placed++;
                 }
@@ -107,8 +129,10 @@ public final class BlockPlacer {
             }
         }
         int fixedCount = chunk.postprocess() ? postProcess(world, chunk) : 0;
+        BuildOutline.onPlaced(chunk.blocks());
         synchronized (BlockPlacer.class) {
             placedTotal += placed;
+            skippedTotal += skipped;
             postprocessedTotal += fixedCount;
         }
     }

@@ -85,6 +85,15 @@ class HttpBridge:
     def say(self, text: str) -> None:
         self._post("/say", {"text": text}, timeout=5.0)
 
+    def outline(self, lo: tuple[int, int, int], hi: tuple[int, int, int], phase: str) -> None:
+        """Show the in-progress box (inclusive world coords); phase is 'generating' or 'placing'.
+
+        The mod animates it and clears it itself once the placement queue drains."""
+        self._post("/outline", {"min": list(lo), "max": list(hi), "phase": phase}, timeout=5.0)
+
+    def clear_outline(self) -> None:
+        self._post("/outline", {"clear": True}, timeout=5.0)
+
     def wait_idle(self, poll_s: float = 0.25, timeout_s: float = 600.0) -> dict:
         deadline = time.time() + timeout_s
         while True:
@@ -104,6 +113,7 @@ class FakeBridge:
         self.world: dict[tuple[int, int, int], str] = {}
         self.calls: list[dict] = []
         self.said: list[str] = []
+        self.outlines: list[dict] = []
         self.cancelled = 0
 
     def health(self) -> dict:
@@ -129,6 +139,12 @@ class FakeBridge:
     def cancel(self) -> dict:
         self.cancelled += 1
         return {"ok": True, "cleared_chunks": 0}
+
+    def outline(self, lo, hi, phase: str) -> None:
+        self.outlines.append({"min": list(lo), "max": list(hi), "phase": phase})
+
+    def clear_outline(self) -> None:
+        self.outlines.append({"clear": True})
 
     def scan(self, lo, hi) -> dict[tuple[int, int, int], str]:
         return {(x, y, z): self.world.get((x, y, z), "minecraft:air")

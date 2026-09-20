@@ -63,6 +63,7 @@ public final class HttpBridgeServer {
         server.createContext("/say", wrap(this::say));
         server.createContext("/blocks", wrap(this::blocks));
         server.createContext("/camera", wrap(this::camera));
+        server.createContext("/outline", wrap(this::outline));
     }
 
     public void start() {
@@ -364,6 +365,7 @@ public final class HttpBridgeServer {
         o.addProperty("pending_chunks", BlockPlacer.pendingChunks());
         o.addProperty("pending_blocks", BlockPlacer.pendingBlocks());
         o.addProperty("placed_total", BlockPlacer.placedTotal());
+        o.addProperty("skipped_total", BlockPlacer.skippedTotal());
         o.addProperty("postprocessed", BlockPlacer.postprocessedTotal());
         return o;
     }
@@ -390,6 +392,19 @@ public final class HttpBridgeServer {
 
     private JsonElement blocks(HttpExchange ex, JsonObject body) {
         return WorldOps.blockDump();
+    }
+
+    /** Show ({@code min}, {@code max}, {@code phase}) or hide ({@code clear: true}) the in-progress build box. */
+    private JsonElement outline(HttpExchange ex, JsonObject body) {
+        if (body.has("clear") && body.get("clear").getAsBoolean()) {
+            BuildOutline.clear();
+            return ok();
+        }
+        int[] lo = vec3i(body, "min");
+        int[] hi = vec3i(body, "max");
+        String phase = body.has("phase") ? body.get("phase").getAsString() : "generating";
+        BuildOutline.set(lo[0], lo[1], lo[2], hi[0], hi[1], hi[2], BuildOutline.phaseOf(phase));
+        return ok();
     }
 
     private JsonElement camera(HttpExchange ex, JsonObject body) {

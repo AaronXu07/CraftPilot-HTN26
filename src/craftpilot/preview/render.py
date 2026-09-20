@@ -47,6 +47,11 @@ _DYES = {
 }
 
 
+def block_color(block_id: str) -> tuple[int, int, int]:
+    """Flat RGB for a block id: the curated table, dyed variants, or a stable hash for anything unknown."""
+    return _color(block_id)
+
+
 def _color(block_id: str) -> tuple[int, int, int]:
     name = block_id.split(":")[-1]
     if name in _COLORS:
