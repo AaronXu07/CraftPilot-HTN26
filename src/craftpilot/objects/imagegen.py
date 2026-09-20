@@ -50,6 +50,19 @@ def compose_prompt(subject: str, plinth: bool, style: str = "", camera: int = 0,
 class ImageRejected(RuntimeError):
     """The content filter refused the prompt or the generated image."""
 
+    def __init__(self, message: str, kind: str = "content"):
+        super().__init__(message)
+        self.kind = kind  # "blocklist" (protected names in the prompt) | "violence" (generated image) | "content"
+
+
+def rejection_kind(exc: Exception) -> str:
+    msg = str(exc).lower()
+    if "blocklist" in msg:
+        return "blocklist"
+    if "violence" in msg:
+        return "violence"
+    return "content"
+
 
 # Azure's image filter flags weapons and creatures as "violence" surprisingly often (a knight holding a
 # sword). One rewrite that frames the subject as an inert museum piece usually passes without changing
@@ -102,6 +115,8 @@ def generate(prompt: str, out_path: Path, size: str = "1024x1024", deployment: s
         except Exception as exc:
             if _is_content_filter(exc):
                 last = exc
+                if rejection_kind(exc) == "blocklist":
+                    break  # a protected name: every variant of this subject will fail; the caller rewrites it
                 continue
             raise
         item = resp.data[0]
@@ -111,7 +126,11 @@ def generate(prompt: str, out_path: Path, size: str = "1024x1024", deployment: s
         out_path.write_bytes(base64.b64decode(item.b64_json))
         return {"path": str(out_path), "seconds": round(time.time() - t0, 1),
                 "revised_prompt": getattr(item, "revised_prompt", None), "attempt": i, "prompt": p}
-    raise ImageRejected(
-        "the image was rejected by Azure's content filter (it flags weapons and monsters as violence); "
-        f"try rephrasing, e.g. 'a peaceful statue of …'. Last error: {str(last)[:160]}"
-    )
+    kind = rejection_kind(last) if last else "content"
+    if kind == "blocklist":
+        raise ImageRejected("the image prompt contains a protected name (a character, brand or person) that Azure's "
+                            "blocklist refuses; describe the look instead of the name", kind)
+    if kind == "violence":
+        raise ImageRejected("Azure's image filter flagged the generated picture as violent (it does this for any weapon, even a "
+                            "museum replica); only the deployment's content-filter policy can allow it", kind)
+    raise ImageRejected(f"the image was rejected by Azure's content filter: {str(last)[:160]}", kind)

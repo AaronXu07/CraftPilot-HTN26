@@ -89,7 +89,20 @@ def build_object(text: str, out_dir: Path | None = None, height: int | None = No
                                             vivid=brief.palette == "colorful")
         img_path = work / ("reference.png" if cam == 0 else f"reference_{cam}.png")
         mesh_path = work / ("mesh.ply" if cam == 0 else f"mesh_{cam}.ply")
-        img = imagegen.generate(attempts[0], img_path, attempts=attempts[1:])
+        try:
+            img = imagegen.generate(attempts[0], img_path, attempts=attempts[1:])
+        except imagegen.ImageRejected as exc:
+            if exc.kind != "blocklist" or not use_llm or brief.source != "llm":
+                raise
+            # a protected name (Pikachu, a car make…): have the LLM describe the look instead, once
+            brief, meta2 = compose_brief(text, use_llm=True, height=height, generic=True)
+            if meta2.get("error"):
+                raise
+            notes.append("brief: the first image prompt hit the protected-names blocklist; rewritten by appearance")
+            (work / "brief.json").write_text(_json(brief.to_dict()))
+            attempts = imagegen.prompt_attempts(brief.subject, brief.plinth, brief.style, request=None, camera=cam,
+                                                vivid=brief.palette == "colorful")
+            img = imagegen.generate(attempts[0], img_path, attempts=attempts[1:])
         timings["image_s"] = round(timings["image_s"] + img["seconds"], 1)
         stage("image", "reference image drawn" + (" (retry with another camera)" if cam else ""))
         if cam == 0:

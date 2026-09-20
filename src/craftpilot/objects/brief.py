@@ -52,7 +52,12 @@ into a brief for an image model and a voxeliser. Reply with JSON only.
   that material, else "auto". A lightning dragon is "colorful" (electric blue, glowing white), not "metal".
 - style: 3-8 words of rendering style for the image model, e.g. "carved granite, weathered", "glossy red paint,
   chrome trim", "smooth marble". Match the player's intent.
-- label: 2-3 snake_case words naming the object, e.g. dragon_statue."""
+- label: 2-3 snake_case words naming the object, e.g. dragon_statue.
+- NEVER write a trademarked or copyrighted name in `subject` — no Pokémon, Nintendo/Disney/Marvel/anime
+  characters, video-game characters, car makes, brands, logos or real people. The image service rejects
+  those words outright. Describe the appearance instead: "Pikachu" -> "a chubby yellow mouse-like creature
+  with red circular cheeks, long ears with black tips, a zigzag lightning-bolt tail and big black eyes".
+  The `label` may keep the name."""
 
 SCHEMA = {
     "type": "json_schema",
@@ -141,8 +146,14 @@ def _clamp(h: int) -> int:
     return max(MIN_HEIGHT, min(MAX_HEIGHT, int(h)))
 
 
-def compose_brief(text: str, use_llm: bool = True, height: int | None = None) -> tuple[ObjectBrief, dict]:
-    """Returns (brief, meta). `height` from the caller (CLI flag, wand selection) overrides the LLM."""
+GENERIC_REWRITE = ("The image service rejected the previous subject because it contained a protected name. Rewrite the "
+                   "brief so `subject` describes the character/object purely by appearance (shape, colours, features) "
+                   "with no names, titles, franchises or brands at all. Keep everything else.")
+
+
+def compose_brief(text: str, use_llm: bool = True, height: int | None = None, generic: bool = False) -> tuple[ObjectBrief, dict]:
+    """Returns (brief, meta). `height` from the caller (CLI flag, wand selection) overrides the LLM. With
+    `generic`, the model is told the subject must avoid protected names (retry after a blocklist rejection)."""
     meta: dict = {"seconds": 0.0}
     dep = object_deployment()
     brief: ObjectBrief | None = None
@@ -153,8 +164,9 @@ def compose_brief(text: str, use_llm: bool = True, height: int | None = None) ->
                         timeout=SETTINGS.llm_timeout, max_retries=1)
         t0 = time.time()
         try:
-            resp = client.responses.create(model=dep, instructions=SYSTEM, input=[{"role": "user", "content": text}],
-                                           text={"format": SCHEMA}, reasoning={"effort": "low"}, max_output_tokens=4000)
+            instructions = SYSTEM + ("\n\n" + GENERIC_REWRITE if generic else "")
+            resp = client.responses.create(model=dep, instructions=instructions, input=[{"role": "user", "content": text}],
+                                           text={"format": SCHEMA}, reasoning={"effort": "low"}, max_output_tokens=6000)
             data = json.loads(resp.output_text)
             brief = ObjectBrief(subject=str(data["subject"]), plinth=bool(data["plinth"]), height=_clamp(int(data["height"])),
                                 palette=str(data["palette"]) if data.get("palette") in PALETTES else "auto",
