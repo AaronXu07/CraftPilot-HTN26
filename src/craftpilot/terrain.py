@@ -4,21 +4,21 @@ The engine renders a building on a flat grid whose row y=0 (the foundation ring)
 On a superflat world that row can go at the player's feet. On real terrain it cannot: half the house
 ends up inside the hill and the other half floats. This module is the fix:
 
-1. **Survey.** The placer asks the mod for a surface heightmap over the footprint and an apron around
-   it (`survey`, `POST /heightmap`: the y of the top motion-blocking non-leaf block per column, so
-   water surfaces count as ground and trees do not, plus that block's state). Without a mod the same
-   data can be handed in as a `TerrainSample` (see `place`).
+1. **Survey.** The placer asks the mod for a surface survey over the footprint and an apron around it
+   (`survey`, `POST /heightmap`): per column the y of the ground (the top motion-blocking block that
+   is not a tree or a plant, so water surfaces count and canopies do not), that block's state, and
+   the y of the highest non-air block at all. Without a mod the same data can be handed in as a
+   `TerrainSample` (see `place`).
 2. **Ground level** (`plan_site`) comes from the terrain under the building's base columns — a
    little below the median surface height, because sunk a block into the slope reads better than
    perched on it — instead of the player's feet. Tall builds are sunk further to stay under the
    height limit, or refused.
 3. **Terraform** (`terraform`) turns the survey into world-space edits placed with the building:
-   * cut — air for terrain inside the base columns above ground,
+   * cut — air for everything inside the base columns above ground, trees and plants included,
    * fill — a foundation down to the terrain in the building's own foundation block: a solid plinth
      on gentle sites, a perimeter wall + pillar grid where the drop is large,
    * grading — the apron around the base ramped one block per column from the platform to the real
      terrain and re-topped with each column's own surface block,
-   * steps — the engine's door steps continued down to the graded ground.
 
 Edits never overlap a building block. Undo (the mod's snapshot) covers them like any other block.
 """
@@ -33,12 +33,12 @@ import numpy as np
 from pydantic import BaseModel, Field
 
 from craftpilot.blocks.state import BlockRef
-from craftpilot.grid.enums import DIR_NAME, DIR_VEC, OPPOSITE, Role
+from craftpilot.grid.enums import Role
 from craftpilot.grid.semantic import SemanticGrid
 from craftpilot.place.anchor import facing_from_yaw, plan_origin, trimmed_bbox
 
 Column = tuple[int, int]
-Heights = dict[Column, tuple[int, str]]  # world (x, z) -> (y of the top solid block, its state)
+Heights = dict[Column, tuple[int, str, int]]  # world (x, z) -> (ground y, its state, y of the highest block in the column)
 Edit = tuple[int, int, int, str]
 
 AIR = "minecraft:air"
@@ -51,7 +51,6 @@ STILT_DEPTH = 6  # deeper than this under a "stilts" build: perimeter/pillar fil
 PILLAR_SPACING = 5
 MIN_MARGIN = 3
 MAX_MARGIN = 8
-MAX_DOOR_STEPS = 6
 MAX_SINK = 16  # refuse a build the height limit would push further than this below its terrain
 DEFAULT_FOUNDATION = "minecraft:cobblestone"
 DEFAULT_TOP = "minecraft:grass_block"
@@ -62,17 +61,6 @@ SOIL_TOPS = {
     "minecraft:snow", "minecraft:snow_block",
 }
 FLUIDS = {"minecraft:water", "minecraft:lava", "minecraft:bubble_column"}
-_STAIRS = {
-    "minecraft:cobblestone": "minecraft:cobblestone_stairs",
-    "minecraft:mossy_cobblestone": "minecraft:mossy_cobblestone_stairs",
-    "minecraft:stone": "minecraft:stone_stairs",
-    "minecraft:quartz_block": "minecraft:quartz_stairs",
-    "minecraft:smooth_quartz": "minecraft:smooth_quartz_stairs",
-    "minecraft:sandstone": "minecraft:sandstone_stairs",
-    "minecraft:red_sandstone": "minecraft:red_sandstone_stairs",
-    "minecraft:prismarine": "minecraft:prismarine_stairs",
-    "minecraft:purpur_block": "minecraft:purpur_stairs",
-}
 __all__ = ["PlacementRequest", "Site", "TerrainSample", "facing_from_yaw", "place", "plan_site", "survey", "terraform"]
 
 
@@ -82,26 +70,30 @@ __all__ = ["PlacementRequest", "Site", "TerrainSample", "facing_from_yaw", "plac
 class TerrainSample(BaseModel):
     """Surface heightmap the mod samples around the player before a build.
 
-    `heights[row][col]` is the y of the top motion-blocking non-leaf block of column
-    (x0 + col, z0 + row) — `Heightmap.Types.MOTION_BLOCKING_NO_LEAVES` minus one, so water surfaces
-    count as ground and trees do not. `null` marks a column with nothing in it. `tops` (optional,
-    same shape) carries that block's id/state so graded ground is re-topped with grass, sand, ...
+    `heights[row][col]` is the y of the ground in column (x0 + col, z0 + row): the top motion-blocking
+    block that is not a tree or a plant, so water surfaces count and canopies do not. `null` marks a
+    column with nothing in it. `tops` (optional, same shape) carries that block's id/state so graded
+    ground is re-topped with grass, sand, ...; `clear` (optional) the y of the highest non-air block
+    in the column (canopy, trunk, tall grass), default one above the ground.
     """
 
     x0: int
     z0: int
     heights: list[list[int | None]]
     tops: list[list[str | None]] | None = None
+    clear: list[list[int | None]] | None = None
 
     def to_heights(self) -> Heights:
         out: Heights = {}
         for r, row in enumerate(self.heights):
             trow = self.tops[r] if self.tops is not None and r < len(self.tops) else None
+            crow = self.clear[r] if self.clear is not None and r < len(self.clear) else None
             for c, h in enumerate(row):
                 if h is None:
                     continue
                 top = trow[c] if trow is not None and c < len(trow) and trow[c] else DEFAULT_TOP
-                out[(self.x0 + c, self.z0 + r)] = (int(h), str(top))
+                cl = crow[c] if crow is not None and c < len(crow) and crow[c] is not None else int(h) + 1
+                out[(self.x0 + c, self.z0 + r)] = (int(h), str(top), max(int(h), int(cl)))
         return out
 
     @staticmethod
@@ -112,10 +104,12 @@ class TerrainSample(BaseModel):
         x0, x1, z0, z1 = min(xs), max(xs), min(zs), max(zs)
         rows: list[list[int | None]] = []
         tops: list[list[str | None]] = []
+        clear: list[list[int | None]] = []
         for z in range(z0, z1 + 1):
             rows.append([heights[(x, z)][0] if (x, z) in heights else None for x in range(x0, x1 + 1)])
             tops.append([heights[(x, z)][1] if (x, z) in heights else None for x in range(x0, x1 + 1)])
-        return TerrainSample(x0=x0, z0=z0, heights=rows, tops=tops)
+            clear.append([heights[(x, z)][2] if (x, z) in heights else None for x in range(x0, x1 + 1)])
+        return TerrainSample(x0=x0, z0=z0, heights=rows, tops=tops, clear=clear)
 
 
 class PlacementRequest(BaseModel):
@@ -147,7 +141,7 @@ class Site:
 
     def summary(self) -> str:
         parts = [f"terrain y {self.lowest}..{self.highest} (range {self.range}, {self.strategy})", f"ground y={self.ground}"]
-        work = ", ".join(f"{k} {self.stats[k]}" for k in ("cut", "fill", "graded", "steps") if self.stats.get(k))
+        work = ", ".join(f"{k} {self.stats[k]}" for k in ("cut", "fill", "graded") if self.stats.get(k))
         if work:
             parts.append(work)
         if self.unknown:
@@ -294,26 +288,6 @@ def foundation_block(grid: SemanticGrid, known: set[str] | None = None) -> str:
     return DEFAULT_FOUNDATION
 
 
-def stairs_block(grid: SemanticGrid, foundation: str, known: set[str] | None = None) -> str:
-    """The stairs the engine used for the door steps, else the stairs matching the foundation block."""
-    b = _most_common_block(grid, Role.STEP)
-    if b and b.endswith("_stairs") and (known is None or b in known):
-        return b
-    s = stairs_for(foundation)
-    return s if known is None or s in known else "minecraft:cobblestone_stairs"
-
-
-def stairs_for(block_id: str) -> str:
-    if block_id in _STAIRS:
-        return _STAIRS[block_id]
-    ns, name = block_id.split(":", 1) if ":" in block_id else ("minecraft", block_id)
-    for suffix, repl in (("_bricks", "_brick"), ("_tiles", "_tile"), ("_planks", ""), ("_block", "")):
-        if name.endswith(suffix):
-            name = name[: -len(suffix)] + repl
-            break
-    return f"{ns}:{name}_stairs"
-
-
 def filler_for(top_state: str) -> str:
     """Under a re-topped column: dirt below soil and snow, else the top block itself (props stripped)."""
     block_id = _block_id(top_state)
@@ -370,16 +344,11 @@ def terraform(grid: SemanticGrid, site: Site, origin: tuple[int, int, int], know
 
     edits: dict[tuple[int, int, int], str] = {}
     kind: dict[tuple[int, int, int], str] = {}
-    surface: dict[Column, int] = {}
 
     def put(x: int, y: int, z: int, state: str, what: str) -> None:
-        if occupied(x, y, z):
-            return
-        col = heights.get((x, z))
-        if what == "cut" and col is not None and y > col[0] + 1:
-            return
-        edits[(x, y, z)] = state
-        kind[(x, y, z)] = what
+        if not occupied(x, y, z):
+            edits[(x, y, z)] = state
+            kind[(x, y, z)] = what
 
     # base: clear the hill, build the foundation
     deep = _perimeter_and_pillars(site.base) if site.strategy == "stilts" else site.base
@@ -387,20 +356,16 @@ def terraform(grid: SemanticGrid, site: Site, origin: tuple[int, int, int], know
         col = heights.get(c)
         if col is None:
             continue
-        h, _top = col
+        h, _top, clear = col
         x, z = c
-        for y in range(ground, h + 2):  # +1 row for plants standing on the surface
+        for y in range(ground, clear + 1):  # the hill, and any tree or plant standing on it
             put(x, y, z, AIR, "cut")
         if h < platform:
             depth = platform - h
             if site.strategy == "stilts" and depth > STILT_DEPTH and c not in deep:
-                surface[c] = h
                 continue
             for y in range(h + 1, ground):
                 put(x, y, z, foundation, "fill")
-            surface[c] = platform
-        else:
-            surface[c] = min(h, platform)
 
     # apron: ramp the terrain from the platform to its real height
     m = site.margin
@@ -408,25 +373,22 @@ def terraform(grid: SemanticGrid, site: Site, origin: tuple[int, int, int], know
         col = heights.get(c)
         if col is None:
             continue
-        h, top = col
+        h, top, clear = col
         if is_fluid(top) or (site.strategy == "stilts" and h < platform - STILT_DEPTH):
             continue  # water is not graded; a deep drop is left alone, the build stands on its foundation wall
         x, z = c
         target = round(platform + (h - platform) * d / (m + 1.0))
-        if target == h:
-            surface[c] = h
-            continue
+        # whatever stands on the apron (a tree, tall grass) goes: a trunk cut halfway leaves a floating canopy
+        for y in range(max(h, target) + 1, clear + 1):
+            put(x, y, z, AIR, "graded")
         if h > target:
-            for y in range(target + 1, h + 2):
+            for y in range(target + 1, h + 1):
                 put(x, y, z, AIR, "graded")
         else:
             filler = filler_for(top)
             for y in range(h + 1, target):
                 put(x, y, z, filler, "graded")
         put(x, target, z, top, "graded")
-        surface[c] = target
-
-    _door_steps(grid, site, origin, surface, foundation, known, occupied, edits, kind)
 
     # an edit that sets a block to what the survey says is already there is not an edit
     for p in [p for p, st in edits.items() if heights.get((p[0], p[2])) is not None and _same_as_terrain(heights, p, st)]:
@@ -437,50 +399,12 @@ def terraform(grid: SemanticGrid, site: Site, origin: tuple[int, int, int], know
 
 
 def _same_as_terrain(heights: Heights, p: tuple[int, int, int], state: str) -> bool:
-    """True for air above the surface, and for the surface block itself (the only two states the
-    survey knows)."""
-    h, top = heights[(p[0], p[2])]
+    """True for air above everything in the column, and for the ground block itself (the only states
+    the survey knows for sure)."""
+    h, top, clear = heights[(p[0], p[2])]
     if state == AIR:
-        return p[1] > h
+        return p[1] > clear
     return p[1] == h and state == top
-
-
-def _door_steps(grid: SemanticGrid, site: Site, origin: tuple[int, int, int], surface: dict[Column, int], foundation: str,
-                known: set[str] | None, occupied, edits: dict, kind: dict) -> None:
-    """Continue the engine's door steps down to the graded ground."""
-    if grid.door is None:
-        return
-    ox, _oy, oz = origin
-    dx, dy, dz = grid.door
-    vx, _, vz = DIR_VEC[grid.front]
-    if vx == 0 and vz == 0:
-        return
-    stairs = stairs_block(grid, foundation, known)
-    toward = DIR_NAME[OPPOSITE[grid.front]]  # stairs ascend back toward the door
-    # skip the foundation ring and any steps the engine laid: the first column with nothing at or
-    # below the door's row is where the ground has to be reached
-    k = 1
-    while k < grid.W + grid.D:
-        gx, gz = dx + vx * k, dz + vz * k
-        if not (0 <= gx < grid.W and 0 <= gz < grid.D) or not (grid.block[gx, : dy + 1, gz] >= 0).any():
-            break
-        k += 1
-    for i in range(1, MAX_DOOR_STEPS + 1):
-        wx, wz = ox + dx + vx * (k + i - 1), oz + dz + vz * (k + i - 1)
-        step_y = site.ground - i
-        s = surface.get((wx, wz))
-        if s is None:
-            col = site.heights.get((wx, wz))
-            s = col[0] if col is not None else None
-        if s is None or s >= step_y or occupied(wx, step_y, wz):
-            break
-        edits[(wx, step_y, wz)] = f"{stairs}[facing={toward},half=bottom,shape=straight,waterlogged=false]"
-        kind[(wx, step_y, wz)] = "steps"
-        for fy in range(s + 1, step_y):
-            if not occupied(wx, fy, wz):
-                edits[(wx, fy, wz)] = foundation
-                kind[(wx, fy, wz)] = "steps"
-        surface[(wx, wz)] = step_y
 
 
 # ------------------------------------------------------------------------------------- place

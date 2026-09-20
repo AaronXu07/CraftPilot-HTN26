@@ -1,7 +1,7 @@
 """Turn a rendered grid into world blocks and stream them to the mod, bottom up, one layer at a time.
 
 With a bridge that can survey the ground (`heightmap`), the build is seated on the terrain instead of
-at the player's feet, and the foundation / cut / graded apron / door steps from `craftpilot.terrain`
+at the player's feet, and the foundation / cut / graded apron from `craftpilot.terrain`
 are streamed with it.
 """
 

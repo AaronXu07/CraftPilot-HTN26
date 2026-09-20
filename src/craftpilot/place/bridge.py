@@ -16,7 +16,8 @@ from craftpilot.config import SETTINGS
 
 Block = tuple[int, int, int, str]
 Chunk = tuple[list[Block], int]  # (blocks, delay_ms before the next chunk)
-Heightmap = dict[tuple[int, int], tuple[int, str]]  # (x, z) -> (y of the top solid block, its state); void columns absent
+# (x, z) -> (y of the ground, its state, y of the highest non-air block: canopy, trunk, grass ...); void columns absent
+Heightmap = dict[tuple[int, int], tuple[int, str, int]]
 HEIGHTMAP_CHUNK = 128  # /heightmap requests are split into <= 128x128 rectangles
 
 # Block.NOTIFY_LISTENERS | Block.FORCE_STATE: write the state verbatim, no neighbour updates.
@@ -86,8 +87,9 @@ class HttpBridge:
         return {(int(x), int(y), int(z)): palette[int(i)] for x, y, z, i in data["blocks"]}
 
     def heightmap(self, lo: tuple[int, int], hi: tuple[int, int]) -> Heightmap:
-        """Inclusive (x, z) rectangle -> surface heightmap: the y of the top motion-blocking non-leaf
-        block per column (water surfaces count as ground) and that block's state. Void columns absent."""
+        """Inclusive (x, z) rectangle -> surface survey per column: the y of the ground (top
+        motion-blocking block that is not a tree or a plant; water surfaces count), that block's state,
+        and the y of the highest non-air block at all. Void columns absent."""
         x0, z0 = min(lo[0], hi[0]), min(lo[1], hi[1])
         x1, z1 = max(lo[0], hi[0]), max(lo[1], hi[1])
         out: Heightmap = {}
@@ -119,19 +121,22 @@ class HttpBridge:
 
 
 def decode_heightmap(data: dict[str, Any]) -> Heightmap:
-    """{min:[x0,z0], max:[x1,z1], palette, heights, tops} (row-major, null for void) -> {(x, z): (y, state)}."""
+    """{min:[x0,z0], max:[x1,z1], palette, heights, tops, clear?} (row-major, null for void) ->
+    {(x, z): (y, state, clear_y)}. An older mod without `clear` gets clear = y + 1 (one row of plants)."""
     palette = data.get("palette", [])
     x0, z0 = (int(v) for v in data["min"])
     x1 = int(data["max"][0])
     width = x1 - x0 + 1
     tops = data.get("tops", [])
+    clear = data.get("clear") or []
     out: Heightmap = {}
     for i, h in enumerate(data.get("heights", [])):
         if h is None:
             continue
         idx = tops[i] if i < len(tops) else None
         state = palette[int(idx)] if idx is not None and int(idx) < len(palette) else "minecraft:stone"
-        out[(x0 + i % width, z0 + i // width)] = (int(h), state)
+        c = clear[i] if i < len(clear) and clear[i] is not None else int(h) + 1
+        out[(x0 + i % width, z0 + i // width)] = (int(h), state, max(int(h), int(c)))
     return out
 
 
@@ -202,6 +207,8 @@ class FakeBridge:
                 for z in range(lo[2], hi[2] + 1)}
 
     def heightmap(self, lo, hi) -> Heightmap:
+        """Same rule as the mod: ground = top motion-blocking block that is not a tree or a plant; clear
+        = highest non-air block. Logs, leaves, grass and flowers placed with set_block count as trees/plants."""
         out: Heightmap = {}
         for x in range(min(lo[0], hi[0]), max(lo[0], hi[0]) + 1):
             for z in range(min(lo[1], hi[1]), max(lo[1], hi[1]) + 1):
@@ -211,10 +218,21 @@ class FakeBridge:
                         top = wy
                 if top is None:
                     continue
-                while self.get_block(x, top, z) == "minecraft:air" and top > -64:
-                    top -= 1  # air placed into the ground
-                out[(x, z)] = (top, self.get_block(x, top, z))
+                y = top
+                while y > -64 and not self._is_ground(self.get_block(x, y, z)):
+                    y -= 1
+                out[(x, z)] = (y, self.get_block(x, y, z), top)
         return out
+
+    _PLANTS = ("minecraft:short_grass", "minecraft:tall_grass", "minecraft:fern", "minecraft:large_fern", "minecraft:dandelion",
+               "minecraft:poppy", "minecraft:snow", "minecraft:dead_bush", "minecraft:vine")
+
+    @staticmethod
+    def _is_ground(state: str) -> bool:
+        block = state.split("[", 1)[0]
+        if block == "minecraft:air" or block in FakeBridge._PLANTS:
+            return False
+        return not block.endswith(("_log", "_wood", "_leaves", "_sapling", "_mushroom", "mushroom_block", "mushroom_stem"))
 
     def say(self, text: str) -> None:
         self.said.append(text)

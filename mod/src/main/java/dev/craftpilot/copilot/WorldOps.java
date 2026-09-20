@@ -12,6 +12,8 @@ import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.level.block.state.properties.Property;
 import net.minecraft.resources.Identifier;
 import net.minecraft.core.BlockPos;
+import net.minecraft.tags.BlockTags;
+import net.minecraft.world.level.block.HugeMushroomBlock;
 import net.minecraft.world.level.levelgen.Heightmap;
 
 import java.util.ArrayList;
@@ -90,12 +92,14 @@ public final class WorldOps {
     }
 
     /**
-     * Surface heightmap of an inclusive x/z rectangle:
-     * {@code {min:[x0,z0], max:[x1,z1], palette:[...], heights:[...], tops:[...]}}. {@code heights[i]} is
-     * the y of the top motion-blocking non-leaf block of column i and {@code tops[i]} the palette index of
-     * that block; both arrays are row-major (z outer, x inner). A column with nothing in it (the void)
-     * reports {@code null} for both. Water counts as ground (its surface is reported). Must run on the
-     * server thread.
+     * Surface survey of an inclusive x/z rectangle:
+     * {@code {min:[x0,z0], max:[x1,z1], palette:[...], heights:[...], tops:[...], clear:[...]}}, all
+     * arrays row-major (z outer, x inner). {@code heights[i]} is the y of the ground in column i — the top
+     * motion-blocking block that is not a log, leaves or a plant, so trees do not count but water surfaces
+     * do; {@code tops[i]} is that block's palette index; {@code clear[i]} is the y of the highest non-air
+     * block at all (canopy, trunk, tall grass, snow layer ...), which is what must go for the column to be
+     * clear down to the ground. A column with nothing in it reports {@code null}s. Must run on the server
+     * thread.
      */
     public static JsonObject heightmap(ServerLevel world, int x0, int z0, int x1, int z1) {
         int minX = Math.min(x0, x1), maxX = Math.max(x0, x1);
@@ -104,26 +108,33 @@ public final class WorldOps {
         Map<BlockState, Integer> index = new HashMap<>();
         JsonArray heights = new JsonArray();
         JsonArray tops = new JsonArray();
+        JsonArray clear = new JsonArray();
         BlockPos.MutableBlockPos pos = new BlockPos.MutableBlockPos();
         int bottom = world.getMinY();
         for (int z = minZ; z <= maxZ; z++) {
             for (int x = minX; x <= maxX; x++) {
-                int top = world.getHeight(Heightmap.Types.MOTION_BLOCKING_NO_LEAVES, x, z) - 1;
-                if (top < bottom) {
+                int surface = world.getHeight(Heightmap.Types.WORLD_SURFACE, x, z) - 1;
+                if (surface < bottom) {
                     heights.add(JsonNull.INSTANCE);
                     tops.add(JsonNull.INSTANCE);
+                    clear.add(JsonNull.INSTANCE);
                     continue;
                 }
-                pos.set(x, top, z);
-                BlockState state = world.getBlockState(pos);
+                int y = surface;
+                BlockState state = world.getBlockState(pos.set(x, y, z));
+                while (y > bottom && !isGround(state, world, pos)) {
+                    y--;
+                    state = world.getBlockState(pos.set(x, y, z));
+                }
                 Integer idx = index.get(state);
                 if (idx == null) {
                     idx = palette.size();
                     palette.add(stringify(state));
                     index.put(state, idx);
                 }
-                heights.add(top);
+                heights.add(y);
                 tops.add(idx);
+                clear.add(surface);
             }
         }
         JsonArray pal = new JsonArray();
@@ -142,7 +153,18 @@ public final class WorldOps {
         out.add("palette", pal);
         out.add("heights", heights);
         out.add("tops", tops);
+        out.add("clear", clear);
         return out;
+    }
+
+    /** Ground for the survey: blocks motion (so water and snow blocks count, plants and snow layers do not)
+     * and is not part of a tree (logs, leaves, mushroom stems/caps). */
+    private static boolean isGround(BlockState state, ServerLevel world, BlockPos pos) {
+        if (state.isAir() || state.is(BlockTags.LEAVES) || state.is(BlockTags.LOGS) || state.is(BlockTags.WART_BLOCKS)
+                || state.getBlock() instanceof HugeMushroomBlock) {
+            return false;
+        }
+        return state.blocksMotion() || !state.getFluidState().isEmpty();
     }
 
     /** Every registered block with its properties, allowed values and default state. */

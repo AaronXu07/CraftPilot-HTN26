@@ -74,14 +74,15 @@ The building lands two blocks in front of you, centred, with its door facing you
 `--gap`, `--sink`, `--no-clear`, `--delay-ms`, `--chunk`; `craftpilot place-status` and
 `craftpilot place-cancel` talk to the mod directly. The `.litematic` is still written every time.
 
-**Terrain.** On non-flat ground the service surveys the site first (the mod's `/heightmap`: the top
-solid block per column, water counting as ground, trees not) and seats the plinth row a little below
-the median surface height under the building instead of at your feet, sinking it further if the build
-would pass y=319. It then streams, with the building, the hill cut out of the base, a foundation down to
-the terrain in the building's own foundation block (a solid plinth on gentle sites, a perimeter wall +
-pillars over a big drop), the surrounding ground ramped one block per column and re-topped with its own
-surface block, and steps from the door down to it. The chat summary reports the site (`terrain y
-63..68 (range 5, fill); ground y=67; fill 268, graded 453, steps 2`). `CRAFTPILOT_PLACE_TERRAIN=0`
+**Terrain.** On non-flat ground the service surveys the site first (the mod's `/heightmap`: per column
+the ground under any tree or plant, water counting as ground, and the highest block standing on it) and
+seats the plinth row a little below the median surface height under the building instead of at your
+feet, sinking it further if the build would pass y=319. It then streams, with the building, the hill
+cut out of the base — trees and plants removed whole, so nothing is left floating — a foundation down
+to the terrain in the building's own foundation block (a solid plinth on gentle sites, a perimeter wall
++ pillars over a big drop), and the surrounding ground ramped one block per column and re-topped with
+its own surface block. The chat summary reports the site (`terrain y 63..68 (range 5, fill); ground
+y=67; fill 268, graded 453`). `CRAFTPILOT_PLACE_TERRAIN=0`
 turns it off (plinth at your feet, bounding box cleared, as before); the hologram still previews at
 your feet, the build settles onto the ground when you press G. Code: `src/craftpilot/terrain.py`.
 
@@ -117,7 +118,7 @@ lighthouse, pagoda, watchtower, townhouse.
 - `src/craftpilot/blocks/` block family catalog (filtered by `data/blocks_<version>.json`); each family carries its colour, texture noise, material and style tags from `palette_data.py`, which also holds the curated palette library
 - `src/craftpilot/llm/` Azure OpenAI compose/edit, strict schema, offline fallback
 - `src/craftpilot/export/` litemapy export
-- `src/craftpilot/terrain.py` seating a build on real terrain: ground level from the mod's heightmap, cut / fill / grading / door steps streamed with the building
+- `src/craftpilot/terrain.py` seating a build on real terrain: ground level from the mod's survey, cut / fill / grading streamed with the building
 - `src/craftpilot/place/` in-game placement: bridge client, anchoring in front of the player, layer chunking
 - `mod/` the Fabric bridge mod (`/build` command, `/setblocks` HTTP endpoint)
 - `src/craftpilot/preview/` isometric PNG renderer

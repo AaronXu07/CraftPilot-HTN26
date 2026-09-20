@@ -1,4 +1,4 @@
-"""Siting a build on real terrain: origin choice, ground level, cut / fill / grading / steps."""
+"""Siting a build on real terrain: origin choice, ground level, cut / fill / grading, trees."""
 
 from __future__ import annotations
 
@@ -35,7 +35,7 @@ def cottage():
 
 
 def sample(fn, r: int = 40, top: str = GRASS) -> TerrainSample:
-    return TerrainSample.from_heights({(x, z): (fn(x, z), top) for x in range(-r, r) for z in range(-r, r)})
+    return TerrainSample.from_heights({(x, z): (fn(x, z), top, fn(x, z)) for x in range(-r, r) for z in range(-r, r)})
 
 
 def flat(x, z):
@@ -57,11 +57,12 @@ def world_blocks(grid, origin) -> dict[tuple[int, int, int], str]:
 
 
 def test_terrain_sample_roundtrip_keeps_nulls():
-    hs = {(0, 0): (63, GRASS), (1, 0): (70, "minecraft:stone"), (0, 1): (62, "minecraft:water[level=0]")}
+    hs = {(0, 0): (63, GRASS, 70), (1, 0): (70, "minecraft:stone", 70), (0, 1): (62, "minecraft:water[level=0]", 62)}
     s = TerrainSample.from_heights(hs)
-    assert s.heights == [[63, 70], [62, None]] and s.tops[1][1] is None
+    assert s.heights == [[63, 70], [62, None]] and s.tops[1][1] is None and s.clear == [[70, 70], [62, None]]
     assert s.to_heights() == hs
-    assert TerrainSample(x0=0, z0=0, heights=[[1]]).to_heights() == {(0, 0): (1, GRASS)}  # tops default to grass
+    # tops default to grass, clear to one row of plants above the ground
+    assert TerrainSample(x0=0, z0=0, heights=[[1]]).to_heights() == {(0, 0): (1, GRASS, 2)}
 
 
 def test_facing_from_yaw_faces_the_player():
@@ -85,10 +86,10 @@ def test_place_uses_the_placer_anchor_rule(facing, yaw):
 
 def test_choose_ground_is_a_little_below_the_median_and_sinks_tall_builds():
     base = {(x, 0) for x in range(10)}
-    heights = {(x, 0): (60 + x, GRASS) for x in range(10)}
+    heights = {(x, 0): (60 + x, GRASS, 61 + x) for x in range(10)}
     assert terrain.choose_ground(heights, base, feet_y=99, build_height=5) == (64, "")  # 40th percentile of 60..69 is 63
     assert terrain.choose_ground({}, base, feet_y=99, build_height=5)[0] == 99
-    high = {c: (300, "minecraft:stone") for c in base}
+    high = {c: (300, "minecraft:stone", 300) for c in base}
     ground, note = terrain.choose_ground(high, base, feet_y=301, build_height=30)
     assert ground == terrain.MAX_BUILD_Y - 30 + 1 and "sunk" in note
     with pytest.raises(ValueError):
@@ -100,10 +101,6 @@ def test_materials_come_from_the_building_and_exist_in_26_2(cottage):
     assert known is not None and "minecraft:cobblestone" in known
     f = terrain.foundation_block(cottage, known)
     assert f in known and f == "minecraft:cobblestone"  # the cottage's foundation ring
-    s = terrain.stairs_block(cottage, f, known)
-    assert s in known and s.endswith("_stairs")
-    assert terrain.stairs_for("minecraft:stone_bricks") == "minecraft:stone_brick_stairs"
-    assert terrain.stairs_for("minecraft:deepslate_tiles") == "minecraft:deepslate_tile_stairs"
     assert terrain.filler_for(GRASS) == "minecraft:dirt" and terrain.filler_for("minecraft:sand") == "minecraft:sand"
 
 
@@ -141,7 +138,8 @@ def test_slope_cuts_the_hill_fills_the_low_side_and_grades_the_apron(cottage):
             assert (x, y, z) in blocks or edits.get((x, y, z)) == AIR, (x, y, z)
     fills = [p_ for p_, st in edits.items() if st == "minecraft:cobblestone"]
     graded = [p_ for p_, st in edits.items() if st in (GRASS, "minecraft:dirt")]
-    assert fills and graded and site["stats"]["fill"] == len(fills)
+    assert fills and graded and site["stats"]["fill"] == len(fills) and "steps" not in site["stats"]
+    assert not any("_stairs[" in st for *_, st in p["edits"])  # no stairs on the slope: the graded ground is walkable
     # the apron in front (toward the player, downhill) is re-topped with grass, never more than one block per column
     tops = {}
     for (x, y, z), st in edits.items():
@@ -152,16 +150,32 @@ def test_slope_cuts_the_hill_fills_the_low_side_and_grades_the_apron(cottage):
     assert front and all(b[1] - a[1] <= 1 for a, b in pairwise(front))
 
 
-def test_door_gets_steps_down_to_the_graded_ground(cottage):
-    p = place(cottage, PlacementRequest(pos=PLAYER, yaw=0.0, terrain=sample(slope)), known=known_blocks())
-    ground = p["origin"][1]
-    stairs = [(x, y, z, st) for x, y, z, st in p["edits"] if "_stairs[" in st]
-    assert stairs and p["site"]["stats"]["steps"] >= len(stairs)
-    dx = p["origin"][0] + cottage.door[0]
-    mine = sorted((z, y) for x, y, z, st in stairs if x == dx)
-    assert mine and mine[-1][1] == ground - 1  # first step right below the platform, just outside the ring
-    assert all(b[1] - a[1] == 1 for a, b in pairwise(mine))  # one step per column
-    assert all("facing=south" in st for _, _, _, st in stairs)  # ascending back toward the door (north face)
+def test_trees_and_plants_are_removed_whole_not_left_floating(cottage):
+    hs = {(x, z): (slope(x, z), GRASS, slope(x, z)) for x in range(-40, 40) for z in range(-40, 40)}
+    hs[(0, 10)] = (slope(0, 10), GRASS, slope(0, 10) + 7)  # a tree inside the base: trunk + canopy up to +7
+    hs[(0, 22)] = (slope(0, 22), GRASS, slope(0, 22) + 7)  # a tree on the apron behind the house
+    hs[(-11, 12)] = (68, GRASS, 70)  # tall grass beside the house, on a level bit of apron (platform height)
+    p = place(cottage, PlacementRequest(pos=PLAYER, yaw=0.0, terrain=TerrainSample.from_heights(hs)))
+    assert p["origin"][1] == 69  # so the platform is 68 and column (-11, 12) needs no grading, only clearing
+    edits = {(x, y, z): st for x, y, z, st in p["edits"]}
+    blocks = world_blocks(cottage, p["origin"])
+    for y in range(slope(0, 10) + 1, slope(0, 10) + 8):
+        assert (0, y, 10) in blocks or edits.get((0, y, 10)) == AIR, y  # the whole tree inside the base goes
+    for y in range(slope(0, 22) + 1, slope(0, 22) + 8):
+        assert edits.get((0, y, 22)) == AIR, y  # and the whole tree on the apron
+    assert edits.get((-11, 69, 12)) == AIR and edits.get((-11, 70, 12)) == AIR  # the tall grass too
+    assert (-11, 68, 12) not in edits  # the ground under it was already right
+
+
+def test_fake_bridge_survey_sees_through_trees():
+    b = FakeBridge(pos=PLAYER, yaw=0.0, terrain=flat)
+    for y in range(64, 69):
+        b.world[(5, y, 5)] = "minecraft:oak_log[axis=y]"
+    for y in range(67, 71):
+        b.world[(6, y, 5)] = "minecraft:oak_leaves[distance=1,persistent=false,waterlogged=false]"
+    b.world[(7, 64, 5)] = "minecraft:short_grass"
+    hm = b.heightmap((5, 5), (7, 5))
+    assert hm[(5, 5)] == (63, GRASS, 68) and hm[(6, 5)] == (63, GRASS, 70) and hm[(7, 5)] == (63, GRASS, 64)
 
 
 def test_cliff_is_cut_to_a_terrace_and_a_tall_build_is_refused(cottage):
@@ -180,12 +194,12 @@ def test_cliff_is_cut_to_a_terrace_and_a_tall_build_is_refused(cottage):
 
 def test_water_and_unknown_columns_are_left_alone(cottage):
     # grass to z=17 (the cottage's last row), a lake behind it at 18..19, nothing sampled beyond
-    lake = TerrainSample.from_heights({(x, z): (60, "minecraft:water[level=0]") if z > 17 else (63 + (2 if z > 8 else 0), GRASS)
+    lake = TerrainSample.from_heights({(x, z): (60, "minecraft:water[level=0]", 60) if z > 17 else (63 + (2 if z > 8 else 0), GRASS, 64 + (2 if z > 8 else 0))
                                        for x in range(-40, 40) for z in range(-40, 20)})
     p = place(cottage, PlacementRequest(pos=PLAYER, yaw=0.0, terrain=lake))
     assert p["site"]["unknown"] == 0 and p["edits"]
     assert not any(z > 17 for _, _, z, _ in p["edits"])  # the lake is not graded, the unknown is not invented
-    short = TerrainSample.from_heights({(x, z): (63, GRASS) for x in range(-40, 40) for z in range(-40, 10)})
+    short = TerrainSample.from_heights({(x, z): (63, GRASS, 64) for x in range(-40, 40) for z in range(-40, 10)})
     p2 = place(cottage, PlacementRequest(pos=PLAYER, yaw=0.0, terrain=short))
     assert p2["site"]["unknown"] > 0 and "outside the terrain sample" in p2["site"]["summary"]
     assert not any(z > 9 for _, _, z, _ in p2["edits"])
@@ -211,9 +225,8 @@ def test_placer_seats_the_build_on_the_surveyed_ground():
     assert min(ys) < ground  # the foundation goes below the plinth row
     assert sent == sorted(sent, key=lambda b: b[1]) or all(a[1] <= c[1] for a, c in pairwise(sent))  # bottom up
     fills = [b for b in sent if b[3] == "minecraft:cobblestone" and b[1] < ground]
-    stairs = [b for b in sent if "_stairs[" in b[3] and b[1] < ground]
     grass = [b for b in sent if b[3] == GRASS]
-    assert fills and stairs and grass
+    assert fills and grass and not any("_stairs[" in b[3] and b[1] < ground for b in sent)
     # air inside the base only: the apron is graded, not flattened into a crater
     x0, z0, x1, z1 = terrain.footprint_of(_grid("north"), (res["origin"][0], res["origin"][2]))
     air_cols = {(b[0], b[2]) for b in sent if b[3] == AIR}
