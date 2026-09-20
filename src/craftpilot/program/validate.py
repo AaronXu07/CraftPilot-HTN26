@@ -40,7 +40,7 @@ _ALIASES = {
 def _resolve_family(name: str) -> str | None:
     n = name.strip().lower().replace("minecraft:", "").replace(" ", "_")
     if catalog.family(n):
-        return n
+        return catalog.family(n).name
     if n in _ALIASES and catalog.family(_ALIASES[n]):
         return _ALIASES[n]
     for suffix in ("_planks", "_block", "_bricks_family", "_log"):
@@ -50,6 +50,12 @@ def _resolve_family(name: str) -> str | None:
     for fam in catalog.FAMILIES.values():
         if fam.tone == n and not fam.loud:
             return fam.name
+    # A loose word: any family whose name contains it, preferring structural then thematic.
+    hits = [f for f in catalog.FAMILIES.values() if n in f.name and f.use in (catalog.USE_STRUCTURAL, catalog.USE_THEMATIC,
+                                                                            catalog.USE_DECORATIVE)]
+    if hits:
+        hits.sort(key=lambda f: ({catalog.USE_STRUCTURAL: 0, catalog.USE_THEMATIC: 1}.get(f.use, 2), len(f.name)))
+        return hits[0].name
     return None
 
 
@@ -121,6 +127,8 @@ def repair(program: BuildProgram, safety_limit: tuple[int, int, int]) -> tuple[B
         r.pitch = float(round(_clamp(r.pitch, 0.5, 3.0) * 2) / 2)
         r.overhang = int(_clamp(r.overhang, 0, 3))
         r.curl = _clamp(r.curl, 0.0, 3.0)
+        r.edge_width = int(_clamp(r.edge_width, 0, 3))
+        r.band_spacing = int(_clamp(r.band_spacing, 2, 6))
         r.ridge_offset = _clamp(r.ridge_offset, -0.4, 0.4)
         r.tiers = int(_clamp(r.tiers, 1, 5))
         if r.crenellated and r.type != RoofType.parapet:
@@ -179,7 +187,7 @@ def repair(program: BuildProgram, safety_limit: tuple[int, int, int]) -> tuple[B
         families=[FamilyWeight(family=DEFAULT_PRIMARY_FAMILY, weight=1.0)])
     pal.roof = _repair_palette(pal.roof, "roof", notes) or RolePalette(
         families=[FamilyWeight(family=DEFAULT_ROOF_FAMILY, weight=1.0)])
-    for role in ("secondary", "accent", "framing", "trim", "foundation", "glass"):
+    for role in ("secondary", "accent", "framing", "trim", "foundation", "glass", "roof_edge"):
         setattr(pal, role, _repair_palette(getattr(pal, role), role, notes))
     if pal.glass is not None and any(catalog.family(fw.family).tone != "glass" for fw in pal.glass.families
                                      if catalog.family(fw.family)):
@@ -189,9 +197,14 @@ def repair(program: BuildProgram, safety_limit: tuple[int, int, int]) -> tuple[B
     if pal.roof is not None:
         for fw in pal.roof.families:
             fam = catalog.family(fw.family)
-            if fam is not None and not fam.has("stairs"):
+            if fam is not None and not fam.has("stairs") and catalog.resolve_shape(fam, "stairs") is None:
                 notes.append(f"Roof family '{fw.family}' has no stairs; slopes will use full blocks.")
 
+    # A roof edge palette implies an edge of one row when none was given.
+    if pal.roof_edge is not None:
+        for p_ in program.parts:
+            if p_.roof.edge_width == 0 and p_.roof.edge_lines == "none":
+                p_.roof.edge_width = 1
     # Bounds.
     b = program.bounds
     b.width = int(_clamp(b.width, 7, safety_limit[0]))

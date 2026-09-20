@@ -12,7 +12,7 @@ program:
       size: {width: 0.9, depth: 0.75}
       floors: 2
       floor_height: 4
-      roof: {type: gable, pitch: 1.5, overhang: 1, ridge_axis: x, ridge_offset: -0.3}
+      roof: {type: gable, pitch: 1.5, overhang: 1, ridge_axis: x, ridge_offset: -0.3, edge_width: 1, edge_lines: bands, band_spacing: 3}
   facade:
     bay_width: {min: 3, max: 4}
     window: plain
@@ -38,6 +38,9 @@ program:
     - {kind: chimney, count: 1}
   interior: {stairs: true, doorways: true, partitions: false, lighting: true}
   palette:
+    roof_edge:
+      families: [{family: spruce, weight: 1.0}]
+      texture_rate: 0.1
     primary:
       families: [{family: birch, weight: 1.0}]
       texture_rate: 0.2

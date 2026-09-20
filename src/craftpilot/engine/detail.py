@@ -17,7 +17,7 @@ from craftpilot.grid.semantic import SemanticGrid
 from craftpilot.program.model import BuildProgram
 
 _QUIET_NEIGHBOURS = {Role.WALL, Role.FRAME, Role.ROOF_FILL, Role.FOUNDATION, Role.PARAPET, Role.CHIMNEY, Role.BEAM, Role.ACCENT,
-                     Role.TRIM, Role.PARTITION, Role.ROOF}
+                     Role.TRIM, Role.PARTITION, Role.ROOF, Role.ROOF_EDGE}
 _NOISY_NEIGHBOURS = {Role.WINDOW, Role.DOOR, Role.SILL, Role.SHUTTER, Role.DETAIL, Role.LIGHT}
 
 

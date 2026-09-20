@@ -12,7 +12,7 @@ program:
       size: {width: 0.85, depth: 0.8}
       floors: 1
       floor_height: 6
-      roof: {type: hip, pitch: 1.0, overhang: 2, profile: concave, curl: 2.0}
+      roof: {type: hip, pitch: 1.0, overhang: 2, profile: concave, curl: 2.0, edge_width: 1, edge_lines: hips}
   facade:
     bay_width: {min: 3, max: 3}
     window: plain
@@ -40,6 +40,9 @@ program:
     - {kind: spire, count: 1, params: {height: 3}}
   budget: {dominant: 1, medium_min: 0, medium_max: 0, small_min: 0, small_max: 0}
   palette:
+    roof_edge:
+      families: [{family: spruce, weight: 1.0}]
+      texture_rate: 0.1
     primary:
       families: [{family: white_concrete, weight: 0.85}, {family: calcite, weight: 0.15}]
       texture_rate: 0.12

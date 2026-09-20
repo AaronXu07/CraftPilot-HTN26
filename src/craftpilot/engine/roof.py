@@ -373,6 +373,34 @@ def _quantize_column(grid: SemanticGrid, part: LayoutPart, S: np.ndarray, valid:
                     break
 
 
+def _edge_mask(part: LayoutPart, spec: RoofSpec, h: np.ndarray, dil: np.ndarray) -> np.ndarray:
+    """Cells built in the roof_edge blockset: the outer rows, and optionally the ridge, hip lines or bands."""
+    W, D = dil.shape
+    edge = np.zeros((W, D), dtype=bool)
+    if spec.type in FULL_ONLY_TYPES | {RoofType.none}:
+        return edge
+    dist = _chessboard(dil)
+    if spec.edge_width > 0:
+        edge |= dil & (dist <= spec.edge_width)
+    if spec.edge_lines == "none" or not dil.any():
+        return edge
+    top = float(h[dil].max())
+    ridge = dil & (h >= top - 0.01)
+    if spec.edge_lines in ("ridge", "hips"):
+        edge |= ridge
+    if spec.edge_lines == "hips" and part.spec.shape in (Shape.rect, Shape.cross, Shape.ring):
+        xs, zs = np.nonzero(dil)
+        x0, x1, z0, z1 = int(xs.min()), int(xs.max()), int(zs.min()), int(zs.max())
+        gx, gz = np.meshgrid(np.arange(W), np.arange(D), indexing="ij")
+        dx = np.minimum(gx - x0, x1 - gx)
+        dz = np.minimum(gz - z0, z1 - gz)
+        edge |= dil & (dx == dz)          # the diagonals from each corner to the ridge
+    if spec.edge_lines == "bands":
+        k = max(2, spec.band_spacing)
+        edge |= dil & (dist > spec.edge_width) & (((dist - 1 - spec.edge_width) % k) == 0)
+    return edge
+
+
 def roof(grid: SemanticGrid, program: BuildProgram) -> None:
     W, D = grid.W, grid.D
     per_part: dict[int, dict] = {}
@@ -390,6 +418,9 @@ def roof(grid: SemanticGrid, program: BuildProgram) -> None:
         better = surface > grid.roof_surface
         grid.roof_surface = np.where(better, surface, grid.roof_surface)
         grid.roof_part[better] = part.index
+        edge_cells = _edge_mask(part, spec, h, dil)
+        top_role = np.where(edge_cells & (top_role == int(Role.ROOF)), int(Role.ROOF_EDGE), top_role).astype(np.uint8)
+        fill_role = np.where(edge_cells & (fill_role == int(Role.ROOF_FILL)), int(Role.ROOF_EDGE), fill_role).astype(np.uint8)
         per_part[part.index] = {"S": surface, "valid": dil, "closed": closed, "edge": perimeter(dil),
                                 "top_role": top_role, "fill_role": fill_role, "top_shape": top_shape}
         part_max[part.index] = float(surface[dil].max()) if dil.any() else -np.inf

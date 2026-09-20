@@ -36,6 +36,7 @@ class Role(IntEnum):
     PARTITION = 27      # interior wall
     FOLIAGE = 28        # vines and leaves
     DETAIL = 29         # small protruding textures: buttons, trapdoors, lichen
+    ROOF_EDGE = 30      # roof surface in the edge blockset (boundary rows, ridge, hips, bands)
 
 
 class BShape(IntEnum):

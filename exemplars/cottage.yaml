@@ -13,7 +13,7 @@ program:
       size: {width: 1.0, depth: 1.0}
       floors: 2
       floor_height: 4
-      roof: {type: gable, pitch: 1.0, overhang: 1, ridge_axis: x}
+      roof: {type: gable, pitch: 1.0, overhang: 1, ridge_axis: x, edge_width: 1, edge_lines: ridge}
   facade:
     bay_width: {min: 3, max: 4}
     window: plain
@@ -37,6 +37,9 @@ program:
     - {kind: dormer, count: 2, spacing: regular}
     - {kind: porch}
   palette:
+    roof_edge:
+      families: [{family: spruce, weight: 1.0}]
+      texture_rate: 0.1
     primary:
       families: [{family: oak, weight: 1.0}]
       texture_rate: 0.15

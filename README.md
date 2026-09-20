@@ -103,7 +103,7 @@ selected by `CRAFTPILOT_MC_VERSION` in `.env` (1.21.1 and 26.2 are shipped; gene
 ```sh
 uv run pytest                       # unit tests + closure property test
 uv run ruff check src tests
-uv run python scripts/gen_catalog.py 26.2   # regenerate data/blocks_26.2.json from the game jar
+uv run python scripts/gen_catalog.py 26.2   # regenerate data/blocks_26.2.json from the game jars (block list, texture colours, noise)
 uv run craftpilot catalog           # print the block families the LLM sees
 ```
 
@@ -115,7 +115,7 @@ lighthouse, pagoda, watchtower, townhouse.
 
 - `src/craftpilot/program/` the BuildProgram vocabulary, validation, palette rules, and exemplar library
 - `src/craftpilot/engine/` layout, massing, roof, attachments, facade, interior, depth, detail, materials, postprocess
-- `src/craftpilot/blocks/` block family catalog (filtered by `data/blocks_<version>.json`); each family carries its colour, texture noise, material and style tags from `palette_data.py`, which also holds the curated palette library
+- `src/craftpilot/blocks/` block catalog built from `data/blocks_<version>.json`: families by naming pattern, colour and noise measured from textures, a use class per block (structural, decorative, thematic, precious, functional, natural), style tags, and colour-first shape lookup; `palette_data.py` holds hand overrides and the curated palette library
 - `src/craftpilot/llm/` Azure OpenAI compose/edit, strict schema, offline fallback
 - `src/craftpilot/export/` litemapy export
 - `src/craftpilot/terrain.py` seating a build on real terrain: ground level from the mod's survey, cut / fill / grading streamed with the building

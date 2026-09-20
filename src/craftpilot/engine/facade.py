@@ -24,7 +24,7 @@ RECT_LIKE = {Shape.rect, Shape.cross, Shape.ring}
 
 _BLOCKING = {Role.WALL, Role.FRAME, Role.ROOF, Role.ROOF_FILL, Role.CHIMNEY, Role.PILLAR, Role.FOUNDATION,
              Role.WINDOW, Role.DOOR, Role.PARAPET, Role.MERLON}
-_SURROUNDS = False   # set per build in facade()
+
 
 
 def _eligible(grid: SemanticGrid, part: LayoutPart, x: int, z: int, side: int, rows: range) -> bool:
@@ -113,6 +113,10 @@ def _window(grid: SemanticGrid, cells: list[tuple[int, int]], side: int, wb: int
         shape = BShape.TRAPDOOR
     elif style == WindowStyle.gate:
         shape = BShape.FENCE_GATE
+    elif style == WindowStyle.bars:
+        shape = BShape.BARS
+    elif style == WindowStyle.fence:
+        shape = BShape.FENCE
     elif style == WindowStyle.wall or ww > 2:
         shape = BShape.FULL
     else:
@@ -140,8 +144,9 @@ def _window(grid: SemanticGrid, cells: list[tuple[int, int]], side: int, wb: int
                     if grid.in_bounds(bx, y, bz) and grid.role[bx, y, bz] == Role.WALL and grid.part_id[bx, y, bz] == part.index:
                         grid.set(bx, y, bz, Role.INTERIOR, BShape.FULL, Dir.NONE, part.index, hn, Flag.INSET)
         return
-    # Glass walls, boards and gates are never inset.
-    keep_flat = Flag.INSET if style in (WindowStyle.wall, WindowStyle.boarded, WindowStyle.gate) else 0
+    # Glass walls, boards, gates and arched windows are never inset: the arch needs the glass in plane.
+    keep_flat = Flag.INSET if style in (WindowStyle.wall, WindowStyle.boarded, WindowStyle.gate, WindowStyle.arched,
+                                        WindowStyle.bars, WindowStyle.fence) else 0
     for (x, z) in cells:
         for y in range(wb, top + 1):
             if grid.role[x, y, z] == Role.WALL:
@@ -152,40 +157,28 @@ def _window(grid: SemanticGrid, cells: list[tuple[int, int]], side: int, wb: int
                 if grid.in_bounds(bx, y, bz) and grid.role[bx, y, bz] == Role.WALL \
                         and grid.part_id[bx, y, bz] == part.index:
                     grid.set(bx, y, bz, Role.INTERIOR, BShape.FULL, Dir.NONE, part.index, grid.h_norm[x, y, z], Flag.INSET)
-    if style == WindowStyle.arched and ww == 1 and top + 1 < ceiling:
-        x, z = cells[0]
-        if grid.role[x, top + 1, z] == Role.WALL:
-            grid.set(x, top + 1, z, Role.WINDOW, BShape.PANE, side, part.index, grid.h_norm[x, top + 1, z],
-                     Flag.NO_TEXTURE | Flag.PERIMETER)
-        along_x = side in (Dir.NORTH, Dir.SOUTH)
-        for sgn in (-1, 1):
-            fx, fz = (x + sgn, z) if along_x else (x, z + sgn)
-            if grid.in_bounds(fx, top + 1, fz) and grid.role[fx, top + 1, fz] == Role.WALL:
-                away = (Dir.EAST if sgn > 0 else Dir.WEST) if along_x else (Dir.SOUTH if sgn > 0 else Dir.NORTH)
-                grid.set(fx, top + 1, fz, Role.TRIM, BShape.STAIR_UPSIDE, away, part.index,
-                         grid.h_norm[fx, top + 1, fz], Flag.PERIMETER)
-    if accent and style in (WindowStyle.plain, WindowStyle.tall, WindowStyle.round) and top + 1 < ceiling:
-        for (x, z) in cells:
-            if grid.role[x, top + 1, z] == Role.WALL:
-                grid.set(x, top + 1, z, Role.ACCENT, BShape.FULL, side, part.index, grid.h_norm[x, top + 1, z],
-                         Flag.PERIMETER | Flag.NO_TEXTURE)
-    # Trim-stone surround: jambs beside the window and a lintel above (the accent lintel wins if present).
-    if _SURROUNDS and style not in (WindowStyle.wall, WindowStyle.slit, WindowStyle.stair_slit):
-        along_x = side in (Dir.NORTH, Dir.SOUTH)
-        first, last = cells[0], cells[-1]
-        jambs = [((first[0] - 1, first[1]) if along_x else (first[0], first[1] - 1)),
-                 ((last[0] + 1, last[1]) if along_x else (last[0], last[1] + 1))]
-        for (jx, jz) in jambs:
-            for y in range(wb, top + 1):
-                if grid.in_bounds(jx, y, jz) and grid.role[jx, y, jz] == Role.WALL:
-                    grid.set(jx, y, jz, Role.TRIM, BShape.FULL, side, part.index, grid.h_norm[jx, y, jz],
-                             Flag.PERIMETER | Flag.NO_TEXTURE)
-        if not accent and top + 1 < ceiling:
+    if style == WindowStyle.arched and ww >= 2:
+        _arch(grid, cells, side, top, part, rules)
+    # Window trim, opt-in: a lintel (accent if there is one, else trim) or a full trim surround.
+    trim_mode = rules.window_trim
+    if trim_mode != "none" and style not in (WindowStyle.wall, WindowStyle.slit, WindowStyle.stair_slit, WindowStyle.fence):
+        lintel_role = Role.ACCENT if accent else Role.TRIM
+        if top + 1 <= ceiling:
             for (x, z) in cells:
                 if grid.role[x, top + 1, z] == Role.WALL:
-                    grid.set(x, top + 1, z, Role.TRIM, BShape.FULL, side, part.index, grid.h_norm[x, top + 1, z],
+                    grid.set(x, top + 1, z, lintel_role, BShape.FULL, side, part.index, grid.h_norm[x, top + 1, z],
                              Flag.PERIMETER | Flag.NO_TEXTURE)
-    if rules.sills and style not in (WindowStyle.wall, WindowStyle.slit, WindowStyle.stair_slit):
+        if trim_mode == "surround":
+            along_x = side in (Dir.NORTH, Dir.SOUTH)
+            first, last = cells[0], cells[-1]
+            jambs = [((first[0] - 1, first[1]) if along_x else (first[0], first[1] - 1)),
+                     ((last[0] + 1, last[1]) if along_x else (last[0], last[1] + 1))]
+            for (jx, jz) in jambs:
+                for y in range(wb, top + 1):
+                    if grid.in_bounds(jx, y, jz) and grid.role[jx, y, jz] == Role.WALL:
+                        grid.set(jx, y, jz, Role.TRIM, BShape.FULL, side, part.index, grid.h_norm[jx, y, jz],
+                                 Flag.PERIMETER | Flag.NO_TEXTURE)
+    if rules.sills and style not in (WindowStyle.wall, WindowStyle.slit, WindowStyle.stair_slit, WindowStyle.fence):
         # Sill: an upside-down stair or a closed trapdoor ledge; sometimes a flowering window box instead.
         box = rules.window_boxes > 0 and grid.rng.random() < rules.window_boxes and wb - 1 > part.base_y
         sill_shape = BShape.STAIR_UPSIDE if grid.rng.random() < 0.6 else BShape.TRAPDOOR
@@ -208,6 +201,53 @@ def _window(grid: SemanticGrid, cells: list[tuple[int, int]], side: int, wb: int
                     if grid.in_bounds(ox, y, oz) and grid.role[ox, y, oz] == Role.EMPTY \
                             and grid.in_bounds(fx, y, fz) and grid.role[fx, y, fz] == Role.WALL:
                         grid.set(ox, y, oz, Role.SHUTTER, BShape.TRAPDOOR, side, part.index, 0.0)
+
+
+def _arch(grid: SemanticGrid, cells: list[tuple[int, int]], side: int, top: int, part: LayoutPart,
+          rules: FacadeRules) -> None:
+    """A one-block relief arch standing in front of the wall, so the glass fills the whole opening.
+
+    Row `top` (the top row of glass): upside-down stairs in front of the two end cells, their
+    missing quarter toward the middle, so the glass corners are cut off by the arch shoulders.
+    Row `top + 1`: bottom slabs as the crown over the inner cells (over both cells when two wide),
+    rising half a block above the shoulders. Wooden arches add thin closed trapdoors over the
+    shoulders so the crown steps down at the ends instead of stopping dead."""
+    vx, _, vz = DIR_VEC[side]
+    ww = len(cells)
+    along_x = side in (Dir.NORTH, Dir.SOUTH)
+    role = Role.TRIM if rules.window_trim != "none" or _trim_contrasts(grid) else Role.WALL
+    flags = Flag.NO_TEXTURE | Flag.FIXED_SHAPE | Flag.PROTRUDE
+
+    def free(fx: int, y: int, fz: int) -> bool:
+        return grid.in_bounds(fx, y, fz) and grid.role[fx, y, fz] == Role.EMPTY
+
+    front = [(x + vx, z + vz) for (x, z) in cells]
+    for idx in (0, ww - 1):
+        fx, fz = front[idx]
+        x, z = cells[idx]
+        outward = (Dir.WEST if idx == 0 else Dir.EAST) if along_x else (Dir.NORTH if idx == 0 else Dir.SOUTH)
+        if free(fx, top, fz):
+            grid.set(fx, top, fz, role, BShape.STAIR_UPSIDE, outward, part.index, grid.h_norm[x, top, z], flags)
+    crown_y = top + 1
+    crown = range(ww) if ww == 2 else range(1, ww - 1)
+    for idx in crown:
+        fx, fz = front[idx]
+        x, z = cells[idx]
+        # The crown needs something behind it (the wall row over the window), never open air.
+        if free(fx, crown_y, fz) and grid.in_bounds(x, crown_y, z) \
+                and grid.role[x, crown_y, z] not in (Role.EMPTY, Role.INTERIOR):
+            grid.set(fx, crown_y, fz, role, BShape.SLAB_BOTTOM, side, part.index, grid.h_norm[x, top, z], flags)
+        elif ww >= 3 and free(fx, top, fz):
+            # No room above (eave or roof overhang): a top slab level with the shoulders makes a
+            # flat-crowned arch instead of leaving a gap between the two stairs.
+            grid.set(fx, top, fz, role, BShape.SLAB_TOP, side, part.index, grid.h_norm[x, top, z], flags)
+    if _ARCH_WOODEN and ww >= 3:
+        for idx in (0, ww - 1):
+            fx, fz = front[idx]
+            x, z = cells[idx]
+            if free(fx, crown_y, fz) and grid.role[fx, top, fz] != Role.EMPTY and grid.in_bounds(x, crown_y, z) \
+                    and grid.role[x, crown_y, z] not in (Role.EMPTY, Role.INTERIOR):
+                grid.set(fx, crown_y, fz, role, BShape.TRAPDOOR, side, part.index, grid.h_norm[x, top, z], flags)
 
 
 def _steps(grid: SemanticGrid, cells: list[tuple[int, int]], side: int, y: int, part: LayoutPart, outset: int) -> None:
@@ -381,12 +421,13 @@ def _process_run(grid: SemanticGrid, run: list[tuple[int, int]], side: int, part
             ww = max(1, min(rules.window_width, max(1, bw - 2)))
             if style == WindowStyle.round:
                 ww, wh = 1, 1
-            elif style == WindowStyle.tall:
+            elif style == WindowStyle.tall or (style == WindowStyle.arched and max(1, min(rules.window_width, max(1, bw - 2))) == 1):
                 wh = max(3, rules.window_height)
             elif style in (WindowStyle.slit, WindowStyle.stair_slit):
                 ww, wh = 1, 2
-            elif style in (WindowStyle.boarded, WindowStyle.gate):
-                wh = max(1, min(rules.window_height, 2)) if style == WindowStyle.gate else max(1, rules.window_height)
+            elif style in (WindowStyle.boarded, WindowStyle.gate, WindowStyle.fence):
+                wh = max(1, min(rules.window_height, 2)) if style in (WindowStyle.gate, WindowStyle.fence) \
+                    else max(1, rules.window_height)
             else:
                 wh = max(1, rules.window_height)
             off = (bw - ww) // 2
@@ -394,7 +435,7 @@ def _process_run(grid: SemanticGrid, run: list[tuple[int, int]], side: int, part
             wb = y_base + 1
             if style == WindowStyle.round:
                 wb = y_base + 2 if ceiling - y_base > 3 else y_base + 1
-            wh = min(wh, ceiling - 1 - wb)
+            wh = min(wh, ceiling - wb)
             if wh < 1:
                 continue
         _window(grid, cells, side, wb, wh, part, style, rules, ceiling, accent)
@@ -444,25 +485,18 @@ def _round_part(grid: SemanticGrid, part: LayoutPart, k: int, rules: FacadeRules
         style = rules.window if rules.window != WindowStyle.wall else WindowStyle.plain
         wh = 3 if style == WindowStyle.tall else (1 if style == WindowStyle.round else max(1, rules.window_height))
         wb = y_base + 1
-        wh = min(wh, ceiling - 1 - wb)
+        wh = min(wh, ceiling - wb)
         if wh >= 1:
             _window(grid, [(x, z)], side, wb, wh, part, style, rules, ceiling, accent)
     return placed_door
 
 
-def _want_surrounds(program: BuildProgram) -> bool:
-    """Trim jambs and lintels read only when the trim is a different material from the wall."""
-    from craftpilot.blocks import catalog
-    mode = program.facade.window_surrounds
-    if mode == "none":
-        return False
-    if mode == "always":
-        return program.palette.trim is not None
-    if program.palette.trim is None or not program.palette.trim.families:
-        return False
-    trim = catalog.family(program.palette.trim.families[0].family)
-    prim = catalog.family(max(program.palette.primary.families, key=lambda f: f.weight).family)
-    return trim is not None and prim is not None and trim.material != prim.material
+_TRIM_CONTRASTS = False   # set per build in facade()
+_ARCH_WOODEN = False      # set per build in facade(): the family window arches are built from is wood
+
+
+def _trim_contrasts(grid: SemanticGrid) -> bool:
+    return _TRIM_CONTRASTS
 
 
 def _lamp_posts(grid: SemanticGrid, part: LayoutPart, outset: int) -> int:
@@ -523,7 +557,7 @@ def _gable_windows(grid: SemanticGrid, part: LayoutPart, rules: FacadeRules, acc
             if min(hs) < 1:
                 return False
             ceiling = part.eave_y + min(hs)          # one row of wall stays above the window
-            wh = min(wh, ceiling - 1 - wb)
+            wh = min(wh, ceiling - wb)
             if wh < 1:
                 return False
             for (x, z) in cells:
@@ -562,8 +596,15 @@ def facade(grid: SemanticGrid, program: BuildProgram) -> None:
     rules = program.facade
     root_name = program.root().name
     accent = program.palette.accent is not None
-    global _SURROUNDS
-    _SURROUNDS = _want_surrounds(program)
+    global _TRIM_CONTRASTS
+    from craftpilot.blocks import catalog as _cat
+    _trim = program.palette.trim.families[0].family if program.palette.trim and program.palette.trim.families else None
+    _prim = max(program.palette.primary.families, key=lambda f: f.weight).family
+    _TRIM_CONTRASTS = bool(_trim and _cat.family(_trim) and _cat.family(_prim)
+                           and _cat.colour_distance(_cat.family(_trim).rgb, _cat.family(_prim).rgb) > 0.25)
+    global _ARCH_WOODEN
+    _arch_fam = _cat.family(_trim) if (_trim and (rules.window_trim != "none" or _TRIM_CONTRASTS)) else _cat.family(_prim)
+    _ARCH_WOODEN = bool(_arch_fam and _arch_fam.material == "wood" and "trapdoor" in _arch_fam.shapes)
     door_done = grid.door is not None
     # The door goes on whichever ground part is closest to the front (a gatehouse before the keep).
     ground = [p for p in grid.parts if not p.is_attachment and (p.spec.attach is None or p.spec.attach.side.value != "top")]

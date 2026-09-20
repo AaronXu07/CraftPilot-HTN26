@@ -1,15 +1,41 @@
-"""Block family catalog.
+"""Block catalog, built from the game's own block list.
 
-A family is a set of blocks that share a material and come in several shapes
-(full block, stairs, slab, fence, wall, log, trapdoor, door, pane) plus
-same-tone variants used for texturing. The catalog only lists blocks that
-exist in Minecraft Java 1.20.2 and later so schematics paste into old and new
-worlds alike. A generated catalog from the game jar can replace this later.
+Every block in `data/blocks_<version>.json` gets three layers of information:
+
+- appearance: an average colour and a texture-noise value derived from its texture (hand values
+  from palette_data fill in when the data file has none);
+- a use class: `structural` (the engine may pick it on its own), `decorative` (pieces such as
+  trapdoors, fences, lanterns, leaves), `thematic` (belongs to a setting: mushroom, prismarine,
+  nether, end, ice; only when a program names it), `precious` and `functional` (ores, mineral
+  blocks, redstone, containers, technical blocks; last resort or tiny accent only), `natural`
+  (dirt, sand, crops; never used);
+- style tags, from the hand table where one exists, else inferred from the name.
+
+Families group a block with its shapes (stairs, slab, wall, fence, gate, trapdoor, door, button,
+log, pane) and its texture variants (cracked, mossy, chiseled, smooth, polished, cut), all found
+by naming pattern. A block with no relatives is a family of one. Pieces are resolved colour-first
+across every family through `nearest_with_shape`, because builders pick a trapdoor by colour,
+not by wood type.
 """
 
 from __future__ import annotations
 
+import colorsys
+import json
+import os
+import re
 from dataclasses import dataclass, field
+from pathlib import Path
+
+from craftpilot.blocks.palette_data import _OVERRIDES, info as _hand_info
+
+USE_STRUCTURAL = "structural"
+USE_DECORATIVE = "decorative"
+USE_THEMATIC = "thematic"
+USE_PRECIOUS = "precious"
+USE_FUNCTIONAL = "functional"
+USE_NATURAL = "natural"
+AUTO_USES = (USE_STRUCTURAL, USE_DECORATIVE)
 
 
 @dataclass(frozen=True)
@@ -25,11 +51,11 @@ class Family:
     loud: bool = False
     shapes: dict[str, str] = field(default_factory=dict)   # shape name -> block id
     variants: list[Variant] = field(default_factory=list)  # alternative full blocks
-    # Appearance and context, filled from palette_data at build time.
     rgb: tuple[int, int, int] = (128, 128, 128)
-    noise: float = 0.4                                     # 0 flat colour .. 1 very busy texture
-    material: str = "stone"                                # wood, stone, brick, plaster, terracotta, metal, glass, organic
+    noise: float = 0.3                                     # 0 flat colour .. 1 very busy texture
+    material: str = "stone"
     styles: frozenset[str] = frozenset({"generic"})
+    use: str = USE_STRUCTURAL
 
     def has(self, shape: str) -> bool:
         return shape in self.shapes
@@ -38,12 +64,11 @@ class Family:
         return colour_words(self.rgb)
 
     def noise_word(self) -> str:
-        return "smooth" if self.noise <= 0.2 else "textured" if self.noise <= 0.45 else "rough" if self.noise <= 0.7 else "busy"
+        return "smooth" if self.noise <= 0.15 else "textured" if self.noise <= 0.35 else "rough" if self.noise <= 0.5 else "busy"
 
 
 def colour_words(rgb: tuple[int, int, int]) -> str:
     """A short human colour name: lightness word plus hue word, e.g. 'light warm grey', 'dark red'."""
-    import colorsys
     h, l, sat = colorsys.rgb_to_hls(*(c / 255.0 for c in rgb))
     h *= 360
     if l < 0.12:
@@ -79,285 +104,409 @@ def _mc(block: str) -> str:
     return f"minecraft:{block}"
 
 
-def _wood(name: str, tone: str, log: str | None = None, planks: str | None = None) -> Family:
-    log = log or f"{name}_log"
-    planks = planks or f"{name}_planks"
-    stripped = f"stripped_{log}"
-    return Family(
-        name=name,
-        tone=tone,
-        shapes={
-            "full": _mc(planks),
-            "stairs": _mc(f"{name}_stairs"),
-            "slab": _mc(f"{name}_slab"),
-            "fence": _mc(f"{name}_fence"),
-            "log": _mc(log),
-            "stripped_log": _mc(stripped),
-            "trapdoor": _mc(f"{name}_trapdoor"),
-            "door": _mc(f"{name}_door"),
-            "button": _mc(f"{name}_button"),
-            "fence_gate": _mc(f"{name}_fence_gate"),
-        },
-        variants=[Variant(_mc(stripped), frozenset({"log"}))],
-    )
-
-
-def _stone(
-    name: str,
-    tone: str,
-    full: str | None = None,
-    stairs: str | None = None,
-    slab: str | None = None,
-    wall: str | None = None,
-    variants: list[tuple[str, set[str]]] | None = None,
-    loud: bool = False,
-    pillar: str | None = None,
-) -> Family:
-    full = full or name
-    shapes = {"full": _mc(full)}
-    if stairs:
-        shapes["stairs"] = _mc(stairs)
-    if slab:
-        shapes["slab"] = _mc(slab)
-    if wall:
-        shapes["wall"] = _mc(wall)
-    if pillar:
-        shapes["pillar"] = _mc(pillar)
-    shapes["button"] = _mc("polished_blackstone_button" if "blackstone" in name else "stone_button")
-    if name in ("copper", "exposed_copper", "weathered_copper", "oxidized_copper"):
-        base = "waxed_" + (name if name != "copper" else "copper")
-        shapes["trapdoor"] = _mc(f"{base}_trapdoor")
-        shapes["door"] = _mc(f"{base}_door")
-    return Family(
-        name=name,
-        tone=tone,
-        loud=loud,
-        shapes=shapes,
-        variants=[Variant(_mc(v), frozenset(t)) for v, t in (variants or [])],
-    )
-
-
-def _plain(name: str, tone: str, block: str, loud: bool = False) -> Family:
-    return Family(name=name, tone=tone, loud=loud, shapes={"full": _mc(block)})
-
-
-def _build() -> dict[str, Family]:
-    fams: list[Family] = [
-        # Woods
-        _wood("oak", "light_wood"),
-        _wood("birch", "light_wood"),
-        _wood("spruce", "dark_wood"),
-        _wood("dark_oak", "dark_wood"),
-        _wood("jungle", "warm_wood"),
-        _wood("acacia", "warm_wood"),
-        _wood("mangrove", "warm_wood"),
-        _wood("cherry", "pink_wood"),
-        _wood("bamboo", "light_wood", log="bamboo_block", planks="bamboo_planks"),
-        _wood("crimson", "red", log="crimson_stem"),
-        _wood("warped", "teal", log="warped_stem"),
-        _wood("pale_oak", "white"),
-        _stone("bamboo_mosaic", "light_wood", stairs="bamboo_mosaic_stairs", slab="bamboo_mosaic_slab"),
-        # Grey stone
-        _stone("cobblestone", "grey_stone", stairs="cobblestone_stairs", slab="cobblestone_slab",
-               wall="cobblestone_wall", variants=[("mossy_cobblestone", {"weathered"})]),
-        _stone("mossy_cobblestone", "grey_stone", stairs="mossy_cobblestone_stairs",
-               slab="mossy_cobblestone_slab", wall="mossy_cobblestone_wall"),
-        _stone("mossy_stone_bricks", "grey_stone", stairs="mossy_stone_brick_stairs", slab="mossy_stone_brick_slab",
-               wall="mossy_stone_brick_wall"),
-        _stone("stone_bricks", "grey_stone", stairs="stone_brick_stairs", slab="stone_brick_slab",
-               wall="stone_brick_wall",
-               variants=[("cracked_stone_bricks", {"weathered"}), ("mossy_stone_bricks", {"weathered"}),
-                         ("chiseled_stone_bricks", {"chiseled"})]),
-        _stone("stone", "grey_stone", stairs="stone_stairs", slab="stone_slab",
-               variants=[("smooth_stone", {"smooth"})]),
-        _stone("smooth_stone", "grey_stone", slab="smooth_stone_slab"),
-        _stone("andesite", "grey_stone", stairs="andesite_stairs", slab="andesite_slab", wall="andesite_wall",
-               variants=[("polished_andesite", {"smooth"})]),
-        _stone("polished_andesite", "grey_stone", stairs="polished_andesite_stairs",
-               slab="polished_andesite_slab"),
-        _stone("tuff", "grey_stone", stairs="tuff_stairs", slab="tuff_slab", wall="tuff_wall",
-               variants=[("chiseled_tuff", {"chiseled"})]),
-        _stone("tuff_bricks", "grey_stone", stairs="tuff_brick_stairs", slab="tuff_brick_slab", wall="tuff_brick_wall",
-               variants=[("chiseled_tuff_bricks", {"chiseled"})]),
-        _stone("polished_tuff", "grey_stone", stairs="polished_tuff_stairs", slab="polished_tuff_slab",
-               wall="polished_tuff_wall"),
-        _stone("resin_bricks", "copper", stairs="resin_brick_stairs", slab="resin_brick_slab", wall="resin_brick_wall",
-               variants=[("chiseled_resin_bricks", {"chiseled"})]),
-        _stone("cinnabar", "dark_red", stairs="cinnabar_stairs", slab="cinnabar_slab", wall="cinnabar_wall",
-               variants=[("chiseled_cinnabar", {"chiseled"})]),
-        _stone("cinnabar_bricks", "dark_red", stairs="cinnabar_brick_stairs", slab="cinnabar_brick_slab",
-               wall="cinnabar_brick_wall"),
-        _stone("sulfur", "sand", stairs="sulfur_stairs", slab="sulfur_slab", wall="sulfur_wall", loud=True,
-               variants=[("chiseled_sulfur", {"chiseled"})]),
-        _stone("sulfur_bricks", "sand", stairs="sulfur_brick_stairs", slab="sulfur_brick_slab",
-               wall="sulfur_brick_wall", loud=True),
-        _stone("smooth_red_sandstone", "red", stairs="smooth_red_sandstone_stairs", slab="smooth_red_sandstone_slab"),
-        # Dark stone
-        _stone("deepslate_bricks", "dark_stone", stairs="deepslate_brick_stairs", slab="deepslate_brick_slab",
-               wall="deepslate_brick_wall", variants=[("cracked_deepslate_bricks", {"weathered"})]),
-        _stone("deepslate_tiles", "dark_stone", stairs="deepslate_tile_stairs", slab="deepslate_tile_slab",
-               wall="deepslate_tile_wall", variants=[("cracked_deepslate_tiles", {"weathered"})]),
-        _stone("polished_deepslate", "dark_stone", stairs="polished_deepslate_stairs",
-               slab="polished_deepslate_slab", wall="polished_deepslate_wall"),
-        _stone("cobbled_deepslate", "dark_stone", stairs="cobbled_deepslate_stairs",
-               slab="cobbled_deepslate_slab", wall="cobbled_deepslate_wall"),
-        _stone("blackstone", "dark_stone", stairs="blackstone_stairs", slab="blackstone_slab",
-               wall="blackstone_wall"),
-        _stone("polished_blackstone_bricks", "dark_stone", stairs="polished_blackstone_brick_stairs",
-               slab="polished_blackstone_brick_slab", wall="polished_blackstone_brick_wall",
-               variants=[("cracked_polished_blackstone_bricks", {"weathered"})]),
-        _stone("polished_blackstone", "dark_stone", stairs="polished_blackstone_stairs",
-               slab="polished_blackstone_slab", wall="polished_blackstone_wall"),
-        _stone("basalt", "dark_stone", pillar="basalt", variants=[("smooth_basalt", {"smooth"})]),
-        # Warm stone
-        _stone("bricks", "warm_stone", stairs="brick_stairs", slab="brick_slab", wall="brick_wall"),
-        _stone("mud_bricks", "warm_stone", stairs="mud_brick_stairs", slab="mud_brick_slab",
-               wall="mud_brick_wall", variants=[("packed_mud", {"weathered"})]),
-        _stone("granite", "warm_stone", stairs="granite_stairs", slab="granite_slab", wall="granite_wall",
-               variants=[("polished_granite", {"smooth"})]),
-        _stone("polished_granite", "warm_stone", stairs="polished_granite_stairs", slab="polished_granite_slab"),
-        _stone("sandstone", "sand", stairs="sandstone_stairs", slab="sandstone_slab", wall="sandstone_wall",
-               variants=[("cut_sandstone", {"smooth"}), ("chiseled_sandstone", {"chiseled"})]),
-        _stone("smooth_sandstone", "sand", stairs="smooth_sandstone_stairs", slab="smooth_sandstone_slab"),
-        _stone("red_sandstone", "red", stairs="red_sandstone_stairs", slab="red_sandstone_slab",
-               wall="red_sandstone_wall", variants=[("cut_red_sandstone", {"smooth"})]),
-        _stone("terracotta", "warm_stone"),
-        # Nether / end
-        _stone("nether_bricks", "dark_red", stairs="nether_brick_stairs", slab="nether_brick_slab",
-               wall="nether_brick_wall", variants=[("cracked_nether_bricks", {"weathered"})]),
-        _stone("red_nether_bricks", "dark_red", stairs="red_nether_brick_stairs",
-               slab="red_nether_brick_slab", wall="red_nether_brick_wall", loud=True),
-        _stone("end_stone_bricks", "white", stairs="end_stone_brick_stairs", slab="end_stone_brick_slab",
-               wall="end_stone_brick_wall"),
-        _stone("purpur", "purple", full="purpur_block", stairs="purpur_stairs", slab="purpur_slab",
-               pillar="purpur_pillar", loud=True),
-        _stone("prismarine", "teal", stairs="prismarine_stairs", slab="prismarine_slab",
-               wall="prismarine_wall", loud=True),
-        _stone("prismarine_bricks", "teal", stairs="prismarine_brick_stairs", slab="prismarine_brick_slab",
-               loud=True),
-        _stone("dark_prismarine", "teal", stairs="dark_prismarine_stairs", slab="dark_prismarine_slab"),
-        # White
-        _stone("quartz", "white", full="quartz_block", stairs="quartz_stairs", slab="quartz_slab",
-               pillar="quartz_pillar", variants=[("smooth_quartz", {"smooth"}), ("chiseled_quartz_block", {"chiseled"})]),
-        _stone("smooth_quartz", "white", full="smooth_quartz", stairs="smooth_quartz_stairs",
-               slab="smooth_quartz_slab"),
-        _stone("diorite", "white", stairs="diorite_stairs", slab="diorite_slab", wall="diorite_wall",
-               variants=[("polished_diorite", {"smooth"})]),
-        _stone("polished_diorite", "white", stairs="polished_diorite_stairs", slab="polished_diorite_slab"),
-        _stone("calcite", "white"),
-        _stone("bone", "white", full="bone_block", pillar="bone_block"),
-        # Copper
-        _stone("copper", "copper", full="waxed_copper_block", stairs="waxed_cut_copper_stairs",
-               slab="waxed_cut_copper_slab", variants=[("waxed_cut_copper", {"smooth"})]),
-        _stone("exposed_copper", "copper", full="waxed_exposed_copper", stairs="waxed_exposed_cut_copper_stairs",
-               slab="waxed_exposed_cut_copper_slab", variants=[("waxed_exposed_cut_copper", {"smooth"})]),
-        _stone("weathered_copper", "teal", full="waxed_weathered_copper",
-               stairs="waxed_weathered_cut_copper_stairs", slab="waxed_weathered_cut_copper_slab",
-               variants=[("waxed_weathered_cut_copper", {"smooth"})]),
-        _stone("oxidized_copper", "teal", full="waxed_oxidized_copper",
-               stairs="waxed_oxidized_cut_copper_stairs", slab="waxed_oxidized_cut_copper_slab",
-               variants=[("waxed_oxidized_cut_copper", {"smooth"})]),
-        # Metal and misc
-        Family("iron", "metal", shapes={"full": _mc("iron_block"), "trapdoor": _mc("iron_trapdoor"), "door": _mc("iron_door"),
-                                        "button": _mc("stone_button")}),
-        Family("iron_bars", "metal", shapes={"full": _mc("iron_bars"), "pane": _mc("iron_bars")}),
-        _plain("obsidian", "dark_stone", "obsidian"),
-        _plain("dark_oak_wood", "dark_wood", "dark_oak_wood"),
-        _plain("moss", "green", "moss_block"),
-        _plain("hay", "sand", "hay_block", loud=True),
-        _plain("bookshelf", "warm_wood", "bookshelf"),
-        # Glass
-        Family("glass", "glass", shapes={"full": _mc("glass"), "pane": _mc("glass_pane")}),
-        Family("tinted_glass", "glass", shapes={"full": _mc("tinted_glass"), "pane": _mc("tinted_glass")}),
-    ]
-    # Concrete and terracotta colours: full blocks only, most are loud.
-    colours = ["white", "light_gray", "gray", "black", "brown", "red", "orange", "yellow", "lime",
-               "green", "cyan", "light_blue", "blue", "purple", "magenta", "pink"]
-    quiet = {"white", "light_gray", "gray", "black", "brown"}
-    for c in colours:
-        tone = "white" if c == "white" else ("dark_stone" if c == "black" else c)
-        fams.append(_plain(f"{c}_concrete", tone, f"{c}_concrete", loud=c not in quiet))
-        fams.append(_plain(f"{c}_terracotta", "warm_stone" if c in quiet else c, f"{c}_terracotta",
-                           loud=c not in quiet))
-        fams.append(_plain(f"{c}_wool", tone, f"{c}_wool", loud=c not in quiet))
-        fams.append(Family(f"{c}_stained_glass", "glass", loud=c not in quiet,
-                           shapes={"full": _mc(f"{c}_stained_glass"), "pane": _mc(f"{c}_stained_glass_pane")}))
-    return {f.name: f for f in fams}
-
-
-def _known_blocks() -> set[str] | None:
-    """Block ids of the target Minecraft version, from data/blocks_<version>.json, if generated."""
-    import json
-    import os
-    from pathlib import Path
-
-    version = os.environ.get("CRAFTPILOT_MC_VERSION", "26.2")
-    path = Path(__file__).resolve().parents[3] / "data" / f"blocks_{version}.json"
-    if not path.exists():
-        return None
-    try:
-        return set(json.loads(path.read_text())["blocks"].keys())
-    except Exception:
-        return None
-
-
-def known_blocks() -> set[str] | None:
-    """Public alias of `_known_blocks` for callers that validate block ids (terrain edits)."""
-    return _known_blocks()
-
-
-def _filter(fams: dict[str, Family], known: set[str] | None) -> dict[str, Family]:
-    """Drop shapes, variants, and whole families whose blocks the target version does not have,
-    and attach appearance data to every family."""
-    from craftpilot.blocks.palette_data import info
-
-    out: dict[str, Family] = {}
-    for name, f in fams.items():
-        shapes = {k: v for k, v in f.shapes.items() if known is None or v in known}
-        if "full" not in shapes:
-            continue
-        variants = [v for v in f.variants if known is None or v.block_id in known]
-        fi = info(name, f.tone)
-        out[name] = Family(name=f.name, tone=f.tone, loud=f.loud, shapes=shapes, variants=variants,
-                           rgb=fi.rgb, noise=fi.noise, material=fi.material, styles=frozenset(fi.styles))
-    return out
-
-
-KNOWN_BLOCKS: set[str] | None = _known_blocks()
-FAMILIES: dict[str, Family] = _filter(_build(), KNOWN_BLOCKS)
-
-# Roles that need a specific shape. Materials falls back through this chain.
-SHAPE_FALLBACK: dict[str, list[str]] = {
-    "stairs": ["stairs", "slab", "full"],
-    "slab": ["slab", "full"],
-    "fence": ["fence", "wall", "full"],
-    "wall": ["wall", "fence", "full"],
-    "log": ["log", "pillar", "full"],
-    "stripped_log": ["stripped_log", "log", "pillar", "full"],
-    "pillar": ["pillar", "log", "full"],
-    "trapdoor": ["trapdoor", "slab", "full"],
-    "door": ["door"],
-    "pane": ["pane", "full"],
-    "button": ["button"],
-    "full": ["full"],
-}
-
-DOOR_FALLBACK = _mc("oak_door")
 LANTERN = _mc("lantern")
 CAMPFIRE = _mc("campfire")
 AIR = _mc("air")
+DOOR_FALLBACK = _mc("oak_door")
+
+# Roles that need a specific shape; the fallback chain runs before colour-first lookup kicks in.
+SHAPE_FALLBACK: dict[str, list[str]] = {
+    "stairs": ["stairs"],
+    "slab": ["slab"],
+    "fence": ["fence", "wall"],
+    "wall": ["wall", "fence"],
+    "log": ["log", "pillar", "full"],
+    "stripped_log": ["stripped_log", "log", "pillar", "full"],
+    "pillar": ["pillar", "log", "full"],
+    "trapdoor": ["trapdoor"],
+    "door": ["door"],
+    "pane": ["pane", "full"],
+    "button": ["button"],
+    "fence_gate": ["fence_gate"],
+    "full": ["full"],
+}
+
+# ------------------------------------------------------------------------------------------------
+# Raw block data
+
+
+def _load_blocks() -> tuple[dict[str, dict], str]:
+    version = os.environ.get("CRAFTPILOT_MC_VERSION", "26.2")
+    path = Path(__file__).resolve().parents[3] / "data" / f"blocks_{version}.json"
+    if not path.exists():
+        return {}, version
+    try:
+        return json.loads(path.read_text())["blocks"], version
+    except Exception:
+        return {}, version
+
+
+BLOCKS, MC_VERSION = _load_blocks()
+KNOWN_BLOCKS: set[str] | None = set(BLOCKS) if BLOCKS else None
+
+
+def known_blocks() -> set[str] | None:
+    """Block ids the target version has (None without a data file); used by terrain edits and tests."""
+    return KNOWN_BLOCKS
+
+
+def _short(block_id: str) -> str:
+    return block_id.split(":", 1)[-1]
+
+
+def block_rgb(block_id: str) -> tuple[int, int, int] | None:
+    c = BLOCKS.get(block_id, {}).get("color")
+    return (int(c[0]), int(c[1]), int(c[2])) if c else None
+
+
+def block_noise(block_id: str) -> float | None:
+    n = BLOCKS.get(block_id, {}).get("noise")
+    return float(n) if n is not None else None
+
+
+# ------------------------------------------------------------------------------------------------
+# Use classification
+
+_FUNCTIONAL = {
+    "furnace", "blast_furnace", "smoker", "crafting_table", "chest", "trapped_chest", "ender_chest", "barrel",
+    "hopper", "dropper", "dispenser", "piston", "sticky_piston", "piston_head", "moving_piston", "observer", "lever",
+    "comparator", "repeater", "redstone_wire", "redstone_torch", "redstone_wall_torch", "redstone_lamp", "tnt",
+    "jukebox", "note_block", "bell", "anvil", "chipped_anvil", "damaged_anvil", "grindstone", "stonecutter", "loom",
+    "cartography_table", "smithing_table", "fletching_table", "enchanting_table", "brewing_stand", "cauldron",
+    "water_cauldron", "lava_cauldron", "powder_snow_cauldron", "composter", "beehive", "bee_nest", "lectern",
+    "respawn_anchor", "lodestone", "beacon", "conduit", "spawner", "trial_spawner", "vault", "command_block",
+    "chain_command_block", "repeating_command_block", "structure_block", "structure_void", "jigsaw", "barrier",
+    "light", "bedrock", "end_portal", "end_portal_frame", "end_gateway", "nether_portal", "dragon_egg",
+    "daylight_detector", "target", "tripwire", "tripwire_hook", "rail", "powered_rail", "detector_rail",
+    "activator_rail", "scaffolding", "slime_block", "honey_block", "crafter", "chiseled_bookshelf", "sculk_sensor",
+    "calibrated_sculk_sensor", "sculk_shrieker", "sculk_catalyst", "infested_stone", "frosted_ice", "bubble_column",
+    "fire", "soul_fire", "cake", "flower_pot", "cobweb", "sponge", "wet_sponge", "test_block", "test_instance_block",
+}
+_FUNCTIONAL_PATTERNS = ("shulker_box", "_bed", "_head", "_skull", "_sign", "command_block", "cauldron",
+                        "potted_", "candle_cake", "copper_bulb", "infested_")
+_PRECIOUS_PATTERNS = ("_ore", "raw_", "diamond_block", "gold_block", "emerald_block", "netherite_block", "lapis_block",
+                      "redstone_block", "ancient_debris", "gilded_blackstone", "budding_amethyst")
+_NATURAL = {
+    "dirt", "coarse_dirt", "rooted_dirt", "grass_block", "podzol", "mycelium", "farmland", "dirt_path", "sand",
+    "red_sand", "gravel", "suspicious_sand", "suspicious_gravel", "snow", "ice", "water", "lava", "powder_snow",
+    "melon", "pumpkin", "cactus", "sugar_cane", "bamboo", "kelp", "kelp_plant", "seagrass", "tall_seagrass",
+    "lily_pad", "dead_bush", "short_grass", "tall_grass", "fern", "large_fern", "hanging_roots", "spore_blossom",
+    "big_dripleaf", "small_dripleaf", "azalea", "flowering_azalea", "pointed_dripstone", "cave_vines",
+    "cave_vines_plant", "weeping_vines", "twisting_vines", "sculk_vein", "frogspawn", "turtle_egg", "sniffer_egg",
+    "brown_mushroom", "red_mushroom", "cocoa", "wheat", "carrots", "potatoes", "beetroots", "nether_wart",
+    "sweet_berry_bush", "torchflower_crop", "pitcher_crop", "mud", "magma_block", "netherrack", "soul_sand",
+    "soul_soil", "end_stone", "moss_carpet", "pale_moss_carpet",
+}
+_NATURAL_PATTERNS = ("_sapling", "_propagule", "coral", "_crop", "attached_", "_bush", "_flower", "tulip", "orchid",
+                     "allium", "azure_bluet", "daisy", "cornflower", "lily_of", "poppy", "dandelion", "wither_rose",
+                     "torchflower", "pitcher_plant", "sunflower", "lilac", "rose_bush", "peony", "pink_petals",
+                     "wildflowers", "leaf_litter", "firefly_bush", "cactus_flower", "dry_", "seagrass", "pickle",
+                     "_egg", "_roots", "sprouts", "_fungus", "chorus_", "eyeblossom", "_grass", "concrete_powder",
+                     "_stem" if False else "cave_vines")
+_DECORATIVE = {
+    "lantern", "soul_lantern", "torch", "wall_torch", "soul_torch", "soul_wall_torch", "chain", "iron_bars", "ladder",
+    "campfire", "soul_campfire", "glowstone", "sea_lantern", "shroomlight", "bookshelf", "hay_block", "moss_block",
+    "pale_moss_block", "carved_pumpkin", "jack_o_lantern", "lightning_rod", "end_rod", "candle", "decorated_pot",
+    "glow_lichen", "vine", "resin_clump", "copper_grate", "exposed_copper_grate", "weathered_copper_grate",
+    "oxidized_copper_grate", "iron_chain", "copper_chain", "copper_lantern", "copper_torch", "shelf", "cushion",
+}
+_DECORATIVE_PATTERNS = ("_leaves", "_carpet", "_pane", "_trapdoor", "_button", "_fence", "_door", "_candle",
+                        "_lantern", "_chain", "_grate", "_banner", "_shelf", "_cushion", "_torch", "_bars")
+_THEMATIC_PATTERNS = ("mushroom", "prismarine", "purpur", "end_stone", "nether", "crimson", "warped", "sculk",
+                      "froglight", "packed_ice", "blue_ice", "snow_block", "amethyst", "bone_block", "honeycomb",
+                      "dried_kelp", "warped_wart", "glazed_terracotta", "crying_obsidian", "quartz_bricks",
+                      "reinforced_deepslate", "chorus", "magma", "cinnabar", "sulfur", "resin", "_wool")
+_STRUCTURAL_MATERIALS = {"wood", "plaster", "terracotta", "brick"}
+_STRUCTURAL_NAMES = {
+    "calcite", "tuff", "dripstone_block", "clay", "smooth_basalt", "basalt", "polished_basalt", "blackstone",
+    "obsidian", "iron_block", "coal_block", "smooth_stone", "stone", "cobblestone", "mossy_cobblestone", "andesite",
+    "diorite", "granite", "deepslate", "cobbled_deepslate", "sandstone", "red_sandstone", "quartz_block",
+    "smooth_quartz", "bricks", "mud_bricks", "packed_mud", "stone_bricks", "mossy_stone_bricks",
+    "cracked_stone_bricks", "chiseled_stone_bricks", "terracotta", "bamboo_mosaic", "waxed_copper_block",
+    "copper_block", "cut_copper", "chiseled_copper", "bamboo_block", "stripped_bamboo_block", "white_wool",
+    "light_gray_wool", "gray_wool", "black_wool", "brown_wool", "dark_prismarine",
+}
+
+
+def use_class(block_id: str, material: str, has_shapes: bool) -> str:
+    n = _short(block_id)
+    if n == "air" or n.endswith("_air") or n in _FUNCTIONAL or any(p in n for p in _FUNCTIONAL_PATTERNS):
+        return USE_FUNCTIONAL
+    if any(p in n for p in _PRECIOUS_PATTERNS):
+        return USE_PRECIOUS
+    if n in _STRUCTURAL_NAMES:
+        return USE_STRUCTURAL
+    if n in _NATURAL or any(p in n for p in _NATURAL_PATTERNS):
+        return USE_NATURAL
+    if n in _DECORATIVE or any(p in n for p in _DECORATIVE_PATTERNS) or material == "glass":
+        return USE_DECORATIVE
+    if any(p in n for p in _THEMATIC_PATTERNS):
+        return USE_THEMATIC
+    if material in _STRUCTURAL_MATERIALS or has_shapes:
+        return USE_STRUCTURAL
+    for pre in ("cracked_", "mossy_", "chiseled_", "smooth_", "polished_", "cut_", "waxed_", "exposed_",
+                "weathered_", "oxidized_"):
+        if n.startswith(pre):
+            return USE_STRUCTURAL
+    return USE_THEMATIC
+
+
+# ------------------------------------------------------------------------------------------------
+# Material and style inference
+
+
+def _material_for(name: str) -> str:
+    if name.endswith("_planks") or any(t in name for t in ("_log", "_wood", "_stem", "hyphae", "bamboo_block",
+                                                            "bamboo_mosaic", "stripped_")):
+        return "wood"
+    if "concrete" in name:
+        return "plaster"
+    if "terracotta" in name:
+        return "terracotta"
+    if "glass" in name:
+        return "glass"
+    if any(t in name for t in ("copper", "iron_", "gold_", "netherite", "diamond", "emerald", "lapis",
+                                "redstone_block", "chain")):
+        return "metal"
+    if any(t in name for t in ("leaves", "mushroom", "moss", "hay", "wart", "pumpkin", "melon", "shroomlight",
+                                "sponge", "kelp", "honey", "azalea", "bush", "grass", "vine", "roots", "fungus")):
+        return "organic"
+    if "wool" in name or "carpet" in name:
+        return "cloth"
+    if "brick" in name:
+        return "brick"
+    return "stone"
+
+
+def _styles_for(name: str, material: str) -> frozenset[str]:
+    if any(t in name for t in ("nether", "crimson", "warped", "blackstone", "basalt", "soul_", "magma", "gilded")):
+        return frozenset({"nether", "dark", "fantasy"})
+    if any(t in name for t in ("end_stone", "purpur", "chorus")):
+        return frozenset({"end", "fantasy"})
+    if any(t in name for t in ("prismarine", "sea_lantern", "sponge", "kelp")):
+        return frozenset({"ocean", "fantasy"})
+    if "sculk" in name:
+        return frozenset({"dark", "fantasy", "sculk"})
+    if any(t in name for t in ("mushroom", "shroomlight", "amethyst", "froglight")):
+        return frozenset({"fantasy", "natural"})
+    if any(t in name for t in ("packed_ice", "blue_ice", "snow")):
+        return frozenset({"winter"})
+    if any(t in name for t in ("sandstone", "terracotta", "mud")):
+        return frozenset({"desert", "generic"})
+    return frozenset({"generic"})
+
+
+def _tone_for(rgb: tuple[int, int, int], material: str) -> str:
+    if material == "glass":
+        return "glass"
+    h, l, s = colorsys.rgb_to_hls(*(c / 255.0 for c in rgb))
+    h *= 360
+    if material == "metal":
+        return "copper" if (s > 0.25 and h < 60) else "metal"
+    if material == "wood":
+        if l > 0.75:
+            return "white"
+        if (h > 300 or h < 20) and s > 0.2:
+            return "pink_wood" if l > 0.6 else "warm_wood"
+        return "light_wood" if l > 0.45 else "dark_wood"
+    if s < 0.12:
+        return "white" if l > 0.75 else "dark_stone" if l < 0.3 else "grey_stone"
+    if l > 0.7 and 30 < h < 70:
+        return "sand"
+    if 15 <= h < 70:
+        return "warm_stone"
+    if h < 15 or h >= 340:
+        return "red" if l > 0.3 else "dark_red"
+    if 70 <= h < 160:
+        return "green"
+    if 160 <= h < 220:
+        return "teal"
+    if 220 <= h < 340:
+        return "purple"
+    return "grey_stone"
+
+
+# ------------------------------------------------------------------------------------------------
+# Family construction by naming pattern
+
+_SHAPE_SUFFIXES = [
+    ("_fence_gate", "fence_gate"), ("_stairs", "stairs"), ("_slab", "slab"), ("_wall", "wall"), ("_fence", "fence"),
+    ("_trapdoor", "trapdoor"), ("_door", "door"), ("_button", "button"),
+]
+_NOT_WALL = ("_wall_banner", "_wall_sign", "_wall_head", "_wall_skull", "_wall_fan", "_wall_hanging_sign",
+             "_wall_torch")
+_VARIANT_PREFIXES = {"cracked_": "weathered", "mossy_": "weathered", "chiseled_": "chiseled", "smooth_": "smooth",
+                     "polished_": "smooth", "cut_": "smooth"}
+_CUBE_PROPS = {"axis", "north", "east", "south", "west", "up", "down", "waterlogged", "distance", "persistent"}
+
+
+def _base_candidates(base: str) -> list[str]:
+    return [base, base + "_planks", base + "_block", base + "s", re.sub(r"brick$", "bricks", base),
+            re.sub(r"tile$", "tiles", base)]
+
+
+def _family_key(base: str) -> str:
+    for suf in ("_planks", "_block"):
+        if base.endswith(suf) and base != "bamboo_block":
+            return base[: -len(suf)]
+    return base
+
+
+def _build() -> dict[str, Family]:
+    names = {_short(b) for b in BLOCKS} if BLOCKS else set()
+    if not names:
+        return {}
+    fams: dict[str, Family] = {}
+    consumed: set[str] = set()
+
+    def get_family(base: str) -> Family:
+        key = _family_key(base)
+        if key not in fams:
+            fams[key] = Family(name=key, tone="grey_stone", shapes={"full": _mc(base)})
+            consumed.add(base)
+        return fams[key]
+
+    # Shaped blocks attach to their base block.
+    for n in sorted(names):
+        if any(bad in n for bad in _NOT_WALL):
+            continue
+        for suffix, shape in _SHAPE_SUFFIXES:
+            if not n.endswith(suffix):
+                continue
+            base = n[: -len(suffix)]
+            if base == "petrified_oak":
+                break
+            found = next((c for c in _base_candidates(base) if c in names and c != n), None)
+            if found is None:
+                fam = fams.setdefault(base, Family(name=base, tone="grey_stone", shapes={}))
+                fam.shapes[shape] = _mc(n)
+            else:
+                get_family(found).shapes.setdefault(shape, _mc(n))
+            consumed.add(n)
+            break
+
+    # Wood: logs, stripped logs and bark; glass panes and bars.
+    for n in sorted(names):
+        if n.endswith("_planks"):
+            wood = n[: -len("_planks")]
+            fam = get_family(n)
+            for log in (f"{wood}_log", f"{wood}_stem", "bamboo_block" if wood == "bamboo" else ""):
+                if log and log in names:
+                    fam.shapes.setdefault("log", _mc(log))
+                    consumed.add(log)
+                    stripped = f"stripped_{log}"
+                    if stripped in names:
+                        fam.shapes.setdefault("stripped_log", _mc(stripped))
+                        fam.variants.append(Variant(_mc(stripped), frozenset({"log"})))
+                        consumed.add(stripped)
+                    break
+            for bark in (f"{wood}_wood", f"{wood}_hyphae", f"stripped_{wood}_wood", f"stripped_{wood}_hyphae"):
+                if bark in names:
+                    consumed.add(bark)
+        if n.endswith("_pane"):
+            base = n[: -len("_pane")]
+            if base in names:
+                get_family(base).shapes.setdefault("pane", _mc(n))
+                consumed.add(n)
+    if "iron_bars" in names:
+        fams["iron_bars"] = Family(name="iron_bars", tone="metal", shapes={"full": _mc("iron_bars"), "pane": _mc("iron_bars")})
+        consumed.add("iron_bars")
+    for n, base in (("quartz_pillar", "quartz_block"), ("purpur_pillar", "purpur_block"), ("basalt", "basalt"),
+                    ("polished_basalt", "polished_basalt"), ("bone_block", "bone_block"), ("hay_block", "hay_block")):
+        if n in names and base in names:
+            get_family(base).shapes.setdefault("pillar", _mc(n))
+            if n != base:
+                consumed.add(n)
+
+    # Variants: prefixed relatives of a family base.
+    for n in sorted(names):
+        for prefix, tag in _VARIANT_PREFIXES.items():
+            if n.startswith(prefix):
+                base = n[len(prefix):]
+                for cand in (base, base + "_block", base + "s"):
+                    if cand in names and _family_key(cand) in fams:
+                        fams[_family_key(cand)].variants.append(Variant(_mc(n), frozenset({tag})))
+                        break
+
+    # Every other cube-like block becomes a family of one (plants and other natural blocks are skipped).
+    taken = {f.shapes.get("full") for f in fams.values()}
+    for n in sorted(names):
+        if n in consumed or _mc(n) in taken:
+            continue
+        if use_class(_mc(n), _material_for(n), False) == USE_NATURAL:
+            continue
+        if any(n.endswith(suf) for suf, _ in _SHAPE_SUFFIXES) or n.endswith(("_pane", "_carpet", "_pressure_plate",
+                                                                             "_sign", "_hanging_sign", "_banner")):
+            continue
+        props = set(BLOCKS.get(_mc(n), {}).get("properties", {}))
+        if props and not props <= _CUBE_PROPS:
+            continue
+        key = _family_key(n) if _family_key(n) not in fams else n
+        fam = Family(name=key, tone="grey_stone", shapes={"full": _mc(n)})
+        if props == {"axis"}:
+            fam.shapes["pillar"] = _mc(n)
+        fams[key] = fam
+
+    # Attributes.
+    for fam in fams.values():
+        full = fam.shapes.get("full") or next(iter(fam.shapes.values()))
+        short = _short(full)
+        hand = _OVERRIDES.get(fam.name)
+        material = hand.material if hand else _material_for(short)
+        rgb = block_rgb(full) or (hand.rgb if hand else None)
+        noise = block_noise(full)
+        if rgb is None or noise is None:
+            fallback = _hand_info(fam.name, _tone_for(rgb or (128, 128, 128), material))
+            rgb = rgb or fallback.rgb
+            noise = noise if noise is not None else min(1.0, fallback.noise * 0.7)
+        styles = frozenset(hand.styles) if hand else _styles_for(short, material)
+        has_shapes = any(s in fam.shapes for s in ("stairs", "slab", "wall"))
+        use = use_class(full, material, has_shapes)
+        if "full" not in fam.shapes:
+            use = USE_DECORATIVE
+        h, l, s = colorsys.rgb_to_hls(*(c / 255.0 for c in rgb))
+        loud = (s > 0.5 and 0.2 < l < 0.85 and material != "wood") or "glazed_terracotta" in short
+        fam.rgb, fam.noise, fam.material, fam.styles, fam.use, fam.loud = tuple(rgb), float(noise), material, styles, use, loud
+        fam.tone = _tone_for(fam.rgb, material)
+        fam.variants = [v for v in fam.variants
+                        if use_class(v.block_id, material, True) in (USE_STRUCTURAL, USE_THEMATIC)]
+    return fams
+
+
+def _hand_fallback() -> dict[str, Family]:
+    """Without a data file, build families from the hand tables only (fresh checkouts)."""
+    fams: dict[str, Family] = {}
+    for name, hi in _OVERRIDES.items():
+        fams[name] = Family(name=name, tone=_tone_for(hi.rgb, hi.material), shapes={"full": _mc(name)},
+                            rgb=hi.rgb, noise=hi.noise * 0.7, material=hi.material, styles=frozenset(hi.styles))
+    return fams
+
+
+FAMILIES: dict[str, Family] = _build() or _hand_fallback()
+
+# Unwaxed copper oxidises in the world, so the waxed family stands in for it everywhere.
+_ALIASES: dict[str, str] = {}
+for _name in list(FAMILIES):
+    if "copper" in _name and not _name.startswith("waxed_") and f"waxed_{_name}" in FAMILIES:
+        FAMILIES[_name].use = USE_NATURAL
+        _ALIASES[_name] = f"waxed_{_name}"
+        for _bid in FAMILIES[_name].shapes.values():
+            _ALIASES.setdefault(_short(_bid), f"waxed_{_name}")
+# Block names resolve to their family too: "netherite_block" -> "netherite", "oak_planks" -> "oak".
+for _f in FAMILIES.values():
+    if _f.use == USE_NATURAL:
+        continue
+    for _bid in list(_f.shapes.values()) + [v.block_id for v in _f.variants]:
+        _ALIASES.setdefault(_short(_bid), _f.name)
+del _f, _bid, _name
 
 
 def family(name: str) -> Family | None:
-    return FAMILIES.get(name)
-
-
-def resolve_shape(fam: Family, shape: str) -> str | None:
-    """Block id for a shape in a family, following the fallback chain."""
-    for s in SHAPE_FALLBACK.get(shape, [shape, "full"]):
-        if s in fam.shapes:
-            return fam.shapes[s]
-    return None
+    f = FAMILIES.get(name)
+    if f is None or f.use == USE_NATURAL:
+        alias = _ALIASES.get(_short(name))
+        f = FAMILIES.get(alias) if alias else f
+    return f
 
 
 def families_by_tone() -> dict[str, list[Family]]:
@@ -367,24 +516,103 @@ def families_by_tone() -> dict[str, list[Family]]:
     return out
 
 
+# ------------------------------------------------------------------------------------------------
+# Colour-first shape lookup
+
+_SHAPE_INDEX: dict[str, list[tuple[Family, str]]] = {}
+for _f in FAMILIES.values():
+    for _shape, _bid in _f.shapes.items():
+        _SHAPE_INDEX.setdefault(_shape, []).append((_f, _bid))
+del _f, _shape, _bid
+
+_NEAREST_CACHE: dict[tuple, tuple[str, str] | None] = {}
+
+
+def colour_distance(a: tuple[int, int, int], b: tuple[int, int, int]) -> float:
+    h0, l0, s0 = colorsys.rgb_to_hls(*(c / 255.0 for c in a))
+    h1, l1, s1 = colorsys.rgb_to_hls(*(c / 255.0 for c in b))
+    dh = min(abs(h0 - h1), 1 - abs(h0 - h1))
+    return 2.0 * abs(l0 - l1) + abs(s0 - s1) + dh * 4.0 * max(s0, s1)
+
+
+def nearest_with_shape(shape: str, rgb: tuple[int, int, int], material: str | None = None,
+                       allow: tuple[str, ...] = AUTO_USES, last_resort: bool = True,
+                       exclude: str | None = None) -> tuple[Family, str] | None:
+    """The block of `shape` closest in colour to `rgb`. Same material is a small bonus, never a
+    gate. Precious, functional and thematic blocks are considered only when nothing allowed is
+    anywhere near, so a grey stone can still get an iron trapdoor but never a netherite one."""
+    key = (shape, rgb, material, allow, last_resort, exclude)
+    if key in _NEAREST_CACHE:
+        hit = _NEAREST_CACHE[key]
+        return (FAMILIES[hit[0]], hit[1]) if hit else None
+    best, best_d = None, 1e9
+    fallback, fallback_d = None, 1e9
+    for fam, bid in _SHAPE_INDEX.get(shape, []):
+        if fam.name == exclude:
+            continue
+        d = colour_distance(rgb, block_rgb(bid) or fam.rgb)
+        if material and fam.material != material:
+            d += 0.08
+        if fam.loud:
+            d += 0.1
+        if fam.use in allow:
+            if d < best_d:
+                best, best_d = (fam, bid), d
+        elif fam.use in (USE_PRECIOUS, USE_FUNCTIONAL, USE_THEMATIC) and d < fallback_d:
+            fallback, fallback_d = (fam, bid), d
+    if best is None or (last_resort and fallback is not None and best_d > 0.45 and fallback_d < best_d - 0.25):
+        best = fallback
+    _NEAREST_CACHE[key] = (best[0].name, best[1]) if best else None
+    return best
+
+
+def resolve_shape(fam: Family, shape: str) -> str | None:
+    """Block id for a shape in a family: the family's own, a fallback shape, else the closest
+    colour from any family."""
+    for s in SHAPE_FALLBACK.get(shape, [shape, "full"]):
+        if s in fam.shapes:
+            return fam.shapes[s]
+    if shape == "full":
+        return None
+    hit = nearest_with_shape(shape, fam.rgb, fam.material)
+    return hit[1] if hit else None
+
+
+# ------------------------------------------------------------------------------------------------
+# Prompt summary
+
+_MATERIAL_ORDER = ("wood", "stone", "brick", "plaster", "terracotta", "metal", "cloth", "organic", "glass")
+
+
 def catalog_summary() -> str:
-    """One line per family for the LLM prompt: name, shapes, colour, texture, material, where it belongs."""
-    by_material: dict[str, list[Family]] = {}
-    for f in FAMILIES.values():
-        by_material.setdefault(f.material, []).append(f)
+    """The vocabulary the model may use: structural families grouped by material, then decorative
+    and thematic families under their own headings, with colour and texture words."""
+
+    def line(f: Family) -> str:
+        shapes = "".join(
+            ch for ch, s in (("S", "stairs"), ("s", "slab"), ("F", "fence"), ("W", "wall"), ("L", "log"),
+                             ("T", "trapdoor"), ("D", "door"), ("P", "pane"), ("B", "button"), ("G", "fence_gate"))
+            if s in f.shapes
+        )
+        styles = " ".join(sorted(f.styles - {"generic"})) or "any"
+        loud = " LOUD" if f.loud else ""
+        return f"{f.name} [{shapes}] {f.colour_words()}, {f.noise_word()}; fits: {styles}{loud}"
+
     lines = []
-    for material in ("wood", "stone", "brick", "plaster", "terracotta", "metal", "glass", "organic", "cloth"):
-        fams = by_material.get(material)
+    for material in _MATERIAL_ORDER:
+        fams = [f for f in FAMILIES.values() if f.material == material and f.use == USE_STRUCTURAL]
         if not fams:
             continue
         lines.append(f"## {material}")
-        for f in sorted(fams, key=lambda f: f.rgb[0] + f.rgb[1] + f.rgb[2]):
-            shapes = "".join(
-                ch for ch, s in (("S", "stairs"), ("s", "slab"), ("F", "fence"), ("W", "wall"),
-                                 ("L", "log"), ("T", "trapdoor"), ("D", "door"), ("P", "pane"), ("B", "button"), ("G", "fence_gate"))
-                if s in f.shapes
-            )
-            styles = " ".join(sorted(f.styles - {"generic"})) or "any"
-            loud = " LOUD" if f.loud else ""
-            lines.append(f"{f.name} [{shapes}] {f.colour_words()}, {f.noise_word()}; fits: {styles}{loud}")
+        lines.extend(line(f) for f in sorted(fams, key=lambda f: sum(f.rgb)))
+    deco = [f for f in FAMILIES.values() if f.use == USE_DECORATIVE and "full" in f.shapes]
+    if deco:
+        lines.append("## decorative (leaves, lights, carpets; trim and accent only)")
+        lines.extend(line(f) for f in sorted(deco, key=lambda f: sum(f.rgb)))
+    them = [f for f in FAMILIES.values() if f.use == USE_THEMATIC]
+    if them:
+        lines.append("## thematic (only when the building's setting calls for it)")
+        lines.extend(line(f) for f in sorted(them, key=lambda f: (sorted(f.styles)[0], sum(f.rgb))))
+    lines.append("## precious and functional blocks (gold, diamond, netherite, ores, redstone, containers) are "
+                 "not listed; use one only as a tiny accent where the design truly calls for it.")
     return "\n".join(lines)

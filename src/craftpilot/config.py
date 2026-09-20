@@ -72,7 +72,7 @@ def load_settings() -> Settings:
         azure_api_version=os.environ.get("AZURE_OPENAI_API_VERSION", "preview"),
         compose_deployment=os.environ.get("AZURE_OPENAI_COMPOSE_DEPLOYMENT"),
         edit_deployment=os.environ.get("AZURE_OPENAI_EDIT_DEPLOYMENT"),
-        llm_timeout=float(os.environ.get("CRAFTPILOT_LLM_TIMEOUT", "60")),
+        llm_timeout=float(os.environ.get("CRAFTPILOT_LLM_TIMEOUT", "240")),
         # The Fabric mod's bridge listens on 7777, so the service takes the next port.
         service_port=int(os.environ.get("CRAFTPILOT_PORT", "7778")),
         mod_url=os.environ.get("CRAFTPILOT_MOD_URL", "http://127.0.0.1:7777").rstrip("/"),

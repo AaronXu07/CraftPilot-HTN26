@@ -153,7 +153,7 @@ def test_slope_cuts_the_hill_fills_the_low_side_and_grades_the_apron(cottage):
 def test_trees_and_plants_are_removed_whole_not_left_floating(cottage):
     hs = {(x, z): (slope(x, z), GRASS, slope(x, z)) for x in range(-40, 40) for z in range(-40, 40)}
     hs[(0, 10)] = (slope(0, 10), GRASS, slope(0, 10) + 7)  # a tree inside the base: trunk + canopy up to +7
-    hs[(0, 22)] = (slope(0, 22), GRASS, slope(0, 22) + 7)  # a tree on the apron behind the house
+    hs[(0, 20)] = (slope(0, 20), GRASS, slope(0, 20) + 7)  # a tree on the apron behind the house (inside the margin)
     hs[(-11, 12)] = (68, GRASS, 70)  # tall grass beside the house, on a level bit of apron (platform height)
     p = place(cottage, PlacementRequest(pos=PLAYER, yaw=0.0, terrain=TerrainSample.from_heights(hs)))
     assert p["origin"][1] == 69  # so the platform is 68 and column (-11, 12) needs no grading, only clearing
@@ -161,8 +161,8 @@ def test_trees_and_plants_are_removed_whole_not_left_floating(cottage):
     blocks = world_blocks(cottage, p["origin"])
     for y in range(slope(0, 10) + 1, slope(0, 10) + 8):
         assert (0, y, 10) in blocks or edits.get((0, y, 10)) == AIR, y  # the whole tree inside the base goes
-    for y in range(slope(0, 22) + 1, slope(0, 22) + 8):
-        assert edits.get((0, y, 22)) == AIR, y  # and the whole tree on the apron
+    for y in range(slope(0, 20) + 1, slope(0, 20) + 8):
+        assert edits.get((0, y, 20)) == AIR, y  # and the whole tree on the apron
     assert edits.get((-11, 69, 12)) == AIR and edits.get((-11, 70, 12)) == AIR  # the tall grass too
     assert (-11, 68, 12) not in edits  # the ground under it was already right
 
