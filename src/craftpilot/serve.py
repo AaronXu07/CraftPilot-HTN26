@@ -268,6 +268,45 @@ def cancel() -> dict:
         raise HTTPException(status_code=503, detail=f"mod not reachable: {exc}") from exc
 
 
+class ObjectRequest(BaseModel):
+    text: str
+    player: str = "player"
+    height: int | None = None
+    use_llm: bool = True
+    preview: bool = True
+    yaw: float = 0.0
+    place: bool = False  # also place it in the running game through the Fabric mod bridge
+
+
+@app.post("/object")
+def build_object_endpoint(req: ObjectRequest) -> dict:
+    """Free-form object (statue, creature, vehicle, prop): image -> mesh -> voxels; see craftpilot.objects."""
+    from craftpilot.objects.imagegen import ImageRejected
+    from craftpilot.objects.pipeline import build_object
+    from craftpilot.objects.recon import ReconUnavailable
+
+    try:
+        r = build_object(req.text, height=req.height, use_llm=req.use_llm, preview=req.preview, yaw_deg=req.yaw)
+    except ReconUnavailable as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    except ImageRejected as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    out = r.to_dict()
+    out["source"] = "object"
+    if req.place:
+        from craftpilot.objects import place as P
+
+        try:
+            pl = P.place(r.grid, undo_dir=r.work_dir)
+            out["placed"] = {"anchor": list(pl.anchor), "blocks": pl.blocks, "chunks": pl.chunks,
+                             "estimated_seconds": pl.estimated_seconds, "undo_file": str(pl.undo_file)}
+        except P.ModUnavailable as exc:
+            out["placed"] = {"error": str(exc)}
+    return out
+
+
 @app.post("/exemplars")
 def save_exemplar(req: SaveExemplarRequest) -> dict:
     from craftpilot.program.exemplars import save

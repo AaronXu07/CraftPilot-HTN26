@@ -1,0 +1,558 @@
+{
+ "_comment": "Hand-maintained family overrides: base id -> {form: id}. Merged on top of the automatic suffix-stripping resolver in registry.py. Ids without a namespace are minecraft:.",
+ "copper_block": {
+  "stairs": "cut_copper_stairs",
+  "slab": "cut_copper_slab",
+  "cut": "cut_copper",
+  "chiseled": "chiseled_copper",
+  "door": "copper_door",
+  "trapdoor": "copper_trapdoor",
+  "pane": "copper_grate"
+ },
+ "exposed_copper": {
+  "stairs": "exposed_cut_copper_stairs",
+  "slab": "exposed_cut_copper_slab",
+  "cut": "exposed_cut_copper",
+  "chiseled": "exposed_chiseled_copper",
+  "door": "exposed_copper_door",
+  "trapdoor": "exposed_copper_trapdoor",
+  "pane": "exposed_copper_grate"
+ },
+ "weathered_copper": {
+  "stairs": "weathered_cut_copper_stairs",
+  "slab": "weathered_cut_copper_slab",
+  "cut": "weathered_cut_copper",
+  "chiseled": "weathered_chiseled_copper",
+  "door": "weathered_copper_door",
+  "trapdoor": "weathered_copper_trapdoor",
+  "pane": "weathered_copper_grate"
+ },
+ "oxidized_copper": {
+  "stairs": "oxidized_cut_copper_stairs",
+  "slab": "oxidized_cut_copper_slab",
+  "cut": "oxidized_cut_copper",
+  "chiseled": "oxidized_chiseled_copper",
+  "door": "oxidized_copper_door",
+  "trapdoor": "oxidized_copper_trapdoor",
+  "pane": "oxidized_copper_grate"
+ },
+ "waxed_copper_block": {
+  "stairs": "waxed_cut_copper_stairs",
+  "slab": "waxed_cut_copper_slab",
+  "cut": "waxed_cut_copper",
+  "chiseled": "waxed_chiseled_copper",
+  "door": "waxed_copper_door",
+  "trapdoor": "waxed_copper_trapdoor",
+  "pane": "waxed_copper_grate"
+ },
+ "waxed_exposed_copper": {
+  "stairs": "waxed_exposed_cut_copper_stairs",
+  "slab": "waxed_exposed_cut_copper_slab",
+  "cut": "waxed_exposed_cut_copper",
+  "chiseled": "waxed_exposed_chiseled_copper",
+  "door": "waxed_exposed_copper_door",
+  "trapdoor": "waxed_exposed_copper_trapdoor",
+  "pane": "waxed_exposed_copper_grate"
+ },
+ "waxed_weathered_copper": {
+  "stairs": "waxed_weathered_cut_copper_stairs",
+  "slab": "waxed_weathered_cut_copper_slab",
+  "cut": "waxed_weathered_cut_copper",
+  "chiseled": "waxed_weathered_chiseled_copper",
+  "door": "waxed_weathered_copper_door",
+  "trapdoor": "waxed_weathered_copper_trapdoor",
+  "pane": "waxed_weathered_copper_grate"
+ },
+ "waxed_oxidized_copper": {
+  "stairs": "waxed_oxidized_cut_copper_stairs",
+  "slab": "waxed_oxidized_cut_copper_slab",
+  "cut": "waxed_oxidized_cut_copper",
+  "chiseled": "waxed_oxidized_chiseled_copper",
+  "door": "waxed_oxidized_copper_door",
+  "trapdoor": "waxed_oxidized_copper_trapdoor",
+  "pane": "waxed_oxidized_copper_grate"
+ },
+ "cut_copper": {
+  "chiseled": "chiseled_copper",
+  "pane": "copper_grate"
+ },
+ "exposed_cut_copper": {
+  "chiseled": "exposed_chiseled_copper"
+ },
+ "weathered_cut_copper": {
+  "chiseled": "weathered_chiseled_copper"
+ },
+ "oxidized_cut_copper": {
+  "chiseled": "oxidized_chiseled_copper"
+ },
+ "deepslate": {
+  "stairs": "polished_deepslate_stairs",
+  "slab": "polished_deepslate_slab",
+  "wall": "polished_deepslate_wall",
+  "bricks": "deepslate_bricks",
+  "tiles": "deepslate_tiles",
+  "polished": "polished_deepslate",
+  "chiseled": "chiseled_deepslate",
+  "cut": "cobbled_deepslate"
+ },
+ "cobbled_deepslate": {
+  "polished": "polished_deepslate",
+  "bricks": "deepslate_bricks",
+  "tiles": "deepslate_tiles",
+  "chiseled": "chiseled_deepslate"
+ },
+ "polished_deepslate": {
+  "bricks": "deepslate_bricks",
+  "tiles": "deepslate_tiles",
+  "chiseled": "chiseled_deepslate"
+ },
+ "deepslate_bricks": {
+  "chiseled": "chiseled_deepslate",
+  "tiles": "deepslate_tiles"
+ },
+ "deepslate_tiles": {
+  "chiseled": "chiseled_deepslate",
+  "bricks": "deepslate_bricks"
+ },
+ "stone": {
+  "wall": "cobblestone_wall",
+  "bricks": "stone_bricks",
+  "cut": "cobblestone",
+  "button": "stone_button",
+  "pressure_plate": "stone_pressure_plate",
+  "chiseled": "chiseled_stone_bricks",
+  "mossy": "mossy_cobblestone"
+ },
+ "smooth_stone": {
+  "stairs": "stone_stairs",
+  "wall": "cobblestone_wall"
+ },
+ "cobblestone": {
+  "bricks": "stone_bricks",
+  "polished": "stone",
+  "smooth": "smooth_stone"
+ },
+ "stone_bricks": {
+  "polished": "stone"
+ },
+ "basalt": {
+  "stairs": "polished_blackstone_stairs",
+  "slab": "polished_blackstone_slab",
+  "wall": "polished_blackstone_wall",
+  "polished": "polished_basalt",
+  "smooth": "smooth_basalt"
+ },
+ "smooth_basalt": {
+  "stairs": "polished_blackstone_stairs",
+  "slab": "polished_blackstone_slab",
+  "wall": "polished_blackstone_wall"
+ },
+ "polished_basalt": {
+  "stairs": "polished_blackstone_stairs",
+  "slab": "polished_blackstone_slab",
+  "wall": "polished_blackstone_wall"
+ },
+ "blackstone": {
+  "bricks": "polished_blackstone_bricks",
+  "chiseled": "chiseled_polished_blackstone",
+  "button": "polished_blackstone_button",
+  "pressure_plate": "polished_blackstone_pressure_plate"
+ },
+ "polished_blackstone": {
+  "chiseled": "chiseled_polished_blackstone"
+ },
+ "polished_blackstone_bricks": {
+  "chiseled": "chiseled_polished_blackstone"
+ },
+ "gilded_blackstone": {
+  "stairs": "polished_blackstone_brick_stairs",
+  "slab": "polished_blackstone_brick_slab",
+  "wall": "polished_blackstone_brick_wall"
+ },
+ "end_stone": {
+  "stairs": "end_stone_brick_stairs",
+  "slab": "end_stone_brick_slab",
+  "wall": "end_stone_brick_wall",
+  "bricks": "end_stone_bricks"
+ },
+ "end_stone_bricks": {},
+ "tuff": {
+  "bricks": "tuff_bricks",
+  "polished": "polished_tuff",
+  "chiseled": "chiseled_tuff"
+ },
+ "tuff_bricks": {
+  "chiseled": "chiseled_tuff_bricks"
+ },
+ "polished_tuff": {
+  "bricks": "tuff_bricks"
+ },
+ "quartz_block": {
+  "smooth": "smooth_quartz",
+  "bricks": "quartz_bricks",
+  "pillar": "quartz_pillar",
+  "chiseled": "chiseled_quartz_block"
+ },
+ "smooth_quartz": {
+  "bricks": "quartz_bricks",
+  "pillar": "quartz_pillar"
+ },
+ "quartz_bricks": {
+  "stairs": "quartz_stairs",
+  "slab": "quartz_slab",
+  "pillar": "quartz_pillar"
+ },
+ "chiseled_quartz_block": {
+  "stairs": "quartz_stairs",
+  "slab": "quartz_slab"
+ },
+ "purpur_block": {
+  "pillar": "purpur_pillar"
+ },
+ "purpur_pillar": {
+  "stairs": "purpur_stairs",
+  "slab": "purpur_slab"
+ },
+ "sandstone": {
+  "smooth": "smooth_sandstone",
+  "cut": "cut_sandstone",
+  "chiseled": "chiseled_sandstone"
+ },
+ "red_sandstone": {
+  "smooth": "smooth_red_sandstone",
+  "cut": "cut_red_sandstone",
+  "chiseled": "chiseled_red_sandstone"
+ },
+ "cut_sandstone": {
+  "stairs": "sandstone_stairs",
+  "wall": "sandstone_wall"
+ },
+ "cut_red_sandstone": {
+  "stairs": "red_sandstone_stairs",
+  "wall": "red_sandstone_wall"
+ },
+ "chiseled_sandstone": {
+  "stairs": "sandstone_stairs",
+  "slab": "sandstone_slab",
+  "wall": "sandstone_wall"
+ },
+ "chiseled_red_sandstone": {
+  "stairs": "red_sandstone_stairs",
+  "slab": "red_sandstone_slab",
+  "wall": "red_sandstone_wall"
+ },
+ "smooth_sandstone": {
+  "wall": "sandstone_wall"
+ },
+ "smooth_red_sandstone": {
+  "wall": "red_sandstone_wall"
+ },
+ "mud": {
+  "bricks": "mud_bricks",
+  "stairs": "mud_brick_stairs",
+  "slab": "mud_brick_slab",
+  "wall": "mud_brick_wall"
+ },
+ "packed_mud": {
+  "bricks": "mud_bricks",
+  "stairs": "mud_brick_stairs",
+  "slab": "mud_brick_slab",
+  "wall": "mud_brick_wall"
+ },
+ "netherrack": {
+  "bricks": "nether_bricks",
+  "stairs": "nether_brick_stairs",
+  "slab": "nether_brick_slab",
+  "wall": "nether_brick_wall",
+  "fence": "nether_brick_fence"
+ },
+ "nether_bricks": {
+  "cracked": "cracked_nether_bricks",
+  "chiseled": "chiseled_nether_bricks"
+ },
+ "prismarine": {
+  "bricks": "prismarine_bricks"
+ },
+ "dark_prismarine": {
+  "wall": "prismarine_wall"
+ },
+ "prismarine_bricks": {
+  "wall": "prismarine_wall"
+ },
+ "iron_block": {
+  "door": "iron_door",
+  "trapdoor": "iron_trapdoor",
+  "pane": "iron_bars",
+  "pressure_plate": "heavy_weighted_pressure_plate",
+  "stairs": "waxed_cut_copper_stairs",
+  "slab": "waxed_cut_copper_slab"
+ },
+ "gold_block": {
+  "pressure_plate": "light_weighted_pressure_plate"
+ },
+ "glass": {
+  "pane": "glass_pane"
+ },
+ "tinted_glass": {
+  "pane": "glass_pane"
+ },
+ "crimson_planks": {
+  "log": "crimson_stem",
+  "wood": "crimson_hyphae",
+  "stripped_log": "stripped_crimson_stem",
+  "stripped_wood": "stripped_crimson_hyphae",
+  "leaves": "nether_wart_block"
+ },
+ "warped_planks": {
+  "log": "warped_stem",
+  "wood": "warped_hyphae",
+  "stripped_log": "stripped_warped_stem",
+  "stripped_wood": "stripped_warped_hyphae",
+  "leaves": "warped_wart_block"
+ },
+ "bamboo_planks": {
+  "log": "bamboo_block",
+  "wood": "bamboo_block",
+  "stripped_log": "stripped_bamboo_block",
+  "stripped_wood": "stripped_bamboo_block",
+  "tiles": "bamboo_mosaic"
+ },
+ "bamboo_mosaic": {
+  "log": "bamboo_block",
+  "stripped_log": "stripped_bamboo_block",
+  "fence": "bamboo_fence",
+  "door": "bamboo_door",
+  "trapdoor": "bamboo_trapdoor"
+ },
+ "bamboo_block": {
+  "stairs": "bamboo_stairs",
+  "slab": "bamboo_slab",
+  "fence": "bamboo_fence",
+  "door": "bamboo_door",
+  "trapdoor": "bamboo_trapdoor"
+ },
+ "stripped_bamboo_block": {
+  "stairs": "bamboo_stairs",
+  "slab": "bamboo_slab",
+  "fence": "bamboo_fence"
+ },
+ "crimson_stem": {
+  "stairs": "crimson_stairs",
+  "slab": "crimson_slab",
+  "fence": "crimson_fence",
+  "door": "crimson_door",
+  "trapdoor": "crimson_trapdoor",
+  "stripped_log": "stripped_crimson_stem",
+  "wood": "crimson_hyphae"
+ },
+ "warped_stem": {
+  "stairs": "warped_stairs",
+  "slab": "warped_slab",
+  "fence": "warped_fence",
+  "door": "warped_door",
+  "trapdoor": "warped_trapdoor",
+  "stripped_log": "stripped_warped_stem",
+  "wood": "warped_hyphae"
+ },
+ "crimson_hyphae": {
+  "stairs": "crimson_stairs",
+  "slab": "crimson_slab",
+  "fence": "crimson_fence",
+  "log": "crimson_stem",
+  "stripped_wood": "stripped_crimson_hyphae"
+ },
+ "warped_hyphae": {
+  "stairs": "warped_stairs",
+  "slab": "warped_slab",
+  "fence": "warped_fence",
+  "log": "warped_stem",
+  "stripped_wood": "stripped_warped_hyphae"
+ },
+ "hay_block": {
+  "stairs": "oak_stairs",
+  "slab": "oak_slab"
+ },
+ "bricks": {},
+ "moss_block": {
+  "carpet": "moss_carpet",
+  "slab": "moss_carpet"
+ },
+ "snow_block": {
+  "carpet": "snow",
+  "stairs": "quartz_stairs",
+  "slab": "quartz_slab"
+ },
+ "dirt": {
+  "smooth": "dirt_path",
+  "cut": "coarse_dirt",
+  "slab": "dirt_path"
+ },
+ "grass_block": {
+  "carpet": "moss_carpet"
+ },
+ "chiseled_copper": {
+  "stairs": "cut_copper_stairs",
+  "slab": "cut_copper_slab",
+  "cut": "cut_copper"
+ },
+ "copper_grate": {
+  "stairs": "cut_copper_stairs",
+  "slab": "cut_copper_slab"
+ },
+ "copper_bulb": {
+  "stairs": "cut_copper_stairs",
+  "slab": "cut_copper_slab"
+ },
+ "waxed_chiseled_copper": {
+  "stairs": "waxed_cut_copper_stairs",
+  "slab": "waxed_cut_copper_slab",
+  "cut": "waxed_cut_copper"
+ },
+ "waxed_copper_grate": {
+  "stairs": "waxed_cut_copper_stairs",
+  "slab": "waxed_cut_copper_slab"
+ },
+ "waxed_copper_bulb": {
+  "stairs": "waxed_cut_copper_stairs",
+  "slab": "waxed_cut_copper_slab"
+ },
+ "exposed_chiseled_copper": {
+  "stairs": "exposed_cut_copper_stairs",
+  "slab": "exposed_cut_copper_slab",
+  "cut": "exposed_cut_copper"
+ },
+ "exposed_copper_grate": {
+  "stairs": "exposed_cut_copper_stairs",
+  "slab": "exposed_cut_copper_slab"
+ },
+ "exposed_copper_bulb": {
+  "stairs": "exposed_cut_copper_stairs",
+  "slab": "exposed_cut_copper_slab"
+ },
+ "waxed_exposed_chiseled_copper": {
+  "stairs": "waxed_exposed_cut_copper_stairs",
+  "slab": "waxed_exposed_cut_copper_slab",
+  "cut": "waxed_exposed_cut_copper"
+ },
+ "waxed_exposed_copper_grate": {
+  "stairs": "waxed_exposed_cut_copper_stairs",
+  "slab": "waxed_exposed_cut_copper_slab"
+ },
+ "waxed_exposed_copper_bulb": {
+  "stairs": "waxed_exposed_cut_copper_stairs",
+  "slab": "waxed_exposed_cut_copper_slab"
+ },
+ "weathered_chiseled_copper": {
+  "stairs": "weathered_cut_copper_stairs",
+  "slab": "weathered_cut_copper_slab",
+  "cut": "weathered_cut_copper"
+ },
+ "weathered_copper_grate": {
+  "stairs": "weathered_cut_copper_stairs",
+  "slab": "weathered_cut_copper_slab"
+ },
+ "weathered_copper_bulb": {
+  "stairs": "weathered_cut_copper_stairs",
+  "slab": "weathered_cut_copper_slab"
+ },
+ "waxed_weathered_chiseled_copper": {
+  "stairs": "waxed_weathered_cut_copper_stairs",
+  "slab": "waxed_weathered_cut_copper_slab",
+  "cut": "waxed_weathered_cut_copper"
+ },
+ "waxed_weathered_copper_grate": {
+  "stairs": "waxed_weathered_cut_copper_stairs",
+  "slab": "waxed_weathered_cut_copper_slab"
+ },
+ "waxed_weathered_copper_bulb": {
+  "stairs": "waxed_weathered_cut_copper_stairs",
+  "slab": "waxed_weathered_cut_copper_slab"
+ },
+ "oxidized_chiseled_copper": {
+  "stairs": "oxidized_cut_copper_stairs",
+  "slab": "oxidized_cut_copper_slab",
+  "cut": "oxidized_cut_copper"
+ },
+ "oxidized_copper_grate": {
+  "stairs": "oxidized_cut_copper_stairs",
+  "slab": "oxidized_cut_copper_slab"
+ },
+ "oxidized_copper_bulb": {
+  "stairs": "oxidized_cut_copper_stairs",
+  "slab": "oxidized_cut_copper_slab"
+ },
+ "waxed_oxidized_chiseled_copper": {
+  "stairs": "waxed_oxidized_cut_copper_stairs",
+  "slab": "waxed_oxidized_cut_copper_slab",
+  "cut": "waxed_oxidized_cut_copper"
+ },
+ "waxed_oxidized_copper_grate": {
+  "stairs": "waxed_oxidized_cut_copper_stairs",
+  "slab": "waxed_oxidized_cut_copper_slab"
+ },
+ "waxed_oxidized_copper_bulb": {
+  "stairs": "waxed_oxidized_cut_copper_stairs",
+  "slab": "waxed_oxidized_cut_copper_slab"
+ },
+ "chiseled_deepslate": {
+  "stairs": "polished_deepslate_stairs",
+  "slab": "polished_deepslate_slab",
+  "wall": "polished_deepslate_wall"
+ },
+ "reinforced_deepslate": {
+  "stairs": "deepslate_tile_stairs",
+  "slab": "deepslate_tile_slab",
+  "wall": "deepslate_tile_wall"
+ },
+ "calcite": {
+  "stairs": "diorite_stairs",
+  "slab": "diorite_slab",
+  "wall": "diorite_wall"
+ },
+ "dripstone_block": {
+  "stairs": "polished_granite_stairs",
+  "slab": "polished_granite_slab"
+ },
+ "obsidian": {
+  "stairs": "polished_blackstone_stairs",
+  "slab": "polished_blackstone_slab",
+  "wall": "polished_blackstone_wall"
+ },
+ "crying_obsidian": {
+  "stairs": "polished_blackstone_stairs",
+  "slab": "polished_blackstone_slab",
+  "wall": "polished_blackstone_wall"
+ },
+ "terracotta": {
+  "stairs": "brick_stairs",
+  "slab": "brick_slab",
+  "wall": "brick_wall"
+ },
+ "clay": {
+  "stairs": "brick_stairs",
+  "slab": "brick_slab"
+ },
+ "bookshelf": {
+  "stairs": "oak_stairs",
+  "slab": "oak_slab"
+ },
+ "chiseled_bookshelf": {
+  "stairs": "oak_stairs",
+  "slab": "oak_slab"
+ },
+ "bone_block": {
+  "stairs": "quartz_stairs",
+  "slab": "quartz_slab"
+ },
+ "sea_lantern": {
+  "stairs": "prismarine_stairs",
+  "slab": "prismarine_slab"
+ },
+ "glowstone": {
+  "stairs": "smooth_sandstone_stairs",
+  "slab": "smooth_sandstone_slab"
+ },
+ "packed_ice": {
+  "slab": "quartz_slab"
+ }
+}

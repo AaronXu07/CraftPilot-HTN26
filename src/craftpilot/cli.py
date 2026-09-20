@@ -266,6 +266,65 @@ def serve(port: int = typer.Option(None, "--port")) -> None:
     uvicorn.run(fastapi_app, host="127.0.0.1", port=port or SETTINGS.service_port, log_level="info")
 
 
+@app.command("object")
+def object_(
+    text: str = typer.Argument(..., help="The object: a statue, creature, character, vehicle, weapon or prop"),
+    height: int = typer.Option(None, "--height", "-H", help="Total height in blocks (default: the brief's choice)"),
+    out_dir: Path = typer.Option(None, "--out-dir", help="Where the working folder goes (default: <schematics>/objects)"),
+    no_llm: bool = typer.Option(False, "--no-llm", help="Skip the LLM brief; use the request text as the image prompt"),
+    no_preview: bool = typer.Option(False, "--no-preview"),
+    yaw: float = typer.Option(0.0, "--yaw", help="Rotate the object about the vertical axis (degrees)"),
+    types: int = typer.Option(None, "--types", help="Max distinct block types on the surface (default: 6 for grey subjects, 10 for colourful)"),
+    resolution: int = typer.Option(256, "--resolution", help="Reconstruction marching-cubes resolution"),
+    place_now: bool = typer.Option(False, "--place", help="Also place it in the running game, in front of the player (needs the Fabric mod)"),
+    engine: str = typer.Option(None, "--engine", help="Reconstructor: hunyuan (default; real 3D, ~13 s) or triposr (~2 s, shallow)"),
+) -> None:
+    """Text -> reference image (FLUX) -> mesh (TripoSR, local) -> coloured voxels -> .litematic (+ preview)."""
+    from craftpilot.objects.imagegen import ImageRejected
+    from craftpilot.objects.pipeline import build_object
+    from craftpilot.objects.recon import ReconUnavailable
+
+    try:
+        r = build_object(text, out_dir=out_dir, height=height, use_llm=not no_llm, preview=not no_preview, yaw_deg=yaw,
+                         max_types=types, resolution=resolution, engine=engine)
+    except (ReconUnavailable, ImageRejected) as exc:
+        typer.echo(f"error: {exc}", err=True)
+        raise typer.Exit(2) from exc
+    if place_now:
+        from craftpilot.objects import place as P
+
+        try:
+            pl = P.place(r.grid, undo_dir=r.work_dir)
+            typer.echo(f"  placed    {pl.blocks} blocks in {pl.chunks} chunks at {pl.anchor} (undo: craftpilot object-undo {pl.undo_file})")
+        except P.ModUnavailable as exc:
+            typer.echo(f"  not placed: {exc}", err=True)
+    b = r.brief
+    typer.echo(f"{b.label}: {b.subject}")
+    typer.echo(f"  {r.size[0]}x{r.size[1]}x{r.size[2]}, {r.blocks} blocks, palette {b.palette}, plinth {b.plinth} "
+               f"(brief via {b.source})")
+    typer.echo("  " + "  ".join(f"{k} {v}s" for k, v in r.timings.items()) + f"  total {r.seconds}s")
+    for n in r.notes:
+        typer.echo(f"  note: {n}")
+    if r.preview:
+        typer.echo(f"  preview   {r.preview}")
+    if r.litematic:
+        typer.echo(f"  litematic {r.litematic}")
+    typer.echo(f"  work dir  {r.work_dir}")
+
+
+@app.command("object-undo")
+def object_undo(undo_file: Path = typer.Argument(..., help="placed.json written by `craftpilot object --place`")) -> None:
+    """Remove a placed object from the world (sets every recorded position to air)."""
+    from craftpilot.objects import place as P
+
+    try:
+        n = P.undo(undo_file)
+    except P.ModUnavailable as exc:
+        typer.echo(f"error: {exc}", err=True)
+        raise typer.Exit(2) from exc
+    typer.echo(f"removed {n} blocks")
+
+
 @app.command()
 def catalog() -> None:
     """Print the block family catalog summary given to the LLM."""

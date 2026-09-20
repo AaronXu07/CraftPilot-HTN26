@@ -14,3 +14,13 @@ out/
 mod/build/
 mod/.gradle/
 mod/run/
+*.egg-info/
+runs/
+/out/
+agent/copilot/data/cache/
+agent/bench/out/
+mod/.idea/
+tools/.venv-3d/
+tools/triposr/
+tools/out_smoke/
+tools/hunyuan3d/

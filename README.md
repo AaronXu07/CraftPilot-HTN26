@@ -6,6 +6,15 @@ build techniques (palettes, gradients, texturing, depth, silhouette), and the re
 placed straight into your open world through a small Fabric mod or written as a Litematica
 schematic. See `PLAN.md` for the design.
 
+## Repository map
+
+Two subsystems share this repo and the same Azure resource:
+
+| Directory | What | Entry point |
+|---|---|---|
+| `src/craftpilot/` | **Buildings** — LLM composes a `BuildProgram`, a deterministic engine renders it, litemapy exports a schematic (this README, `PLAN.md`) | `uv run craftpilot build "…"` / `uv run craftpilot serve` |
+| `agent/` + `mod/` | **Live copilot** — Fabric mod `/cp …` chat, async jobs, live animated placement, CAD-style scene with undo/edits; the object (statue/vehicle/prop) path lives here | `agent/README.md`, `agent/plan.md` |
+
 ## Setup
 
 ```sh

@@ -56,6 +56,12 @@ def _color(block_id: str) -> tuple[int, int, int]:
     name = block_id.split(":")[-1]
     if name in _COLORS:
         return _COLORS[name]
+    from craftpilot.objects.voxelize import (
+        PALETTE,  # the statue palette carries measured colours for more full blocks
+    )
+
+    if name in PALETTE:
+        return PALETTE[name]
     for dye, rgb in _DYES.items():
         if name.startswith(dye + "_") and name.endswith(("concrete", "terracotta", "wool", "stained_glass",
                                                           "stained_glass_pane")):
@@ -71,6 +77,11 @@ def _color(block_id: str) -> tuple[int, int, int]:
         if name.endswith(suffix):
             base = name[: -len(suffix)]
             break
+    if base in PALETTE:  # e.g. polished_tuff_stairs, deepslate_tile_slab
+        return PALETTE[base]
+    for alt in (base + "s", base.replace("brick", "bricks"), base.replace("tile", "tiles")):
+        if alt in PALETTE:
+            return PALETTE[alt]
     for candidate in (base, base + "_planks", base + "_block", base + "s", base.replace("brick", "bricks")):
         if candidate in _COLORS:
             return _COLORS[candidate]
