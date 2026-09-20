@@ -13,22 +13,37 @@ singleplayer world (it uses the integrated server).
 
 ## Build and install
 
-Requires Java 21. Versions in `gradle.properties` must match the game you run (currently **1.21.1**).
+Targets Minecraft **26.2** (Mojang's official names — the game is no longer obfuscated and yarn stopped
+at 1.21.x), Fabric Loader 0.19.5, Fabric API 0.161.0+26.2, Java 25. Versions live in `gradle.properties`.
 
 ```sh
 cd mod
-./gradlew build            # build/libs/copilot-<version>.jar
+JAVA_HOME=<a JDK 21..25> ./gradlew build     # build/libs/copilot-<version>.jar
 ```
+
+Gradle 9.5.1 itself needs a JDK 21–25 to run (its Groovy cannot load class files newer than that);
+compilation uses a JDK 25 toolchain, which Gradle downloads into `~/.gradle/jdks` on first build if
+none is installed (`settings.gradle`, foojay resolver).
 
 Copy the jar plus the matching [Fabric API](https://modrinth.com/mod/fabric-api) into your `mods/`
 folder, launch with the Fabric loader, open a singleplayer world. The log shows
 `[craftpilot] bridge listening on http://127.0.0.1:7777`.
 
-To target another Minecraft version: update `minecraft_version`, `yarn_mappings`, `fabric_version` from
+To target another Minecraft version: update `minecraft_version`, `loader_version`, `fabric_version` from
 https://fabricmc.net/develop, bump `depends.minecraft` in `src/main/resources/fabric.mod.json`, rebuild,
 and regenerate the Python block catalog for that version (`uv run python scripts/gen_catalog.py <version>`
 plus `CRAFTPILOT_MC_VERSION` in `.env`). Otherwise the game rejects blocks it does not know and the
 service reports them as `invalid`.
+
+Port notes (1.21.1 → 26.2): yarn → Mojang names (`MinecraftClient`→`Minecraft`, `ClientPlayerEntity`→
+`LocalPlayer`, `ServerWorld`→`ServerLevel`, `Text`→`Component`, `Vec3d`→`Vec3`, `RegistryKey<World>`→
+`ResourceKey<Level>`), `Block.NOTIFY_*`→`Block.UPDATE_*`, `postProcessState`→`updateFromNeighbourShapes`,
+`BlockArgumentParser`→`BlockStateParser`, `getTopY`→`getHeight`, Fabric `ClientCommandManager`→
+`ClientCommands` and `KeyBindingHelper`→`KeyMappingHelper` (key categories are registered `Identifier`s).
+The outline and hologram no longer draw with a `VertexConsumer` in `WorldRenderEvents`: 26.x renders
+through an extraction/submit pipeline, so they are emitted as **gizmos** (`net.minecraft.gizmos.Gizmos`:
+a stroked cuboid for the box and scan line, one custom `Gizmo` of translucent quads for the hologram) in
+Fabric's `LevelExtractionEvents.END_EXTRACTION`.
 
 ## Chat commands
 

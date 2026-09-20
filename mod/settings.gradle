@@ -9,4 +9,9 @@ pluginManagement {
     }
 }
 
+// Auto-provisions the JDK the toolchain below asks for (Minecraft 26.2 needs 25) when none is installed.
+plugins {
+    id 'org.gradle.toolchains.foojay-resolver-convention' version '1.0.0'
+}
+
 rootProject.name = 'copilot'

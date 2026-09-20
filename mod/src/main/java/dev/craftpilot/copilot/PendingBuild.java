@@ -3,12 +3,13 @@ package dev.craftpilot.copilot;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
-import net.fabricmc.fabric.api.client.keybinding.v1.KeyBindingHelper;
-import net.minecraft.client.MinecraftClient;
-import net.minecraft.client.network.ClientPlayerEntity;
-import net.minecraft.client.option.KeyBinding;
-import net.minecraft.client.util.InputUtil;
-import net.minecraft.text.Text;
+import net.fabricmc.fabric.api.client.keymapping.v1.KeyMappingHelper;
+import net.minecraft.client.Minecraft;
+import net.minecraft.client.player.LocalPlayer;
+import net.minecraft.client.KeyMapping;
+import net.minecraft.resources.Identifier;
+import com.mojang.blaze3d.platform.InputConstants;
+import net.minecraft.network.chat.Component;
 import org.lwjgl.glfw.GLFW;
 
 /**
@@ -21,8 +22,8 @@ import org.lwjgl.glfw.GLFW;
 public final class PendingBuild {
     private static final int HINT_EVERY = 20;
 
-    private static KeyBinding lockKey;
-    private static KeyBinding moveKey;
+    private static KeyMapping lockKey;
+    private static KeyMapping moveKey;
     private static String path;
     private static JsonObject body;
     private static String label;
@@ -35,10 +36,11 @@ public final class PendingBuild {
     }
 
     public static void register() {
-        lockKey = KeyBindingHelper.registerKeyBinding(new KeyBinding(
-                "key.copilot.lock", InputUtil.Type.KEYSYM, GLFW.GLFW_KEY_G, "category.copilot"));
-        moveKey = KeyBindingHelper.registerKeyBinding(new KeyBinding(
-                "key.copilot.move", InputUtil.Type.KEYSYM, GLFW.GLFW_KEY_H, "category.copilot"));
+        KeyMapping.Category category = KeyMapping.Category.register(Identifier.fromNamespaceAndPath("copilot", "copilot"));
+        lockKey = KeyMappingHelper.registerKeyMapping(new KeyMapping(
+                "key.copilot.lock", InputConstants.Type.KEYSYM, GLFW.GLFW_KEY_G, category));
+        moveKey = KeyMappingHelper.registerKeyMapping(new KeyMapping(
+                "key.copilot.move", InputConstants.Type.KEYSYM, GLFW.GLFW_KEY_H, category));
         ClientTickEvents.END_CLIENT_TICK.register(PendingBuild::onTick);
     }
 
@@ -68,9 +70,9 @@ public final class PendingBuild {
             label = "it";
             at = lockedPose;
         }
-        MinecraftClient client = MinecraftClient.getInstance();
+        Minecraft client = Minecraft.getInstance();
         if (at == null) {
-            ClientPlayerEntity player = client.player;
+            LocalPlayer player = client.player;
             if (player == null) {
                 return;
             }
@@ -161,35 +163,35 @@ public final class PendingBuild {
         return keyName(lockKey);
     }
 
-    private static String keyName(KeyBinding key) {
-        return key != null ? key.getBoundKeyLocalizedText().getString() : "?";
+    private static String keyName(KeyMapping key) {
+        return key != null ? key.getTranslatedKeyMessage().getString() : "?";
     }
 
-    private static void onTick(MinecraftClient client) {
+    private static void onTick(Minecraft client) {
         ticks++;
         if (lockKey != null) {
-            while (lockKey.wasPressed()) {
+            while (lockKey.consumeClick()) {
                 lock();
             }
         }
         if (moveKey != null) {
-            while (moveKey.wasPressed()) {
+            while (moveKey.consumeClick()) {
                 move();
             }
         }
         if (!isArmed()) {
             return;
         }
-        ClientPlayerEntity player = client.player;
+        LocalPlayer player = client.player;
         if (player == null || ticks % HINT_EVERY != 0) {
             return;
         }
         if (BuildOutline.isReviewing()) {
-            player.sendMessage(Text.literal("§f[" + keyName(lockKey) + "]§b build here  -  §f[" + keyName(moveKey)
-                    + "]§b move  -  /build cancel"), true);
+            player.sendOverlayMessage(Component.literal("§f[" + keyName(lockKey) + "]§b build here  -  §f[" + keyName(moveKey)
+                    + "]§b move  -  /build cancel"));
         } else if (BuildOutline.isAiming()) {
-            player.sendMessage(Text.literal("§bWalk or turn to aim  -  §f[" + keyName(lockKey)
-                    + "]§b build here  -  /build cancel"), true);
+            player.sendOverlayMessage(Component.literal("§bWalk or turn to aim  -  §f[" + keyName(lockKey)
+                    + "]§b build here  -  /build cancel"));
         }
     }
 }

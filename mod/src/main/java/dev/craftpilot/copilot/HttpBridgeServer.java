@@ -10,17 +10,17 @@ import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpHandler;
 import com.sun.net.httpserver.HttpServer;
 import net.minecraft.SharedConstants;
-import net.minecraft.block.Block;
-import net.minecraft.block.BlockState;
-import net.minecraft.client.MinecraftClient;
-import net.minecraft.client.network.ClientPlayerEntity;
-import net.minecraft.registry.RegistryKey;
+import net.minecraft.world.level.block.Block;
+import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.client.Minecraft;
+import net.minecraft.client.player.LocalPlayer;
+import net.minecraft.resources.ResourceKey;
 import net.minecraft.server.MinecraftServer;
-import net.minecraft.server.world.ServerWorld;
-import net.minecraft.util.hit.BlockHitResult;
-import net.minecraft.util.hit.HitResult;
-import net.minecraft.util.math.BlockPos;
-import net.minecraft.world.World;
+import net.minecraft.server.level.ServerLevel;
+import net.minecraft.world.phys.BlockHitResult;
+import net.minecraft.world.phys.HitResult;
+import net.minecraft.core.BlockPos;
+import net.minecraft.world.level.Level;
 
 import java.io.File;
 import java.io.IOException;
@@ -42,7 +42,7 @@ public final class HttpBridgeServer {
     private static final Gson GSON = new Gson();
     private static final long MAX_SCAN_BLOCKS = 2_000_000L;
     private static final long MAX_HEIGHTMAP_COLUMNS = 1_000_000L;
-    private static final int DEFAULT_FLAGS = Block.NOTIFY_ALL; // 3: notify neighbours + clients
+    private static final int DEFAULT_FLAGS = Block.UPDATE_ALL; // 3: notify neighbours + clients
 
     private final HttpServer server;
     private final ExecutorService executor;
@@ -148,30 +148,30 @@ public final class HttpBridgeServer {
         return o;
     }
 
-    private static MinecraftClient client() {
-        return MinecraftClient.getInstance();
+    private static Minecraft client() {
+        return Minecraft.getInstance();
     }
 
     /** The integrated server, or a 409 if no world is loaded. */
     private static MinecraftServer requireServer() {
-        MinecraftServer s = client().getServer();
-        if (s == null || client().world == null) {
+        MinecraftServer s = client().getSingleplayerServer();
+        if (s == null || client().level == null) {
             throw new HttpError(409, "no world loaded (open a single-player world first)");
         }
         return s;
     }
 
-    private static ClientPlayerEntity requirePlayer() {
-        ClientPlayerEntity p = client().player;
+    private static LocalPlayer requirePlayer() {
+        LocalPlayer p = client().player;
         if (p == null) {
             throw new HttpError(409, "no player (open a single-player world first)");
         }
         return p;
     }
 
-    private static RegistryKey<World> playerDimension() {
-        ClientPlayerEntity p = client().player;
-        return p != null ? p.getWorld().getRegistryKey() : World.OVERWORLD;
+    private static ResourceKey<Level> playerDimension() {
+        LocalPlayer p = client().player;
+        return p != null ? p.level().dimension() : Level.OVERWORLD;
     }
 
     private static int[] vec2i(JsonObject body, String key) {
@@ -218,19 +218,19 @@ public final class HttpBridgeServer {
     // ------------------------------------------------------------------ routes
 
     private JsonElement health(HttpExchange ex, JsonObject body) {
-        MinecraftClient client = client();
+        Minecraft client = client();
         JsonObject o = ok();
         o.addProperty("mod_version", CopilotClientMod.MOD_VERSION);
-        o.addProperty("mc_version", SharedConstants.getGameVersion().getName());
+        o.addProperty("mc_version", SharedConstants.getCurrentVersion().name());
         String jar = findClientJar(client);
         if (jar != null) {
             o.addProperty("client_jar", jar);
         } else {
             o.add("client_jar", null);
         }
-        o.addProperty("world_loaded", client.world != null && client.getServer() != null);
+        o.addProperty("world_loaded", client.level != null && client.getSingleplayerServer() != null);
         if (client.player != null) {
-            o.addProperty("player", client.player.getGameProfile().getName());
+            o.addProperty("player", client.player.nameAndId().name());
         } else {
             o.add("player", null);
         }
@@ -238,9 +238,9 @@ public final class HttpBridgeServer {
         return o;
     }
 
-    private static String findClientJar(MinecraftClient client) {
+    private static String findClientJar(Minecraft client) {
         try {
-            URL loc = MinecraftClient.class.getProtectionDomain().getCodeSource().getLocation();
+            URL loc = Minecraft.class.getProtectionDomain().getCodeSource().getLocation();
             if (loc != null) {
                 File f = new File(loc.toURI());
                 if (f.isFile() && f.getName().endsWith(".jar")) {
@@ -251,8 +251,8 @@ public final class HttpBridgeServer {
             // fall through to the launcher layout
         }
         try {
-            String v = SharedConstants.getGameVersion().getName();
-            File f = new File(client.runDirectory, "versions/" + v + "/" + v + ".jar");
+            String v = SharedConstants.getCurrentVersion().name();
+            File f = new File(client.gameDirectory, "versions/" + v + "/" + v + ".jar");
             if (f.isFile()) {
                 return f.getAbsolutePath();
             }
@@ -263,26 +263,26 @@ public final class HttpBridgeServer {
     }
 
     private JsonElement player(HttpExchange ex, JsonObject body) {
-        MinecraftClient client = client();
-        ClientPlayerEntity p = requirePlayer();
+        Minecraft client = client();
+        LocalPlayer p = requirePlayer();
         JsonObject o = new JsonObject();
-        o.addProperty("name", p.getGameProfile().getName());
+        o.addProperty("name", p.nameAndId().name());
         o.add("pos", arr(p.getX(), p.getY(), p.getZ()));
-        o.addProperty("yaw", p.getYaw());
-        o.addProperty("pitch", p.getPitch());
-        o.addProperty("facing", p.getHorizontalFacing().getName());
+        o.addProperty("yaw", p.getYRot());
+        o.addProperty("pitch", p.getXRot());
+        o.addProperty("facing", p.getDirection().getSerializedName());
         JsonElement looking = null;
-        HitResult hit = client.crosshairTarget;
-        if (hit instanceof BlockHitResult bhr && hit.getType() == HitResult.Type.BLOCK && client.world != null) {
+        HitResult hit = client.hitResult;
+        if (hit instanceof BlockHitResult bhr && hit.getType() == HitResult.Type.BLOCK && client.level != null) {
             BlockPos bp = bhr.getBlockPos();
             JsonObject l = new JsonObject();
             l.add("pos", arr(bp.getX(), bp.getY(), bp.getZ()));
-            l.addProperty("block", WorldOps.stringify(client.world.getBlockState(bp)));
-            l.addProperty("side", bhr.getSide().getName());
+            l.addProperty("block", WorldOps.stringify(client.level.getBlockState(bp)));
+            l.addProperty("side", bhr.getDirection().getSerializedName());
             looking = l;
         }
         o.add("looking_at", looking);
-        o.addProperty("dimension", p.getWorld().getRegistryKey().getValue().toString());
+        o.addProperty("dimension", p.level().dimension().identifier().toString());
         return o;
     }
 
@@ -294,11 +294,11 @@ public final class HttpBridgeServer {
         if (area > MAX_HEIGHTMAP_COLUMNS) {
             throw new HttpError(400, "heightmap area " + area + " exceeds the " + MAX_HEIGHTMAP_COLUMNS + " column cap");
         }
-        RegistryKey<World> dim = playerDimension();
+        ResourceKey<Level> dim = playerDimension();
         return server.submit(() -> {
-            ServerWorld world = server.getWorld(dim);
+            ServerLevel world = server.getLevel(dim);
             if (world == null) {
-                world = server.getOverworld();
+                world = server.overworld();
             }
             return WorldOps.heightmap(world, lo[0], lo[1], hi[0], hi[1]);
         }).join();
@@ -312,11 +312,11 @@ public final class HttpBridgeServer {
         if (volume > MAX_SCAN_BLOCKS) {
             throw new HttpError(400, "scan volume " + volume + " exceeds the " + MAX_SCAN_BLOCKS + " block cap");
         }
-        RegistryKey<World> dim = playerDimension();
+        ResourceKey<Level> dim = playerDimension();
         return server.submit(() -> {
-            ServerWorld world = server.getWorld(dim);
+            ServerLevel world = server.getLevel(dim);
             if (world == null) {
-                world = server.getOverworld();
+                world = server.overworld();
             }
             return WorldOps.scan(world, lo[0], lo[1], lo[2], hi[0], hi[1], hi[2]);
         }).join();
@@ -327,7 +327,7 @@ public final class HttpBridgeServer {
         int flags = body.has("flags") ? body.get("flags").getAsInt() : DEFAULT_FLAGS;
         // Skip the connectivity pass when the caller already sends complete states.
         boolean postprocess = !body.has("postprocess") || body.get("postprocess").getAsBoolean();
-        RegistryKey<World> dim = playerDimension();
+        ResourceKey<Level> dim = playerDimension();
         List<JsonObject> chunkSpecs = new ArrayList<>();
         if (body.has("chunks") && body.get("chunks").isJsonArray()) {
             for (JsonElement c : body.getAsJsonArray("chunks")) {

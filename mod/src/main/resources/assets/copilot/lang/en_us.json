@@ -1,5 +1,6 @@
 {
   "category.copilot": "CraftPilot",
+  "key.category.copilot.copilot": "CraftPilot",
   "key.copilot.lock": "Build here (lock location)",
   "key.copilot.move": "Move the build preview"
 }

@@ -1,10 +1,9 @@
 package dev.craftpilot.copilot;
 
-import net.minecraft.client.render.RenderLayer;
-import net.minecraft.client.render.VertexConsumer;
-import net.minecraft.client.render.VertexConsumerProvider;
-import net.minecraft.client.util.math.MatrixStack;
-import org.joml.Matrix4f;
+import net.minecraft.gizmos.Gizmo;
+import net.minecraft.gizmos.GizmoPrimitives;
+import net.minecraft.gizmos.Gizmos;
+import net.minecraft.world.phys.Vec3;
 
 /**
  * Hologram of the building the service generated: one translucent coloured cube per block, outer
@@ -131,13 +130,12 @@ public final class GhostRender {
     }
 
     /**
-     * Draw the hologram with its rotated min corner at ({@code ox, oy, oz}), which the caller has
-     * already made camera-relative on {@code matrices}. Faces whose lowest corner is at or below
-     * {@code hideBelowY} (local, exclusive of the row itself) are skipped so real blocks visibly
-     * replace the ghost from the bottom up.
+     * Emit the hologram as one gizmo with its rotated min corner at world ({@code ox, oy, oz}). Faces
+     * whose lowest corner is at or below {@code hideBelowY} (local, exclusive of the row itself) are
+     * skipped so real blocks visibly replace the ghost from the bottom up. Must be called while the
+     * game collects gizmos (level extraction).
      */
-    static void render(MatrixStack matrices, VertexConsumerProvider consumers, double ox, double oy, double oz,
-                       int turns, float hideBelowY, boolean aiming) {
+    static void emit(double ox, double oy, double oz, int turns, float hideBelowY, boolean aiming) {
         float[] fl;
         synchronized (GhostRender.class) {
             if (!present || voxels == null) {
@@ -145,22 +143,30 @@ public final class GhostRender {
             }
             fl = faces(turns & 3);
         }
-        VertexConsumer buf = consumers.getBuffer(RenderLayer.getDebugQuads());
-        Matrix4f m = matrices.peek().getPositionMatrix();
         float alpha = aiming ? ALPHA_AIM : ALPHA_LOCKED;
-        for (int i = 0; i + STRIDE - 1 < fl.length; i += STRIDE) {
-            float lowest = Math.min(Math.min(fl[i + 1], fl[i + 4]), Math.min(fl[i + 7], fl[i + 10]));
-            if (lowest < hideBelowY) {
-                continue;
-            }
-            int rgb = Float.floatToRawIntBits(fl[i + 12]);
-            float shade = SHADE[(int) fl[i + 13]];
-            float r = ((rgb >> 16) & 0xFF) / 255f * shade;
-            float g = ((rgb >> 8) & 0xFF) / 255f * shade;
-            float b = (rgb & 0xFF) / 255f * shade;
-            for (int c = 0; c < 4; c++) {
-                buf.vertex(m, (float) (ox + fl[i + c * 3]), (float) (oy + fl[i + c * 3 + 1]),
-                        (float) (oz + fl[i + c * 3 + 2])).color(r, g, b, alpha);
+        Gizmos.addGizmo(new Cloud(fl, ox, oy, oz, hideBelowY, alpha));
+    }
+
+    /** The whole voxel cloud as a single gizmo: one translucent quad per visible face. */
+    private record Cloud(float[] fl, double ox, double oy, double oz, float hideBelowY, float alpha) implements Gizmo {
+        @Override
+        public void emit(GizmoPrimitives out, float alphaScale) {
+            int a = Math.round(Math.max(0f, Math.min(1f, alpha * alphaScale)) * 255);
+            Vec3[] corner = new Vec3[4];
+            for (int i = 0; i + STRIDE - 1 < fl.length; i += STRIDE) {
+                float lowest = Math.min(Math.min(fl[i + 1], fl[i + 4]), Math.min(fl[i + 7], fl[i + 10]));
+                if (lowest < hideBelowY) {
+                    continue;
+                }
+                int rgb = Float.floatToRawIntBits(fl[i + 12]);
+                float shade = SHADE[(int) fl[i + 13]];
+                int r = Math.round(((rgb >> 16) & 0xFF) * shade);
+                int g = Math.round(((rgb >> 8) & 0xFF) * shade);
+                int b = Math.round((rgb & 0xFF) * shade);
+                for (int c = 0; c < 4; c++) {
+                    corner[c] = new Vec3(ox + fl[i + c * 3], oy + fl[i + c * 3 + 1], oz + fl[i + c * 3 + 2]);
+                }
+                out.addQuad(corner[0], corner[1], corner[2], corner[3], (a << 24) | (r << 16) | (g << 8) | b);
             }
         }
     }

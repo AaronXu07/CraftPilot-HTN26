@@ -1,16 +1,13 @@
 package dev.craftpilot.copilot;
 
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
-import net.fabricmc.fabric.api.client.rendering.v1.WorldRenderContext;
-import net.fabricmc.fabric.api.client.rendering.v1.WorldRenderEvents;
-import net.minecraft.client.MinecraftClient;
-import net.minecraft.client.network.ClientPlayerEntity;
-import net.minecraft.client.render.RenderLayer;
-import net.minecraft.client.render.VertexConsumer;
-import net.minecraft.client.render.VertexConsumerProvider;
-import net.minecraft.client.render.WorldRenderer;
-import net.minecraft.client.util.math.MatrixStack;
-import net.minecraft.util.math.Vec3d;
+import net.fabricmc.fabric.api.client.rendering.v1.level.LevelExtractionContext;
+import net.fabricmc.fabric.api.client.rendering.v1.level.LevelExtractionEvents;
+import net.minecraft.client.Minecraft;
+import net.minecraft.client.player.LocalPlayer;
+import net.minecraft.gizmos.GizmoStyle;
+import net.minecraft.gizmos.Gizmos;
+import net.minecraft.world.phys.AABB;
 
 import java.util.List;
 
@@ -27,6 +24,9 @@ import java.util.List;
  * (exact bounds, right after the LLM composes) and {@code PLACING} (the trimmed box it actually
  * fills). State is static and synchronized like {@link CameraOrbit}: HTTP threads set it, the render
  * thread reads it, the server thread reports placed blocks.
+ *
+ * <p>Drawing goes through the game's own gizmo layer (26.x): the box, the scan line and the hologram
+ * are emitted as gizmos at the end of every frame's level extraction, in world coordinates.
  */
 public final class BuildOutline {
     public enum Phase { AIMING, REVIEW, PLANNING, GENERATING, PLACING, DONE }
@@ -62,14 +62,14 @@ public final class BuildOutline {
     }
 
     public static void register() {
-        WorldRenderEvents.BEFORE_DEBUG_RENDER.register(BuildOutline::render);
+        LevelExtractionEvents.END_EXTRACTION.register(BuildOutline::extract);
         ClientTickEvents.END_CLIENT_TICK.register(client -> onTick());
     }
 
     // ---- state changes (any thread) -----------------------------------
 
     /** Guess where a default-sized building would land from where the player stands right now. */
-    public static void showPlaceholder(ClientPlayerEntity player) {
+    public static void showPlaceholder(LocalPlayer player) {
         anchor(poseOf(player), GUESS_W, GUESS_H, GUESS_D, Phase.PLANNING);
     }
 
@@ -96,8 +96,8 @@ public final class BuildOutline {
         return active && phase == Phase.REVIEW;
     }
 
-    public static Pose poseOf(ClientPlayerEntity player) {
-        return new Pose(player.getX(), player.getY(), player.getZ(), player.getYaw());
+    public static Pose poseOf(LocalPlayer player) {
+        return new Pose(player.getX(), player.getY(), player.getZ(), player.getYRot());
     }
 
     /**
@@ -115,7 +115,7 @@ public final class BuildOutline {
             doneAt = -1;
             placedTopY = Integer.MIN_VALUE;
         }
-        ClientPlayerEntity player = MinecraftClient.getInstance().player;
+        LocalPlayer player = Minecraft.getInstance().player;
         if (player != null) {
             anchor(poseOf(player), aimW, aimH, aimD, Phase.AIMING);
         }
@@ -254,14 +254,30 @@ public final class BuildOutline {
             d = aimD;
         }
         if (aiming) {
-            ClientPlayerEntity player = MinecraftClient.getInstance().player;
+            LocalPlayer player = Minecraft.getInstance().player;
             if (player != null) {
                 anchor(poseOf(player), w, h, d, Phase.AIMING);
             }
         }
     }
 
-    private static void render(WorldRenderContext context) {
+    private static boolean gizmosUnavailable = false;
+
+    private static void extract(LevelExtractionContext context) {
+        if (gizmosUnavailable) {
+            return;
+        }
+        try {
+            emitGizmos(context);
+        } catch (IllegalStateException e) {
+            // No gizmo collector is active at this point of the frame on this game build: draw nothing
+            // rather than throw every frame. The build itself is unaffected.
+            gizmosUnavailable = true;
+            CopilotClientMod.LOGGER.warn("[craftpilot] outline/hologram disabled: {}", e.getMessage());
+        }
+    }
+
+    private static void emitGizmos(LevelExtractionContext context) {
         double x0, y0, z0, x1, y1, z1;
         Phase p;
         long t;
@@ -279,15 +295,11 @@ public final class BuildOutline {
             look = aimLook;
             gx = ghostX; gy = ghostY; gz = ghostZ;
         }
-        VertexConsumerProvider consumers = context.consumers();
-        if (consumers == null) {
+        Minecraft client = Minecraft.getInstance();
+        if (client.level == null) {
             return;
         }
-        MinecraftClient client = MinecraftClient.getInstance();
-        if (client.world == null) {
-            return;
-        }
-        float partial = context.tickCounter().getTickDelta(false);
+        float partial = context.deltaTracker().getGameTimeDeltaPartialTick(false);
         double time = t + partial;
         float r, g, b, base;
         switch (p) {
@@ -300,24 +312,16 @@ public final class BuildOutline {
         float pulse = (float) (base + (p == Phase.REVIEW ? 0.0 : 0.25) * Math.sin(time / (p == Phase.AIMING ? 14.0 : 8.0)));
         float alpha = Math.max(0.15f, Math.min(1.0f, pulse));
 
-        Vec3d cam = context.camera().getPos();
-        MatrixStack matrices = context.matrixStack();
-        matrices.push();
-        matrices.translate(-cam.x, -cam.y, -cam.z);
-
-        // The hologram first: the immediate consumer keeps one live buffer for ad-hoc layers, so asking
-        // for the quads layer would finish a lines buffer we were still writing ("Not building!").
         // The building faces the player, so it is turned by the look direction: looking south means
         // the building faces north (2 turns from the engine's south), and so on.
         if (GhostRender.isPresent() && p != Phase.DONE) {
             int turns = switch (look) { case 0 -> 2; case 1 -> 3; case 2 -> 0; default -> 1; };
             float hideBelow = top == Integer.MIN_VALUE ? Float.NEGATIVE_INFINITY : (float) (top - gy + 1);
-            GhostRender.render(matrices, consumers, gx, gy, gz, turns, hideBelow, p == Phase.AIMING || p == Phase.REVIEW);
+            GhostRender.emit(gx, gy, gz, turns, hideBelow, p == Phase.AIMING || p == Phase.REVIEW);
         }
 
-        VertexConsumer lines = consumers.getBuffer(RenderLayer.getLines());
-        WorldRenderer.drawBox(matrices, lines, x0 - INFLATE, y0 - INFLATE, z0 - INFLATE,
-                x1 + INFLATE, y1 + INFLATE, z1 + INFLATE, r, g, b, alpha);
+        GizmoStyle stroke = GizmoStyle.stroke(argb(r, g, b, alpha), 2.0f);
+        Gizmos.cuboid(new AABB(x0 - INFLATE, y0 - INFLATE, z0 - INFLATE, x1 + INFLATE, y1 + INFLATE, z1 + INFLATE), stroke);
 
         // Scan line: sweeps while we wait, sits on the highest placed row while blocks land.
         if (p != Phase.DONE && p != Phase.AIMING && p != Phase.REVIEW) {
@@ -329,9 +333,12 @@ public final class BuildOutline {
                 scanY = y0 + frac * (y1 - y0);
             }
             float scanAlpha = Math.min(1.0f, alpha + 0.3f);
-            WorldRenderer.drawBox(matrices, lines, x0 - INFLATE, scanY, z0 - INFLATE,
-                    x1 + INFLATE, scanY, z1 + INFLATE, r, g, b, scanAlpha);
+            Gizmos.cuboid(new AABB(x0 - INFLATE, scanY, z0 - INFLATE, x1 + INFLATE, scanY, z1 + INFLATE),
+                    GizmoStyle.stroke(argb(r, g, b, scanAlpha), 2.0f));
         }
-        matrices.pop();
+    }
+
+    static int argb(float r, float g, float b, float a) {
+        return (Math.round(a * 255) << 24) | (Math.round(r * 255) << 16) | (Math.round(g * 255) << 8) | Math.round(b * 255);
     }
 }

@@ -44,10 +44,10 @@ uv run craftpilot render
 
 ## Build in-game
 
-The `mod/` folder is a client-side Fabric mod (Minecraft **1.21.1**) that lets the Python side place
+The `mod/` folder is a client-side Fabric mod (Minecraft **26.2**) that lets the Python side place
 blocks directly in the world you have open, bottom up, one layer per game tick. See `mod/README.md`.
 
-1. Build and install the mod: `cd mod && ./gradlew build` (Java 21), then copy
+1. Build and install the mod: `cd mod && ./gradlew build` (run Gradle with a JDK 21–25; it fetches a JDK 25 toolchain itself), then copy
    `mod/build/libs/copilot-<version>.jar` and the matching Fabric API into your `mods/` folder and open a
    singleplayer world. The mod listens on `127.0.0.1:7777`.
 2. Start the service in a terminal: `uv run craftpilot serve` (listens on `127.0.0.1:7778`).

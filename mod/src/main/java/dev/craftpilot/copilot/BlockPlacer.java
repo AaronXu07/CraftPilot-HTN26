@@ -1,13 +1,13 @@
 package dev.craftpilot.copilot;
 
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerTickEvents;
-import net.minecraft.block.Block;
-import net.minecraft.block.BlockState;
-import net.minecraft.registry.RegistryKey;
+import net.minecraft.world.level.block.Block;
+import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.resources.ResourceKey;
 import net.minecraft.server.MinecraftServer;
-import net.minecraft.server.world.ServerWorld;
-import net.minecraft.util.math.BlockPos;
-import net.minecraft.world.World;
+import net.minecraft.server.level.ServerLevel;
+import net.minecraft.core.BlockPos;
+import net.minecraft.world.level.Level;
 
 import java.util.ArrayDeque;
 import java.util.Deque;
@@ -30,7 +30,7 @@ public final class BlockPlacer {
     public record Placement(BlockPos pos, BlockState state) {
     }
 
-    public record Chunk(RegistryKey<World> dimension, List<Placement> blocks, int delayTicks, int flags,
+    public record Chunk(ResourceKey<Level> dimension, List<Placement> blocks, int delayTicks, int flags,
                         boolean postprocess) {
     }
 
@@ -106,9 +106,9 @@ public final class BlockPlacer {
             busy = true;
             waitTicks = Math.max(0, chunk.delayTicks());
         }
-        ServerWorld world = server.getWorld(chunk.dimension());
+        ServerLevel world = server.getLevel(chunk.dimension());
         if (world == null) {
-            world = server.getOverworld();
+            world = server.overworld();
         }
         int placed = 0;
         int skipped = 0;
@@ -121,7 +121,7 @@ public final class BlockPlacer {
                     skipped++;
                     continue;
                 }
-                if (world.setBlockState(p.pos(), p.state(), chunk.flags())) {
+                if (world.setBlock(p.pos(), p.state(), chunk.flags())) {
                     placed++;
                 }
             } catch (Exception e) {
@@ -144,18 +144,18 @@ public final class BlockPlacer {
      * Air (removed) positions are skipped, and a result of air is ignored so props the agent
      * placed deliberately on unsupported spots are never deleted here.
      */
-    private static int postProcess(ServerWorld world, Chunk chunk) {
+    private static int postProcess(ServerLevel world, Chunk chunk) {
         int fixedCount = 0;
-        int flags = Block.NOTIFY_LISTENERS | Block.FORCE_STATE;
+        int flags = Block.UPDATE_CLIENTS | Block.UPDATE_KNOWN_SHAPE;
         for (Placement p : chunk.blocks()) {
             try {
                 BlockState cur = world.getBlockState(p.pos());
                 if (cur.isAir()) {
                     continue;
                 }
-                BlockState fixed = Block.postProcessState(cur, world, p.pos());
+                BlockState fixed = Block.updateFromNeighbourShapes(cur, world, p.pos());
                 if (fixed != cur && !fixed.isAir()) {
-                    if (world.setBlockState(p.pos(), fixed, flags)) {
+                    if (world.setBlock(p.pos(), fixed, flags)) {
                         fixedCount++;
                     }
                 }

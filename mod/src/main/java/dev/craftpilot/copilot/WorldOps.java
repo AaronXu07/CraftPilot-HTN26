@@ -4,15 +4,15 @@ import com.google.gson.JsonArray;
 import com.google.gson.JsonNull;
 import com.google.gson.JsonObject;
 import com.mojang.brigadier.exceptions.CommandSyntaxException;
-import net.minecraft.block.Block;
-import net.minecraft.block.BlockState;
-import net.minecraft.command.argument.BlockArgumentParser;
-import net.minecraft.registry.Registries;
-import net.minecraft.server.world.ServerWorld;
-import net.minecraft.state.property.Property;
-import net.minecraft.util.Identifier;
-import net.minecraft.util.math.BlockPos;
-import net.minecraft.world.Heightmap;
+import net.minecraft.world.level.block.Block;
+import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.commands.arguments.blocks.BlockStateParser;
+import net.minecraft.core.registries.BuiltInRegistries;
+import net.minecraft.server.level.ServerLevel;
+import net.minecraft.world.level.block.state.properties.Property;
+import net.minecraft.resources.Identifier;
+import net.minecraft.core.BlockPos;
+import net.minecraft.world.level.levelgen.Heightmap;
 
 import java.util.ArrayList;
 import java.util.Collection;
@@ -30,7 +30,7 @@ public final class WorldOps {
 
     /** {@code minecraft:oak_stairs[facing=north,half=bottom,...]} — the game's canonical form. */
     public static String stringify(BlockState state) {
-        return BlockArgumentParser.stringifyBlockState(state);
+        return BlockStateParser.serialize(state);
     }
 
     /** Parse a state string; unknown properties/values raise {@link CommandSyntaxException}. */
@@ -39,23 +39,23 @@ public final class WorldOps {
         if (!s.contains(":")) {
             s = "minecraft:" + s;
         }
-        return BlockArgumentParser.block(Registries.BLOCK.getReadOnlyWrapper(), s, false).blockState();
+        return BlockStateParser.parseForBlock(BuiltInRegistries.BLOCK, s, false).blockState();
     }
 
     /**
      * Scan an inclusive region into {@code {palette:[...], blocks:[[x,y,z,idx],...], count}}.
      * Palette index 0 is always {@code minecraft:air}. Must run on the server thread.
      */
-    public static JsonObject scan(ServerWorld world, int x0, int y0, int z0, int x1, int y1, int z1) {
+    public static JsonObject scan(ServerLevel world, int x0, int y0, int z0, int x1, int y1, int z1) {
         int minX = Math.min(x0, x1), maxX = Math.max(x0, x1);
         int minY = Math.min(y0, y1), maxY = Math.max(y0, y1);
         int minZ = Math.min(z0, z1), maxZ = Math.max(z0, z1);
         List<String> palette = new ArrayList<>();
         Map<BlockState, Integer> index = new HashMap<>();
         palette.add("minecraft:air");
-        index.put(net.minecraft.block.Blocks.AIR.getDefaultState(), 0);
+        index.put(net.minecraft.world.level.block.Blocks.AIR.defaultBlockState(), 0);
         JsonArray blocks = new JsonArray();
-        BlockPos.Mutable pos = new BlockPos.Mutable();
+        BlockPos.MutableBlockPos pos = new BlockPos.MutableBlockPos();
         int count = 0;
         for (int y = minY; y <= maxY; y++) {
             for (int z = minZ; z <= maxZ; z++) {
@@ -97,18 +97,18 @@ public final class WorldOps {
      * reports {@code null} for both. Water counts as ground (its surface is reported). Must run on the
      * server thread.
      */
-    public static JsonObject heightmap(ServerWorld world, int x0, int z0, int x1, int z1) {
+    public static JsonObject heightmap(ServerLevel world, int x0, int z0, int x1, int z1) {
         int minX = Math.min(x0, x1), maxX = Math.max(x0, x1);
         int minZ = Math.min(z0, z1), maxZ = Math.max(z0, z1);
         List<String> palette = new ArrayList<>();
         Map<BlockState, Integer> index = new HashMap<>();
         JsonArray heights = new JsonArray();
         JsonArray tops = new JsonArray();
-        BlockPos.Mutable pos = new BlockPos.Mutable();
-        int bottom = world.getBottomY();
+        BlockPos.MutableBlockPos pos = new BlockPos.MutableBlockPos();
+        int bottom = world.getMinY();
         for (int z = minZ; z <= maxZ; z++) {
             for (int x = minX; x <= maxX; x++) {
-                int top = world.getTopY(Heightmap.Type.MOTION_BLOCKING_NO_LEAVES, x, z) - 1;
+                int top = world.getHeight(Heightmap.Types.MOTION_BLOCKING_NO_LEAVES, x, z) - 1;
                 if (top < bottom) {
                     heights.add(JsonNull.INSTANCE);
                     tops.add(JsonNull.INSTANCE);
@@ -148,12 +148,12 @@ public final class WorldOps {
     /** Every registered block with its properties, allowed values and default state. */
     public static JsonObject blockDump() {
         JsonArray arr = new JsonArray();
-        for (Block block : Registries.BLOCK) {
-            Identifier id = Registries.BLOCK.getId(block);
+        for (Block block : BuiltInRegistries.BLOCK) {
+            Identifier id = BuiltInRegistries.BLOCK.getKey(block);
             JsonObject entry = new JsonObject();
             entry.addProperty("id", id.toString());
             JsonObject props = new JsonObject();
-            for (Property<?> property : block.getStateManager().getProperties()) {
+            for (Property<?> property : block.getStateDefinition().getProperties()) {
                 JsonArray values = new JsonArray();
                 for (String v : valueNames(property)) {
                     values.add(v);
@@ -161,7 +161,7 @@ public final class WorldOps {
                 props.add(property.getName(), values);
             }
             entry.add("properties", props);
-            entry.addProperty("default", stringify(block.getDefaultState()));
+            entry.addProperty("default", stringify(block.defaultBlockState()));
             arr.add(entry);
         }
         JsonObject out = new JsonObject();
@@ -171,10 +171,10 @@ public final class WorldOps {
     }
 
     private static <T extends Comparable<T>> List<String> valueNames(Property<T> property) {
-        Collection<T> values = property.getValues();
+        Collection<T> values = property.getPossibleValues();
         List<String> names = new ArrayList<>(values.size());
         for (T v : values) {
-            names.add(property.name(v));
+            names.add(property.getName(v));
         }
         return names;
     }

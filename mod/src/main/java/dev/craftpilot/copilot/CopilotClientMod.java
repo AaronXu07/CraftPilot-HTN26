@@ -5,12 +5,12 @@ import com.mojang.brigadier.arguments.IntegerArgumentType;
 import com.mojang.brigadier.arguments.StringArgumentType;
 import com.mojang.brigadier.context.CommandContext;
 import net.fabricmc.api.ClientModInitializer;
-import net.fabricmc.fabric.api.client.command.v2.ClientCommandManager;
+import net.fabricmc.fabric.api.client.command.v2.ClientCommands;
 import net.fabricmc.fabric.api.client.command.v2.ClientCommandRegistrationCallback;
 import net.fabricmc.fabric.api.client.command.v2.FabricClientCommandSource;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientLifecycleEvents;
-import net.minecraft.client.MinecraftClient;
-import net.minecraft.text.Text;
+import net.minecraft.client.Minecraft;
+import net.minecraft.network.chat.Component;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -57,30 +57,30 @@ public class CopilotClientMod implements ClientModInitializer {
 
         // Literal subcommands must be registered before the greedy <text> argument.
         ClientCommandRegistrationCallback.EVENT.register((dispatcher, registryAccess) -> dispatcher.register(
-                ClientCommandManager.literal("build")
+                ClientCommands.literal("build")
                         .executes(ctx -> usage(ctx))
-                        .then(ClientCommandManager.literal("status").executes(ctx -> status(ctx)))
-                        .then(ClientCommandManager.literal("cancel").executes(ctx -> cancel(ctx)))
-                        .then(ClientCommandManager.literal("go").executes(ctx -> go(ctx)))
-                        .then(ClientCommandManager.literal("plan")
-                                .then(ClientCommandManager.argument("text", StringArgumentType.greedyString())
+                        .then(ClientCommands.literal("status").executes(ctx -> status(ctx)))
+                        .then(ClientCommands.literal("cancel").executes(ctx -> cancel(ctx)))
+                        .then(ClientCommands.literal("go").executes(ctx -> go(ctx)))
+                        .then(ClientCommands.literal("plan")
+                                .then(ClientCommands.argument("text", StringArgumentType.greedyString())
                                         .executes(ctx -> plan(ctx, StringArgumentType.getString(ctx, "text")))))
-                        .then(ClientCommandManager.literal("again")
+                        .then(ClientCommands.literal("again")
                                 .executes(ctx -> regenerate(ctx, null))
-                                .then(ClientCommandManager.argument("seed", IntegerArgumentType.integer())
+                                .then(ClientCommands.argument("seed", IntegerArgumentType.integer())
                                         .executes(ctx -> regenerate(ctx, IntegerArgumentType.getInteger(ctx, "seed")))))
-                        .then(ClientCommandManager.literal("edit")
-                                .then(ClientCommandManager.argument("text", StringArgumentType.greedyString())
+                        .then(ClientCommands.literal("edit")
+                                .then(ClientCommands.argument("text", StringArgumentType.greedyString())
                                         .executes(ctx -> edit(ctx, StringArgumentType.getString(ctx, "text")))))
-                        .then(ClientCommandManager.literal("preview")
-                                .then(ClientCommandManager.argument("text", StringArgumentType.greedyString())
+                        .then(ClientCommands.literal("preview")
+                                .then(ClientCommands.argument("text", StringArgumentType.greedyString())
                                         .executes(ctx -> build(ctx, StringArgumentType.getString(ctx, "text"), false))))
-                        .then(ClientCommandManager.argument("text", StringArgumentType.greedyString())
+                        .then(ClientCommands.argument("text", StringArgumentType.greedyString())
                                 .executes(ctx -> build(ctx, StringArgumentType.getString(ctx, "text"), true)))));
     }
 
     private static int usage(CommandContext<FabricClientCommandSource> ctx) {
-        ctx.getSource().sendFeedback(Text.literal("§6[craftpilot]§r /build <what to build>  |  /build plan <text>"
+        ctx.getSource().sendFeedback(Component.literal("§6[craftpilot]§r /build <what to build>  |  /build plan <text>"
                 + "  |  /build go  |  /build again [seed]  |  /build edit <change>  |  /build preview <text>"
                 + "  |  /build cancel  |  /build status   (aim, press [" + PendingBuild.keyName()
                 + "]; when the preview shows, [" + PendingBuild.keyName() + "] builds it, [H] moves it)"));
@@ -96,7 +96,7 @@ public class CopilotClientMod implements ClientModInitializer {
         body.addProperty("text", text);
         body.addProperty("place", place);
         if (!place) {
-            ctx.getSource().sendFeedback(Text.literal("§6[craftpilot]§7 composing \"" + text + "\"..."));
+            ctx.getSource().sendFeedback(Component.literal("§6[craftpilot]§7 composing \"" + text + "\"..."));
             ServiceClient.postAsync("/build", body);
             return 1;
         }
@@ -111,7 +111,7 @@ public class CopilotClientMod implements ClientModInitializer {
         JsonObject body = base(ctx);
         body.addProperty("text", text);
         PendingBuild.cancel();
-        ctx.getSource().sendFeedback(Text.literal("§6[craftpilot]§7 planning \"" + text + "\"..."));
+        ctx.getSource().sendFeedback(Component.literal("§6[craftpilot]§7 planning \"" + text + "\"..."));
         ServiceClient.postAsync("/plan", body);
         return 1;
     }
@@ -119,12 +119,12 @@ public class CopilotClientMod implements ClientModInitializer {
     /** {@code /build go}: preview the pending plan as a hologram, then lock to build it. */
     private static int go(CommandContext<FabricClientCommandSource> ctx) {
         if (!PendingBuild.hasPlan()) {
-            ctx.getSource().sendFeedback(Text.literal("§6[craftpilot]§c no plan pending; use /build plan <text> first"));
+            ctx.getSource().sendFeedback(Component.literal("§6[craftpilot]§c no plan pending; use /build plan <text> first"));
             return 1;
         }
         JsonObject body = base(ctx);
         body.addProperty("ghost", true);
-        ctx.getSource().sendFeedback(Text.literal("§6[craftpilot]§7 generating the preview..."));
+        ctx.getSource().sendFeedback(Component.literal("§6[craftpilot]§7 generating the preview..."));
         ServiceClient.postAsync("/regenerate", body);
         return 1;
     }
@@ -136,13 +136,13 @@ public class CopilotClientMod implements ClientModInitializer {
         if (PendingBuild.hasPlan()) {
             body.addProperty("place", false);
             body.addProperty("plan", true);
-            ctx.getSource().sendFeedback(Text.literal("§6[craftpilot]§7 updating the plan: " + text + "..."));
+            ctx.getSource().sendFeedback(Component.literal("§6[craftpilot]§7 updating the plan: " + text + "..."));
             ServiceClient.postAsync("/edit", body);
             return 1;
         }
         body.addProperty("ghost", true);
         PendingBuild.cancel();
-        ctx.getSource().sendFeedback(Text.literal("§6[craftpilot]§7 editing: " + text + "..."));
+        ctx.getSource().sendFeedback(Component.literal("§6[craftpilot]§7 editing: " + text + "..."));
         ServiceClient.postAsync("/edit", body);
         return 1;
     }
@@ -155,7 +155,7 @@ public class CopilotClientMod implements ClientModInitializer {
         }
         body.addProperty("ghost", true);
         PendingBuild.cancel();
-        ctx.getSource().sendFeedback(Text.literal("§6[craftpilot]§7 generating the preview..."));
+        ctx.getSource().sendFeedback(Component.literal("§6[craftpilot]§7 generating the preview..."));
         ServiceClient.postAsync("/regenerate", body);
         return 1;
     }
@@ -166,12 +166,12 @@ public class CopilotClientMod implements ClientModInitializer {
         PendingBuild.cancel();
         int n = BlockPlacer.clear();
         String what = armed ? "the pending build" : plan ? "the plan" : n + " queued chunks";
-        ctx.getSource().sendFeedback(Text.literal("§6[craftpilot]§r cancelled " + what));
+        ctx.getSource().sendFeedback(Component.literal("§6[craftpilot]§r cancelled " + what));
         return 1;
     }
 
     private static int status(CommandContext<FabricClientCommandSource> ctx) {
-        ctx.getSource().sendFeedback(Text.literal("§6[craftpilot]§r pending " + BlockPlacer.pendingChunks()
+        ctx.getSource().sendFeedback(Component.literal("§6[craftpilot]§r pending " + BlockPlacer.pendingChunks()
                 + " chunks / " + BlockPlacer.pendingBlocks() + " blocks, placed " + BlockPlacer.placedTotal()
                 + " (skipped " + BlockPlacer.skippedTotal() + " already right)"
                 + " total; service " + SERVICE_URL + ", bridge http://" + BRIDGE_HOST + ":" + BRIDGE_PORT));
@@ -186,8 +186,8 @@ public class CopilotClientMod implements ClientModInitializer {
     private static JsonObject base(CommandContext<FabricClientCommandSource> ctx) {
         JsonObject body = new JsonObject();
         var player = ctx.getSource().getPlayer();
-        body.addProperty("player", player.getGameProfile().getName());
-        body.addProperty("yaw", player.getYaw());
+        body.addProperty("player", player.nameAndId().name());
+        body.addProperty("yaw", player.getYRot());
         com.google.gson.JsonArray pos = new com.google.gson.JsonArray();
         pos.add(player.getX());
         pos.add(player.getY());
@@ -198,10 +198,10 @@ public class CopilotClientMod implements ClientModInitializer {
 
     /** Print a line in the player's chat, from any thread. */
     public static void chat(String text) {
-        MinecraftClient client = MinecraftClient.getInstance();
+        Minecraft client = Minecraft.getInstance();
         client.execute(() -> {
-            if (client.inGameHud != null) {
-                client.inGameHud.getChatHud().addMessage(Text.literal("§6[craftpilot]§r " + text));
+            if (client.player != null) {
+                client.player.sendSystemMessage(Component.literal("§6[craftpilot]§r " + text));
             }
         });
     }
