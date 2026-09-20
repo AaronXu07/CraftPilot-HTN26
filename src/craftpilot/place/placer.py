@@ -8,6 +8,7 @@ are streamed with it.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any, Protocol
 
 import numpy as np
@@ -54,6 +55,10 @@ class PlaceOptions:
     postprocess: bool = False
     clear: bool = True  # also set air in the empty cells of the bounding box (clears terrain and trees)
     terrain: bool = SETTINGS.place_terrain  # survey the ground and seat the build on it (needs the mod's /heightmap)
+    # Which columns stand on the ground: "row0" = the row-0 footprint (a building's foundation ring, a
+    # statue's plinth); "footprint" = every column holding a block (a creature on legs gets a level pad
+    # under its whole body instead of a hill poking through its belly).
+    base: str = "row0"
 
 
 @dataclass
@@ -149,11 +154,12 @@ def site_blocks(grid: SemanticGrid, ctx: PlaceContext, origin: tuple[int, int, i
     heights = terrain.survey(ctx.bridge, terrain.footprint_of(grid, (ox, oz))) if opts.terrain else None
     if not heights:
         return origin, grid_to_blocks(grid, origin, clear=opts.clear), None
-    site = terrain.plan_site(grid, heights, (ox, oz), feet_y=oy)
+    mask = terrain.column_mask(grid) if opts.base == "footprint" else terrain.base_mask(grid)
+    site = terrain.plan_site(grid, heights, (ox, oz), feet_y=oy, base=terrain.mask_columns(mask, (ox, oz)))
     site.ground -= int(opts.sink)
     origin = (ox, site.ground, oz)
     edits = terrain.terraform(grid, site, origin, known=_known_blocks())
-    blocks = grid_to_blocks(grid, origin, clear=opts.clear, columns=terrain.base_mask(grid))
+    blocks = grid_to_blocks(grid, origin, clear=opts.clear, columns=mask)
     seen = {(x, y, z) for x, y, z, _ in blocks}
     blocks += [e for e in edits if (e[0], e[1], e[2]) not in seen]
     return origin, blocks, site
@@ -165,9 +171,10 @@ def _known_blocks() -> set[str] | None:
     return known_blocks()
 
 
-def place_grid(grid: SemanticGrid, ctx: PlaceContext, label: str = "") -> dict[str, Any]:
+def place_grid(grid: SemanticGrid, ctx: PlaceContext, label: str = "", undo_path: Path | None = None) -> dict[str, Any]:
     """Anchor the (already rotated) grid in front of the player, seat it on the terrain when the mod can
-    survey the ground, and queue it on the mod. Returns immediately."""
+    survey the ground, and queue it on the mod. Returns immediately. With ``undo_path`` the positions
+    written are recorded there (see place/undo.py) so the build can be removed again."""
     opts = ctx.opts
     # Anchor the full bounds box, not the trimmed one: it is what the outline and the mod's hologram
     # were anchored with, so the blocks land exactly inside the preview.
@@ -187,8 +194,17 @@ def place_grid(grid: SemanticGrid, ctx: PlaceContext, label: str = "") -> dict[s
         warnings.append(f"{invalid} block states were rejected by the game (version mismatch?): {samples}")
     if site is not None:
         warnings.append("Site: " + site.summary())
+    if undo_path is not None:
+        from craftpilot.place import undo
+
+        try:
+            undo.write_record(undo_path, label, origin, blocks)
+        except OSError as exc:
+            warnings.append(f"undo record not written ({exc})")
+            undo_path = None
     return {
         "label": label,
+        "undo_file": str(undo_path) if undo_path is not None else None,
         "origin": [ox, oy, oz],
         "world_bbox": [[x0 + ox, y0 + oy, z0 + oz], [x1 + ox, y1 + oy, z1 + oz]],
         "site": site.as_dict() if site is not None else None,

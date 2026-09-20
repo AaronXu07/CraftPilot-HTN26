@@ -33,9 +33,12 @@ class ObjectResult:
     preview: Path | None = None
     litematic: Path | None = None
     blocks: int = 0
-    size: tuple[int, int, int] = (0, 0, 0)
+    size: tuple[int, int, int] = (0, 0, 0)  # of the south-facing grid (W, H, D), padding included
     timings: dict = field(default_factory=dict)
     notes: list[str] = field(default_factory=list)
+    seed: int = 0
+    engine: str = ""
+    stamp: str = ""
 
     @property
     def seconds(self) -> float:
@@ -46,6 +49,7 @@ class ObjectResult:
             "brief": self.brief.to_dict(), "work_dir": str(self.work_dir), "image": str(self.image), "mesh": str(self.mesh),
             "preview": str(self.preview) if self.preview else None, "litematic": str(self.litematic) if self.litematic else None,
             "blocks": self.blocks, "size": list(self.size), "timings": self.timings, "seconds": self.seconds, "notes": self.notes,
+            "seed": self.seed, "engine": self.engine, "stamp": self.stamp,
         }
 
 
@@ -56,9 +60,14 @@ class ObjectResult:
 def build_object(text: str, out_dir: Path | None = None, height: int | None = None, use_llm: bool = True,
                  preview: bool = True, schematic: bool = True, resolution: int = 256, seed: int = 0,
                  yaw_deg: float = 0.0, max_types: int | None = None, max_recon_tries: int = 2,
-                 on_stage: Callable[[str, str], None] | None = None, engine: str | None = None) -> ObjectResult:
+                 on_stage: Callable[[str, str], None] | None = None, engine: str | None = None,
+                 brief: ObjectBrief | None = None) -> ObjectResult:
     """The whole object path. Raises `recon.ReconUnavailable` when the local 3D worker is missing.
-    `on_stage(name, text)` is called as each stage completes (brief, image, mesh, voxel) for live progress."""
+    `on_stage(name, text)` is called as each stage starts and completes (brief, image, mesh, voxel) for live
+    progress. A precomposed `brief` (from a /plan) skips the LLM call; `height` still overrides it. The result's
+    grid faces south (+z), like an engine-built building."""
+    from craftpilot.objects.orient import face_south
+
     timings: dict = {}
     notes: list[str] = []
 
@@ -67,7 +76,14 @@ def build_object(text: str, out_dir: Path | None = None, height: int | None = No
             on_stage(name, msg)
 
     t = time.time()
-    brief, meta = compose_brief(text, use_llm=use_llm, height=height)
+    if brief is None:
+        brief, meta = compose_brief(text, use_llm=use_llm, height=height)
+    else:
+        meta = {}
+        if height is not None:
+            from craftpilot.objects.brief import _clamp
+
+            brief.height = _clamp(height)
     timings["brief_s"] = round(time.time() - t, 1)
     if meta.get("error"):
         notes.append(f"brief: LLM failed ({meta['error']}); used the keyword fallback")
@@ -89,6 +105,7 @@ def build_object(text: str, out_dir: Path | None = None, height: int | None = No
                                             vivid=brief.palette == "colorful")
         img_path = work / ("reference.png" if cam == 0 else f"reference_{cam}.png")
         mesh_path = work / ("mesh.ply" if cam == 0 else f"mesh_{cam}.ply")
+        stage("image", "drawing the reference image (3-10 s)..." + (" (retry with another camera)" if cam else ""))
         try:
             img = imagegen.generate(attempts[0], img_path, attempts=attempts[1:])
         except imagegen.ImageRejected as exc:
@@ -110,6 +127,7 @@ def build_object(text: str, out_dir: Path | None = None, height: int | None = No
             if img.get("attempt"):
                 notes.append(f"image: prompt {img['attempt']} of {len(attempts)} passed the content filter (earlier ones were rejected)")
         t = time.time()
+        stage("mesh", "reconstructing the mesh (10-20 s; the first object also loads the 3D worker)...")
         rep = recon.reconstruct(img_path, mesh_path, resolution=resolution, engine=engine)
         timings["mesh_s"] = round(timings["mesh_s"] + rep["wall_seconds"], 1)
         mesh_obj = load_mesh(mesh_path)
@@ -132,14 +150,17 @@ def build_object(text: str, out_dir: Path | None = None, height: int | None = No
 
     t = time.time()
     obj = voxelize_mesh(load_mesh(mesh_path), height=brief.height, yaw_deg=yaw_deg, up=up_axis)
-    grid = to_grid(obj, allowed=brief.allowed_blocks, seed=seed, max_types=max_types)
-    grid.report["object_front"] = front_axis  # which side faced the camera; placement turns it toward the player
+    grid = to_grid(obj, allowed=brief.allowed_blocks, seed=seed, max_types=max_types,
+                   foundation_rows=1 if brief.plinth else 0)
+    grid.report["object_front"] = front_axis  # which side faced the camera
+    face_south(grid)  # ...and from here on the grid faces +z like an engine-built building
     timings["voxel_s"] = round(time.time() - t, 1)
     notes.extend(grid.report.get("notes", []))
-    stage("voxel", f"{obj.size[0]}x{obj.size[1]}x{obj.size[2]}, {obj.block_count} blocks, {len(grid.palette)} block types")
+    stage("voxel", f"{grid.W}x{grid.H}x{grid.D}, {obj.block_count} blocks, {len(grid.palette)} block types")
 
     result = ObjectResult(brief=brief, grid=grid, work_dir=work, image=image_path, mesh=mesh_path,
-                          blocks=obj.block_count, size=obj.size, timings=timings, notes=notes)
+                          blocks=obj.block_count, size=(grid.W, grid.H, grid.D), timings=timings, notes=notes,
+                          seed=seed, engine=str(rep.get("engine", "")), stamp=stamp)
     if preview:
         from craftpilot.preview.render import render
 

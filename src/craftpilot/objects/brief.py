@@ -180,3 +180,52 @@ def compose_brief(text: str, use_llm: bool = True, height: int | None = None, ge
     if height is not None:
         brief.height = _clamp(height)
     return brief, meta
+
+
+EDIT_INSTRUCTIONS = ("The player is refining an earlier brief. Apply the requested change to it and return the complete "
+                     "updated brief (every field), keeping everything the change does not mention.")
+
+
+def edit_brief(previous: ObjectBrief, change: str, use_llm: bool = True) -> tuple[ObjectBrief, str, list[str]]:
+    """Refine `previous` with a change ("make it red", "twice as tall"). Returns (brief, source, notes), source
+    "llm" or "fallback". Without the model the change is appended to the subject and the size / palette / plinth
+    keywords in it are re-read, so the path keeps working offline."""
+    notes: list[str] = []
+    dep = object_deployment()
+    if use_llm and dep and SETTINGS.azure_endpoint and SETTINGS.azure_api_key:
+        from openai import OpenAI
+
+        client = OpenAI(api_key=SETTINGS.azure_api_key, base_url=endpoint_root(SETTINGS.azure_endpoint) + "/openai/v1/",
+                        timeout=SETTINGS.llm_timeout, max_retries=1)
+        t0 = time.time()
+        try:
+            prompt = (f"Original request: {previous.request or previous.subject}\n"
+                      f"Current brief: {json.dumps(previous.to_dict())}\n"
+                      f"Change: {change}")
+            resp = client.responses.create(model=dep, instructions=SYSTEM + "\n\n" + EDIT_INSTRUCTIONS,
+                                           input=[{"role": "user", "content": prompt}],
+                                           text={"format": SCHEMA}, reasoning={"effort": "low"}, max_output_tokens=6000)
+            data = json.loads(resp.output_text)
+            brief = ObjectBrief(subject=str(data["subject"]), plinth=bool(data["plinth"]), height=_clamp(int(data["height"])),
+                                palette=str(data["palette"]) if data.get("palette") in PALETTES else previous.palette,
+                                style=str(data.get("style", previous.style)),
+                                label=_slug(str(data.get("label") or previous.label)), source="llm",
+                                request=f"{previous.request} / {change}".strip(" /"))
+            notes.append(f"brief edited by {dep} in {time.time() - t0:.1f}s")
+            return brief, "llm", notes
+        except Exception as exc:  # noqa: BLE001 - the offline edit keeps the path alive
+            notes.append(f"brief edit: LLM failed ({type(exc).__name__}: {str(exc)[:120]}); applied the change by keywords")
+    else:
+        notes.append("Azure OpenAI not configured; applied the change to the brief by keywords")
+    guess = fallback_brief(change)
+    height = _height_from_text(change)
+    if height is None and any(w in change.lower() for w in ("taller", "bigger", "larger", "huge", "giant")):
+        height = int(previous.height * 1.5)
+    elif height is None and any(w in change.lower() for w in ("smaller", "shorter", "tiny")):
+        height = int(previous.height / 1.5)
+    brief = ObjectBrief(subject=f"{previous.subject}, {change}", plinth=previous.plinth or guess.plinth,
+                        height=_clamp(height if height is not None else previous.height),
+                        palette=guess.palette if guess.palette != "auto" else previous.palette,
+                        style=previous.style, label=previous.label, source="fallback",
+                        request=f"{previous.request} / {change}".strip(" /"))
+    return brief, "fallback", notes

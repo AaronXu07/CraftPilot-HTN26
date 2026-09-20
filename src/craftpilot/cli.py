@@ -126,10 +126,26 @@ def build(
     delay_ms: int = typer.Option(None, "--delay-ms", help="Pause between placed chunks (place only)"),
     chunk: int = typer.Option(None, "--chunk", help="Blocks per game tick (place only)"),
     flags: int = typer.Option(None, "--flags", help="setBlockState flags; default 18 = force state, no updates"),
+    kind: str = typer.Option("auto", "--kind", "-k", help="auto (route the text), building, or object"),
+    height: int = typer.Option(None, "--height", "-H", help="Objects: largest dimension in blocks"),
 ) -> None:
-    """Compose a build program from TEXT, generate it, and write a Litematica schematic."""
+    """Build TEXT: the router sends architecture to the procedural generator and statues, creatures, vehicles
+    and named landmarks to the image->3D objects path; write a Litematica schematic either way."""
     from craftpilot.llm.compose import compose
     from craftpilot.program.exemplars import load_one
+    from craftpilot.route import classify
+
+    if kind not in ("auto", "building", "object"):
+        raise typer.BadParameter("kind must be auto, building, or object")
+    b = _parse_bounds(bounds)
+    if exemplar:
+        kind = "building"
+    r = classify(text, override=None if kind == "auto" else kind, use_llm=not no_llm, has_bounds=b is not None)
+    typer.echo(r.note, err=True)
+    if r.kind == "object":
+        _object_build(text, height=height, out_dir=None, use_llm=not no_llm, preview=preview, seed=seed, place=place,
+                      gap=gap, sink=sink, clear=not no_clear, delay_ms=delay_ms, chunk=chunk, flags=flags, facing=facing)
+        return
 
     place_ctx = None
     if place:
@@ -141,8 +157,7 @@ def build(
 
     if seed is None:
         seed = int(time.time()) % 1_000_000
-    b = _parse_bounds(bounds)
-    notes: list[str] = []
+    notes: list[str] = [r.note]
     t_start = time.time()
     if exemplar:
         ex = load_one(SETTINGS.exemplars_dir, exemplar)
@@ -200,12 +215,28 @@ def plan(
     text: str = typer.Argument(..., help="What to build, in plain language"),
     bounds: str = typer.Option(None, "--bounds", "-b", help="Bounding box WxHxD"),
     no_llm: bool = typer.Option(False, "--no-llm", help="Skip Azure OpenAI and use the nearest exemplar"),
+    kind: str = typer.Option("auto", "--kind", "-k", help="auto (route the text), building, or object"),
 ) -> None:
-    """Compose a build program from TEXT and describe it, without generating anything."""
+    """Describe what TEXT would build (a building program, or an object brief), without generating anything."""
     from craftpilot.llm.compose import compose
     from craftpilot.program.describe import describe
     from craftpilot.program.validate import repair
+    from craftpilot.route import classify
 
+    b = _parse_bounds(bounds)
+    r = classify(text, override=None if kind == "auto" else kind, use_llm=not no_llm, has_bounds=b is not None)
+    typer.echo(r.note, err=True)
+    if r.kind == "object":
+        from craftpilot.objects.brief import compose_brief
+        from craftpilot.objects.flow import describe_brief
+
+        brief, meta = compose_brief(text, use_llm=not no_llm)
+        for line in describe_brief(brief):
+            typer.echo(line)
+        if meta.get("error"):
+            typer.echo(f"  note: brief: LLM failed ({meta['error']}); used the keyword fallback", err=True)
+        typer.echo(f"  source: object:{brief.source}", err=True)
+        return
     program, source, notes = compose(text, use_llm=not no_llm, bounds_hint=_parse_bounds(bounds))
     program, r_notes = repair(program, SETTINGS.safety_limit)
     for line in describe(program, _parse_bounds(bounds) or program.bounds):
@@ -266,42 +297,34 @@ def serve(port: int = typer.Option(None, "--port")) -> None:
     uvicorn.run(fastapi_app, host="127.0.0.1", port=port or SETTINGS.service_port, log_level="info")
 
 
-@app.command("object")
-def object_(
-    text: str = typer.Argument(..., help="The object: a statue, creature, character, vehicle, weapon or prop"),
-    height: int = typer.Option(None, "--height", "-H", help="Total height in blocks (default: the brief's choice)"),
-    out_dir: Path = typer.Option(None, "--out-dir", help="Where the working folder goes (default: <schematics>/objects)"),
-    no_llm: bool = typer.Option(False, "--no-llm", help="Skip the LLM brief; use the request text as the image prompt"),
-    no_preview: bool = typer.Option(False, "--no-preview"),
-    yaw: float = typer.Option(0.0, "--yaw", help="Rotate the object about the vertical axis (degrees)"),
-    types: int = typer.Option(None, "--types", help="Max distinct block types on the surface (default: 6 for grey subjects, 10 for colourful)"),
-    resolution: int = typer.Option(256, "--resolution", help="Reconstruction marching-cubes resolution"),
-    place_now: bool = typer.Option(False, "--place", help="Also place it in the running game, in front of the player (needs the Fabric mod)"),
-    engine: str = typer.Option(None, "--engine", help="Reconstructor: hunyuan (default; real 3D, ~13 s) or triposr (~2 s, shallow)"),
-) -> None:
-    """Text -> reference image (FLUX) -> mesh (TripoSR, local) -> coloured voxels -> .litematic (+ preview)."""
-    from craftpilot.objects.imagegen import ImageRejected
-    from craftpilot.objects.pipeline import build_object
-    from craftpilot.objects.recon import ReconUnavailable
+def _object_build(text: str, *, height: int | None, out_dir: Path | None, use_llm: bool, preview: bool,
+                  seed: int | None, place: bool, gap: int | None = None, sink: int | None = None, clear: bool = True,
+                  delay_ms: int | None = None, chunk: int | None = None, flags: int | None = None,
+                  facing: str = "south", types: int | None = None, resolution: int = 256,
+                  engine: str | None = None) -> None:
+    """The objects path from the CLI: draw, report, and with ``place`` seat it in front of the player through the
+    same terrain placer a building uses (the mod's /heightmap survey, outline, one /setblocks)."""
+    from craftpilot.objects import flow
 
+    place_ctx = None
+    if place:
+        place_ctx = _place_context(gap, sink, clear, delay_ms, chunk, flags)
+        from craftpilot.place.anchor import facing_from_yaw
+
+        facing = facing_from_yaw(place_ctx.player["yaw"])
+        typer.echo(f"placing in front of {place_ctx.player['name']}, object faces {facing}", err=True)
     try:
-        r = build_object(text, out_dir=out_dir, height=height, use_llm=not no_llm, preview=not no_preview, yaw_deg=yaw,
-                         max_types=types, resolution=resolution, engine=engine)
-    except (ReconUnavailable, ImageRejected) as exc:
-        typer.echo(f"error: {exc}", err=True)
+        r = flow.draw(text, height=height, out_dir=out_dir, use_llm=use_llm, preview=preview,
+                      seed=seed if seed is not None else int(time.time()) % 1_000_000,
+                      say=lambda line: typer.echo(f"  {line}", err=True), max_types=types, resolution=resolution,
+                      engine=engine)
+    except flow.ObjectError as exc:
+        typer.echo(f"error: {exc.detail}", err=True)
         raise typer.Exit(2) from exc
-    if place_now:
-        from craftpilot.objects import place as P
-
-        try:
-            pl = P.place(r.grid, undo_dir=r.work_dir)
-            typer.echo(f"  placed    {pl.blocks} blocks in {pl.chunks} chunks at {pl.anchor} (undo: craftpilot object-undo {pl.undo_file})")
-        except P.ModUnavailable as exc:
-            typer.echo(f"  not placed: {exc}", err=True)
     b = r.brief
     typer.echo(f"{b.label}: {b.subject}")
     typer.echo(f"  {r.size[0]}x{r.size[1]}x{r.size[2]}, {r.blocks} blocks, palette {b.palette}, plinth {b.plinth} "
-               f"(brief via {b.source})")
+               f"(brief via {b.source}, {r.engine or 'recon'})")
     typer.echo("  " + "  ".join(f"{k} {v}s" for k, v in r.timings.items()) + f"  total {r.seconds}s")
     for n in r.notes:
         typer.echo(f"  note: {n}")
@@ -310,16 +333,54 @@ def object_(
     if r.litematic:
         typer.echo(f"  litematic {r.litematic}")
     typer.echo(f"  work dir  {r.work_dir}")
+    if place_ctx is not None:
+        from craftpilot.place.bridge import BridgeError
+
+        try:
+            pl = flow.place_object(r, place_ctx, facing)
+        except (ValueError, BridgeError) as exc:
+            typer.echo(f"  not placed: {exc}", err=True)
+            raise typer.Exit(2) from exc
+        ox, oy, oz = pl["origin"]
+        typer.echo(f"  placed    {pl['blocks']} blocks in {pl['chunks']} layers at ({ox}, {oy}, {oz}), ~{pl['estimated_seconds']}s")
+        for w in pl["warnings"]:
+            typer.echo(f"  note: {w}")
+        if pl.get("undo_file"):
+            typer.echo(f"  undo      craftpilot object-undo \"{pl['undo_file']}\"")
+
+
+@app.command("object")
+def object_(
+    text: str = typer.Argument(..., help="The object: a statue, creature, character, vehicle, landmark or prop"),
+    height: int = typer.Option(None, "--height", "-H", help="Largest dimension in blocks (default: the brief's choice)"),
+    out_dir: Path = typer.Option(None, "--out-dir", help="Where the working folder goes (default: <schematics>/objects)"),
+    no_llm: bool = typer.Option(False, "--no-llm", help="Skip the LLM brief; use the request text as the image prompt"),
+    no_preview: bool = typer.Option(False, "--no-preview"),
+    seed: int = typer.Option(None, "--seed", "-s", help="Voxel palette seed (the image itself is never deterministic)"),
+    types: int = typer.Option(None, "--types", help="Max distinct block types on the surface (default: 6 for grey subjects, 10 for colourful)"),
+    resolution: int = typer.Option(256, "--resolution", help="Reconstruction marching-cubes resolution"),
+    place_now: bool = typer.Option(False, "--place", "-P", help="Also place it in the running game, in front of the player (needs the Fabric mod)"),
+    gap: int = typer.Option(None, "--gap", help="Air blocks between you and the object (place only)"),
+    sink: int = typer.Option(None, "--sink", help="Blocks the base sinks below your feet (place only)"),
+    no_clear: bool = typer.Option(False, "--no-clear", help="Do not clear terrain inside the bounding box"),
+    engine: str = typer.Option(None, "--engine", help="Reconstructor: hunyuan (default; real 3D, ~13 s) or triposr (~2 s, shallow)"),
+) -> None:
+    """Text -> reference image (FLUX) -> mesh (Hunyuan3D / TripoSR, local) -> coloured voxels -> .litematic (+ preview).
+    The same as `craftpilot build --kind object`."""
+    _object_build(text, height=height, out_dir=out_dir, use_llm=not no_llm, preview=not no_preview, seed=seed,
+                  place=place_now, gap=gap, sink=sink, clear=not no_clear, types=types, resolution=resolution,
+                  engine=engine)
 
 
 @app.command("object-undo")
-def object_undo(undo_file: Path = typer.Argument(..., help="placed.json written by `craftpilot object --place`")) -> None:
+def object_undo(undo_file: Path = typer.Argument(..., help="placed.json written next to a placed object's artefacts")) -> None:
     """Remove a placed object from the world (sets every recorded position to air)."""
-    from craftpilot.objects import place as P
+    from craftpilot.place.bridge import BridgeError, HttpBridge
+    from craftpilot.place.undo import undo
 
     try:
-        n = P.undo(undo_file)
-    except P.ModUnavailable as exc:
+        n = undo(undo_file, HttpBridge())
+    except BridgeError as exc:
         typer.echo(f"error: {exc}", err=True)
         raise typer.Exit(2) from exc
     typer.echo(f"removed {n} blocks")

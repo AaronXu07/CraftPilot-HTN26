@@ -169,10 +169,15 @@ def base_mask(grid: SemanticGrid) -> np.ndarray:
     return m if m.any() else column_mask(grid)
 
 
+def mask_columns(mask: np.ndarray, origin_xz: tuple[int, int]) -> set[Column]:
+    """World columns of a (W, D) mask for a grid whose column (0, 0) is at `origin_xz`."""
+    ox, oz = origin_xz
+    return {(ox + int(x), oz + int(z)) for x, z in zip(*np.nonzero(mask))}
+
+
 def base_columns(grid: SemanticGrid, origin_xz: tuple[int, int]) -> set[Column]:
     """World columns of the base (`base_mask`) for a grid whose column (0, 0) is at `origin_xz`."""
-    ox, oz = origin_xz
-    return {(ox + int(x), oz + int(z)) for x, z in zip(*np.nonzero(base_mask(grid)))}
+    return mask_columns(base_mask(grid), origin_xz)
 
 
 def footprint_of(grid: SemanticGrid, origin_xz: tuple[int, int]) -> tuple[int, int, int, int]:
@@ -224,9 +229,11 @@ def choose_ground(heights: Heights, base: set[Column], feet_y: int, build_height
     return int(ground), note
 
 
-def plan_site(grid: SemanticGrid, heights: Heights, origin_xz: tuple[int, int], feet_y: int) -> Site:
-    """Ground level, strategy and apron width for `grid` standing at `origin_xz` on `heights`."""
-    base = base_columns(grid, origin_xz)
+def plan_site(grid: SemanticGrid, heights: Heights, origin_xz: tuple[int, int], feet_y: int,
+              base: set[Column] | None = None) -> Site:
+    """Ground level, strategy and apron width for `grid` standing at `origin_xz` on `heights`. `base` overrides
+    which world columns carry the build (default: its row-0 footprint; an object on legs passes every column)."""
+    base = base_columns(grid, origin_xz) if base is None else set(base)
     ground, note = choose_ground(heights, base, feet_y, grid_height(grid))
     hs = [heights[c][0] for c in base if c in heights]
     lowest, highest = (min(hs), max(hs)) if hs else (ground - 1, ground - 1)

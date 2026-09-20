@@ -409,9 +409,11 @@ def despeckle(occ: np.ndarray, block: np.ndarray, passes: int = 2) -> np.ndarray
 
 
 def to_grid(obj: VoxelObject, filler: str = "stone", allowed: list[str] | None = None, seed: int = 0,
-            pad_xz: int = 1, max_types: int | None = None) -> SemanticGrid:
+            pad_xz: int = 1, max_types: int | None = None, foundation_rows: int = 0) -> SemanticGrid:
     """Write the voxel object into a SemanticGrid: surface voxels get their matched block, the interior
-    gets `filler` (invisible, but keeps the statue solid for placement and undo)."""
+    gets `filler` (invisible, but keeps the statue solid for placement and undo). With ``foundation_rows``
+    the full blocks of the bottom rows get Role.FOUNDATION, so terrain seating fills under a plinth with
+    the plinth's own block instead of cobblestone."""
     W, H, D = obj.size
     grid = SemanticGrid(W + 2 * pad_xz, H, D + 2 * pad_xz, np.random.default_rng(seed))
     surf = _surface_mask(obj.occupancy)
@@ -448,6 +450,10 @@ def to_grid(obj: VoxelObject, filler: str = "stone", allowed: list[str] | None =
         grid.set(int(x) + pad_xz, int(y), int(z) + pad_xz, Role.WALL, bshape)
         grid.block[x + pad_xz, y, z + pad_xz] = i
         shaped += 1
+    if foundation_rows > 0:
+        rows = slice(0, min(foundation_rows, grid.H))
+        base = (grid.block[:, rows, :] >= 0) & (grid.shape[:, rows, :] == BShape.FULL)
+        grid.role[:, rows, :][base] = Role.FOUNDATION
     used = len({int(v) for v in chosen[surf]})
     grid.note(f"object: {obj.block_count} blocks, {used} block types, {W}x{H}x{D}" + (f", {shaped} stairs/slabs" if shaped else ""))
     return grid

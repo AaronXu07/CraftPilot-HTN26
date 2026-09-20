@@ -24,15 +24,29 @@ cp .env.example .env        # fill in the Azure OpenAI values
 uv sync
 ```
 
+The `.env` needs the Azure endpoint, key and a deployment name (`AZURE_OPENAI_COMPOSE_DEPLOYMENT`; a plain
+`AZURE_OPENAI_DEPLOYMENT` is accepted as an alias). Objects additionally need the local 3D worker from
+`tools/README.md` (a `tools/.venv-3d` with Hunyuan3D / TripoSR); it starts itself on the first object.
+
 ## Build something
 
 ```sh
 uv run craftpilot build "a cozy two storey cottage with a stone chimney" --preview
+uv run craftpilot build "a statue of a dragon"        # routed to the image->3D objects path
+uv run craftpilot route "build the eiffel tower"      # see which path a request takes, and why
 ```
+
+Every request goes through a router first (`src/craftpilot/route.py`): architecture the procedural
+generator can express (houses, castles, towers with dimensions, anything with storeys / a roof / windows)
+is composed as a `BuildProgram`; statues, creatures, vehicles, props and named landmarks (the Eiffel Tower is a
+landmark before it is a tower) go to the objects path, which draws a reference image, reconstructs a mesh
+and voxelises it. Word rules decide the clear cases; an unsure one asks gpt-5.4-mini once (cached).
+`--kind building|object` forces a path.
 
 This writes `<label>_<seed>_<id>.litematic` (plus a `.png` preview and the composed
 `.program.json`) into `~/Library/Application Support/minecraft/schematics/craftpilot/`, which
-Litematica reads directly.
+Litematica reads directly. Objects write `<label>_<stamp>.litematic` and a working folder under
+`schematics/craftpilot/objects/` with the reference image and mesh.
 
 Useful flags:
 
@@ -45,6 +59,8 @@ Useful flags:
 | `--facing east`        | Which way the front door faces (default south).                                                |
 | `--show-program`       | Print the composed program JSON.                                                               |
 | `--out path.litematic` | Write somewhere else.                                                                          |
+| `--kind object`        | Skip the router: build TEXT as an object (`--kind building` forces the generator).            |
+| `--place`              | Also place it in the open world through the mod, seated on the terrain (buildings and objects).|
 
 Render every exemplar to `out/exemplars/` for a quick gallery:
 

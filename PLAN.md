@@ -140,7 +140,12 @@ craftpilot/
     blocks/
       catalog.py  state.py  circles.py
     export/litematic.py
-    preview/render.py
+    preview/render.py  ghost.py
+    route.py                   # building or object? (section 9.1)
+    objects/                   # image->3D objects path (section 9.2): brief, imagegen, recon, voxelize, pipeline, orient, flow
+    place/                     # in-game placement: bridge, anchor, placer (terrain seating), undo
+    terrain.py
+  tools/                       # the local 3D reconstruction worker (recon_server.py) and its setup notes
   mod/                         # Fabric mod (see section 8)
   tests/
     unit/  golden/  llm_eval/
@@ -501,16 +506,59 @@ dimensions in the action bar) is still deferred.
 
 `craftpilot serve` on `127.0.0.1:7778` (the mod owns 7777):
 
-- `POST /build` -> `BuildRequest` in (`place: true` streams the blocks into the game),
-  `{schematic, summary, notes, seed, bounds, placement?}` out.
-- `POST /cancel` -> drops the mod's placement queue.
-- `POST /edit` -> `{player, text}` patches the last program.
-- `POST /regenerate` -> `{player, seed?}`.
-- `POST /exemplars` -> saves the last program under a name.
-- `GET /health`.
+- `POST /plan` -> `{text, player, bounds?, use_llm?, kind?, height?}`: compose (or brief) only; `{plan, bounds,
+  summary, notes, route}` out.
+- `POST /build` -> `BuildRequest` in (`ghost: true` answers a hologram cloud, `place: true` streams the blocks into
+  the game), `{schematic, summary, notes, seed, bounds, placement?, route}` out.
+- `POST /edit` -> `{player, text, plan?|ghost?}` refines the pending plan / rebuilds the last thing with a change.
+- `POST /regenerate` -> `{player, seed?, ghost?|place?}`: the hologram for a pending plan (`/build go`), a new take
+  (`/build again`), or the G commit that places the previewed build where the box was locked.
+- `POST /cancel` -> drops the mod's placement queue. `POST /exemplars` -> saves the last building. `GET /health`.
 
-CLI mirrors it: `craftpilot build "..." --bounds 30x20x30 --seed 7 --preview`,
-`craftpilot render exemplars/*.yaml` to regenerate golden images.
+Every `/plan` and `/build` is **routed** first (`craftpilot/route.py`, section 9.1). The service keeps one
+`Pending` per player (kind, text, the program or the object brief + cached draw) so `/edit`, `/regenerate` and
+the G commit act on the right thing without the mod knowing which path answered: both paths speak the same
+`ghost` / `plan` / `placement` / `summary` / `notes` shapes.
+
+CLI mirrors it: `craftpilot build "..." [--kind auto|building|object] [--place]`, `craftpilot plan`,
+`craftpilot object "..."` (= `build --kind object`), `craftpilot route "..."`, `craftpilot render`.
+
+### 9.1 Routing: building or object
+
+Two generators share `/build`. The **building generator** (sections 4-6) is right for architecture its part
+grammar can express; the **objects path** (`src/craftpilot/objects/`, section 9.2) is right for anything whose
+identity is a silhouette. `route.classify(text)`:
+
+1. an explicit override (`/build object ...`, `/build building ...`, `--kind`, or an `object:` / `building:`
+   text prefix) wins;
+2. **landmarks** - a curated list of named places and famous things (Eiffel Tower, Big Ben, Golden Gate Bridge,
+   Hogwarts, Titanic...) - always go to objects, whatever generic words they contain;
+3. otherwise the **head noun** decides (last keyword before `with|of|on|...`): building words are what the
+   grammar can build (house, cottage, castle, tower, church, barn, factory...); object words are statues,
+   creatures, vehicles, props, and the structures the grammar cannot express (bridge, windmill, pyramid, arch,
+   fountain). A theme word scores nothing ("dragon-themed castle"), "shaped like X" is a silhouette request,
+   and storeys / `NxMxK` dimensions / facade features are building evidence. Ties go to the building generator.
+4. Only when the margin is small (confidence < 0.8: "a house shaped like a pineapple", "a dog house", "build me
+   something cool") does one small gpt-5.4-mini call decide (effort low, 12 s timeout, cached on disk). Any
+   failure of that call falls back to the rule result; the router never raises.
+
+The decision is the first note in every answer (`routed to objects: landmark "eiffel tower"`) and the full
+`Route` is returned as `route`. `craftpilot route TEXT` prints it with its evidence and scores.
+
+### 9.2 Objects on the mod flow
+
+`objects/flow.draw()` runs `objects/pipeline.build_object` (brief -> FLUX reference image -> Hunyuan3D mesh ->
+coloured voxels, 15-35 s, plus a one-off 3D worker start) and returns a `SemanticGrid` turned to face south
+(`objects/orient.face_south`), so from then on it is indistinguishable from an engine-built building: the same
+`ghost_cloud`, the same `rotate_cw(grid, quarter_turns_for_facing(...))` toward the player, the same
+`place/placer.place_grid` with terrain seating (a plinth stands like a foundation ring; a creature on legs gets a
+level pad under its whole footprint) and one `/setblocks`. The draw is cached per player: the G commit never
+regenerates (FLUX and the reconstruction are not deterministic; `seed` is only the token the mod echoes back),
+`/build again` draws a new take, `/build plan` composes the brief only and `/build go` draws it, `/build edit`
+edits the brief (`objects/brief.edit_brief`). Every object placement writes `placed.json` next to its artefacts;
+`craftpilot object-undo` sets those positions back to air. Failures are one chat line (503 when the 3D worker or
+image service is missing, 422 when the content filter refuses a name) - never a silent fallback to the building
+generator; only an *auto* route on a machine without the 3D tooling is downgraded, with a note.
 
 ---
 

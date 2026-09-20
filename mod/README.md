@@ -1,7 +1,7 @@
 # CraftPilot Bridge (Fabric mod)
 
-A thin client-side Fabric mod that lets `craftpilot serve` place generated buildings straight into the
-world you have open. It does two things:
+A thin client-side Fabric mod that lets `craftpilot serve` place generated buildings and objects (statues,
+creatures, vehicles, landmarks) straight into the world you have open. It does two things:
 
 1. Hosts a small HTTP server on `http://127.0.0.1:7777` that the Python service pushes blocks through.
    Blocks are queued and placed **one chunk per game tick**, which is what makes a build rise layer by
@@ -26,8 +26,8 @@ compilation uses a JDK 25 toolchain, which Gradle downloads into `~/.gradle/jdks
 none is installed (`settings.gradle`, foojay resolver).
 
 Copy the jar plus the matching [Fabric API](https://modrinth.com/mod/fabric-api) into your `mods/`
-folder, launch with the Fabric loader, open a singleplayer world. The log shows
-`[craftpilot] bridge listening on http://127.0.0.1:7777`.
+folder (removing any older `copilot-*.jar` - Fabric refuses two mods with the same id), launch with the
+Fabric loader, open a singleplayer world. The log shows `[craftpilot] bridge listening on http://127.0.0.1:7777`.
 
 To target another Minecraft version: update `minecraft_version`, `loader_version`, `fabric_version` from
 https://fabricmc.net/develop, bump `depends.minecraft` in `src/main/resources/fabric.mod.json`, rebuild,

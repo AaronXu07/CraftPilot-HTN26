@@ -1,70 +1,24 @@
-"""Place an object grid in the running game through the Fabric mod's HTTP bridge (mod/, port 7777).
+"""Object placement geometry, kept for reference and tests.
 
-The bridge API (see src/craftpilot/place/bridge.py): GET /health, GET /player -> {pos, yaw, facing}, POST /setblocks
-{"chunks": [{"blocks": [[x, y, z, state], …], "delay_ms": n}], "flags": 3}, GET /setblocks/status.
-Objects contain only full blocks, so rotation is a coordinate rotation with no block-state remapping.
+Placement itself goes through the shared terrain placer (`craftpilot.place.placer.place_grid`): an object
+grid is turned to face south once (`objects.orient.face_south`, using PRESENTATION_TURNS below) and from
+then on is placed, previewed and undone exactly like an engine-built building. The helpers here are the
+original centred-anchor arithmetic; `objects.flow` is the live path.
 """
 from __future__ import annotations
 
-import json
 import math
-import os
-import time
-import urllib.error
-import urllib.request
-from dataclasses import dataclass
-from pathlib import Path
 
 import numpy as np
 
 from craftpilot.grid.semantic import SemanticGrid
+from craftpilot.objects.orient import DEFAULT_FRONT, PRESENTATION_TURNS
 
-DEFAULT_MOD_URL = "http://127.0.0.1:7777"
 FACING_TURNS = {"north": 0, "east": 1, "south": 2, "west": 3}
 FACING_VEC = {"north": (0, -1), "east": (1, 0), "south": (0, 1), "west": (-1, 0)}
-# Which side of the reconstruction faced the camera, per engine, and the CW quarter turns that bring it to
-# +z — the agent's "front faces the player standing south of the build" convention. TripoSR: camera on +x
-# ("x back, y right, z up"); Hunyuan3D: camera on +z already. The grid carries it as report["object_front"].
-PRESENTATION_TURNS = {"+x": 3, "+z": 0, "-x": 1, "-z": 2}
-DEFAULT_FRONT = "+x"
 
-
-class ModUnavailable(RuntimeError):
-    pass
-
-
-@dataclass
-class Placement:
-    anchor: tuple[int, int, int]
-    quarter_turns: int
-    blocks: int
-    chunks: int
-    estimated_seconds: float
-    undo_file: Path | None = None
-
-
-def mod_url() -> str:
-    return os.environ.get("COPILOT_MOD_URL", DEFAULT_MOD_URL).rstrip("/")
-
-
-def _get(path: str, timeout: float = 5.0) -> dict:
-    try:
-        with urllib.request.urlopen(mod_url() + path, timeout=timeout) as r:
-            return json.loads(r.read().decode())
-    except (urllib.error.URLError, OSError, json.JSONDecodeError) as exc:
-        raise ModUnavailable(f"mod not reachable at {mod_url()}{path}: {exc}") from exc
-
-
-def _post(path: str, body: dict, timeout: float = 30.0) -> dict:
-    data = json.dumps(body).encode()
-    req = urllib.request.Request(mod_url() + path, data=data, headers={"Content-Type": "application/json"})
-    try:
-        with urllib.request.urlopen(req, timeout=timeout) as r:
-            return json.loads(r.read().decode() or "{}")
-    except urllib.error.HTTPError as exc:
-        raise ModUnavailable(f"mod rejected {path}: HTTP {exc.code} {exc.read()[:200]!r}") from exc
-    except (urllib.error.URLError, OSError) as exc:
-        raise ModUnavailable(f"mod not reachable at {mod_url()}{path}: {exc}") from exc
+__all__ = ["DEFAULT_FRONT", "FACING_TURNS", "FACING_VEC", "PRESENTATION_TURNS", "facing_from_yaw", "grid_blocks",
+           "layer_chunks", "plan_anchor", "rotate_state", "rotate_xz", "to_world"]
 
 
 def facing_from_yaw(yaw: float) -> str:
@@ -164,57 +118,3 @@ def layer_chunks(blocks: list[tuple[int, int, int, str]], chunk_size: int) -> li
     ordered = sorted(blocks, key=lambda b: (b[1], b[2], b[0]))
     return [ordered[i:i + chunk_size] for i in range(0, len(ordered), chunk_size)]
 
-
-def estimate_seconds(n_blocks: int, chunk_size: int, delay_ms: int) -> float:
-    return math.ceil(n_blocks / max(chunk_size, 1)) * delay_ms / 1000.0 + 1.0
-
-
-def health() -> dict:
-    return _get("/health")
-
-
-def place(grid: SemanticGrid, gap: int = 2, chunk_size: int = 1500, delay_ms: int = 60, undo_dir: Path | None = None,
-          wait: bool = True, max_wait_s: float = 120.0) -> Placement:
-    """Place the object in front of the player. Writes an undo record (world positions) when `undo_dir` is given."""
-    h = health()
-    if not h.get("world_loaded", True):
-        raise ModUnavailable("no world loaded (open a single-player world first)")
-    player = _get("/player")
-    scene = grid_blocks(grid)
-    if not scene:
-        raise ValueError("empty object")
-    anchor, k = plan_anchor(player, scene, gap=gap)
-    world = to_world(scene, anchor, k)
-    chunks = layer_chunks(world, chunk_size)
-    body = {"chunks": [{"blocks": [[x, y, z, s] for x, y, z, s in c], "delay_ms": delay_ms} for c in chunks], "flags": 3}
-    _post("/setblocks", body)
-    est = estimate_seconds(len(world), chunk_size, delay_ms)
-    undo_file = None
-    if undo_dir is not None:
-        undo_dir.mkdir(parents=True, exist_ok=True)
-        undo_file = undo_dir / "placed.json"
-        undo_file.write_text(json.dumps({"anchor": anchor, "turns": k, "positions": [[x, y, z] for x, y, z, _ in world]}))
-    if wait:
-        deadline = time.time() + min(max_wait_s, est * 3 + 5)
-        while time.time() < deadline:
-            try:
-                st = _get("/setblocks/status")
-            except ModUnavailable:
-                break
-            if int(st.get("pending_blocks", 0) or 0) == 0 and int(st.get("pending_chunks", 0) or 0) == 0:
-                break
-            time.sleep(0.5)
-    return Placement(anchor=anchor, quarter_turns=k, blocks=len(world), chunks=len(chunks), estimated_seconds=est,
-                     undo_file=undo_file)
-
-
-def undo(undo_file: Path, chunk_size: int = 4000) -> int:
-    """Replace every recorded position with air. Returns the block count."""
-    data = json.loads(Path(undo_file).read_text())
-    positions = data.get("positions", [])
-    if not positions:
-        return 0
-    blocks = [(int(x), int(y), int(z), "minecraft:air") for x, y, z in positions]
-    chunks = layer_chunks(blocks, chunk_size)
-    _post("/setblocks", {"chunks": [{"blocks": [[x, y, z, s] for x, y, z, s in c], "delay_ms": 0} for c in chunks], "flags": 3})
-    return len(blocks)
