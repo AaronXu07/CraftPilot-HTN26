@@ -209,22 +209,30 @@ def _plan_result(player: str, program: BuildProgram, text: str, source: str, not
     }
 
 
+FALLBACK_WARNING = "WARNING: the model was not used; this is the offline exemplar fallback (check AZURE_OPENAI_* in .env)"
+
+
+def _compose(text: str, use_llm: bool | None, bounds: Bounds | None) -> tuple[BuildProgram, str, list[str]]:
+    """compose() with the request's use_llm (None = try the model; compose says why when it cannot) and a loud
+    first note when the offline fallback answered, so the player sees it in chat instead of a silent lookalike."""
+    from craftpilot.llm.compose import compose
+
+    program, source, notes = compose(text, use_llm=True if use_llm is None else use_llm, bounds_hint=bounds)
+    if source == "fallback" and use_llm is not False:
+        notes = [FALLBACK_WARNING] + notes
+    return program, source, notes
+
+
 @app.post("/plan")
 def plan(req: PlanRequest) -> dict:
     """Compose only. The plan waits for /edit {plan: true} refinements and /regenerate {place: true} to build."""
-    from craftpilot.llm.compose import compose
-
-    use_llm = SETTINGS.llm_configured if req.use_llm is None else req.use_llm
-    program, source, notes = compose(req.text, use_llm=use_llm, bounds_hint=req.bounds)
+    program, source, notes = _compose(req.text, req.use_llm, req.bounds)
     return _plan_result(req.player, program, req.text, source, notes, req.bounds)
 
 
 @app.post("/build")
 def build(req: BuildRequest) -> dict:
-    from craftpilot.llm.compose import compose
-
-    use_llm = SETTINGS.llm_configured if req.use_llm is None else req.use_llm
-    program, source, notes = compose(req.text, use_llm=use_llm, bounds_hint=req.bounds)
+    program, source, notes = _compose(req.text, req.use_llm, req.bounds)
     if req.ghost:
         return _ghost_result(req.player, program, req.text, req.seed, source, notes, req.bounds)
     return _run(req.player, program, req.bounds, req.seed, req.preview, req.text, notes, source, _yaw(req, 0.0), req)

@@ -21,15 +21,16 @@ def endpoint_root(endpoint: str) -> str:
     return root
 
 
-def client():
+def client(timeout: float | None = None, max_retries: int = 1):
     from openai import OpenAI
 
-    if not SETTINGS.llm_configured:
-        raise RuntimeError("Azure OpenAI is not configured; set AZURE_OPENAI_ENDPOINT, AZURE_OPENAI_API_KEY and "
-                           "AZURE_OPENAI_COMPOSE_DEPLOYMENT in the environment or .env")
+    if not SETTINGS.azure_configured:
+        raise RuntimeError("Azure OpenAI is not configured; set AZURE_OPENAI_ENDPOINT and AZURE_OPENAI_API_KEY "
+                           "(and a deployment name) in the environment or .env")
     # Azure's v1 surface speaks the plain OpenAI protocol at <root>/openai/v1/ with the key as bearer token.
     base = endpoint_root(SETTINGS.azure_endpoint) + "/openai/v1/"
-    return OpenAI(api_key=SETTINGS.azure_api_key, base_url=base, timeout=SETTINGS.llm_timeout, max_retries=1)
+    return OpenAI(api_key=SETTINGS.azure_api_key, base_url=base,
+                  timeout=SETTINGS.llm_timeout if timeout is None else timeout, max_retries=max_retries)
 
 
 class DeploymentUnavailable(RuntimeError):

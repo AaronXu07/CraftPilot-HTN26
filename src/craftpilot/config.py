@@ -36,10 +36,18 @@ class Settings:
     place_seconds: float
     place_delay_ms: int
     place_terrain: bool
+    route_deployment: str | None
+    route_timeout: float
+    route_llm: bool
 
     @property
     def llm_configured(self) -> bool:
         return bool(self.azure_endpoint and self.azure_api_key and self.compose_deployment)
+
+    @property
+    def azure_configured(self) -> bool:
+        """Endpoint and key only: enough for the router, the object brief and image generation."""
+        return bool(self.azure_endpoint and self.azure_api_key)
 
 
 def _path(value: str | None, default: Path) -> Path:
@@ -47,6 +55,15 @@ def _path(value: str | None, default: Path) -> Path:
     if not value:
         return default
     return Path(value.strip().strip('"').strip("'")).expanduser().resolve()
+
+
+def _first(*names: str) -> str | None:
+    """First non-empty value among alias environment variable names."""
+    for name in names:
+        value = os.environ.get(name)
+        if value and value.strip():
+            return value.strip()
+    return None
 
 
 def _triple(value: str | None, default: tuple[int, int, int]) -> tuple[int, int, int]:
@@ -70,8 +87,12 @@ def load_settings() -> Settings:
         azure_endpoint=os.environ.get("AZURE_OPENAI_ENDPOINT"),
         azure_api_key=os.environ.get("AZURE_OPENAI_API_KEY"),
         azure_api_version=os.environ.get("AZURE_OPENAI_API_VERSION", "preview"),
-        compose_deployment=os.environ.get("AZURE_OPENAI_COMPOSE_DEPLOYMENT"),
-        edit_deployment=os.environ.get("AZURE_OPENAI_EDIT_DEPLOYMENT"),
+        # AZURE_OPENAI_DEPLOYMENT is accepted as an alias for both, so a .env written for the objects path
+        # (or pasted from the Azure portal) also drives the building composer instead of silently
+        # falling back to the offline exemplars.
+        compose_deployment=_first("AZURE_OPENAI_COMPOSE_DEPLOYMENT", "AZURE_OPENAI_DEPLOYMENT"),
+        edit_deployment=_first("AZURE_OPENAI_EDIT_DEPLOYMENT", "AZURE_OPENAI_DEPLOYMENT",
+                               "AZURE_OPENAI_COMPOSE_DEPLOYMENT"),
         llm_timeout=float(os.environ.get("CRAFTPILOT_LLM_TIMEOUT", "240")),
         # The Fabric mod's bridge listens on 7777, so the service takes the next port.
         service_port=int(os.environ.get("CRAFTPILOT_PORT", "7778")),
@@ -87,6 +108,12 @@ def load_settings() -> Settings:
         place_delay_ms=int(os.environ.get("CRAFTPILOT_PLACE_DELAY_MS", "60")),
         # Seat builds on the terrain (mod /heightmap survey, foundation, graded apron). Off = player's feet.
         place_terrain=os.environ.get("CRAFTPILOT_PLACE_TERRAIN", "1").lower() not in ("0", "false", "no", "off"),
+        # Building-vs-object router (craftpilot.route): the deployment for its one small tie-break call
+        # (defaults to the edit deployment), a short timeout for that call, and an off switch for the LLM
+        # layer (word rules only).
+        route_deployment=_first("CRAFTPILOT_ROUTE_DEPLOYMENT"),
+        route_timeout=float(os.environ.get("CRAFTPILOT_ROUTE_TIMEOUT", "12")),
+        route_llm=os.environ.get("CRAFTPILOT_ROUTE_LLM", "1").lower() not in ("0", "false", "no", "off"),
     )
 
 
