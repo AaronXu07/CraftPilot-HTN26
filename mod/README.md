@@ -58,6 +58,7 @@ All coordinates are absolute world coordinates; block states use command syntax
 | `GET /setblocks/status` | – | `{pending_chunks, pending_blocks, placed_total, skipped_total, postprocessed}` |
 | `POST /setblocks/cancel` | – | `{ok, cleared_chunks}` |
 | `POST /scan` | `{min:[x,y,z], max:[x,y,z]}` inclusive | `{palette:[...], blocks:[[x,y,z,paletteIdx],...], count}` |
+| `POST /heightmap` | `{min:[x,z], max:[x,z]}` inclusive, ≤ 1M columns | `{min, max, palette:[...], heights:[y,...], tops:[paletteIdx,...]}` row-major (z outer, x inner): the y of the top motion-blocking non-leaf block per column (water surfaces count) and that block's state; `null` for an empty column. The service surveys the build site with this before placing |
 | `POST /say` | `{text}` | `{ok}` |
 | `GET /blocks` | – | every registered block with its properties and default state |
 | `POST /camera` | `{mode:"orbit", center, radius, seconds}` / `{mode:"return"}` | `{ok}` |

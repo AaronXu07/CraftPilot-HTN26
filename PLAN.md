@@ -33,7 +33,8 @@ deterministic engine renders the program as a voxel grid inside a bounding box,
 litemapy writes a `.litematic`, and the service streams the blocks back through
 the mod, which places them in the world one layer per tick.
 
-Scope for now: buildings of any kind. No terrain, roads, or settlements.
+Scope for now: buildings of any kind. No terrain generation, roads, or settlements
+(buildings are seated on the existing terrain, §8.4).
 
 ---
 
@@ -481,6 +482,16 @@ dimensions in the action bar) is still deferred.
   blocks (attachables last within a layer). One chunk is placed per tick with
   `NOTIFY_LISTENERS | FORCE_STATE` and no post-process, because the engine already bakes stair
   shapes, hinges, connections and support into every state. The `.litematic` is still written.
+- **Terrain** (`src/craftpilot/terrain.py`): before queueing, the service surveys the footprint plus
+  an apron through `POST /heightmap` (top motion-blocking non-leaf block per column and its state) and
+  seats the plinth row at the 40th percentile of the surface heights under the base — sunk further to
+  stay under y=319, refused if that means burying it more than 16 blocks. It streams with the
+  building: air for the hill inside the base columns, a foundation down to the terrain in the
+  building's own foundation block (solid plinth up to a 5-block range, perimeter wall + pillar grid
+  beyond), the apron (3–8 columns, by range) ramped one block per column and re-topped with each
+  column's surface block, and stairs continuing the door steps to the graded ground. Water and
+  unsampled columns are left alone. `CRAFTPILOT_PLACE_TERRAIN=0`, an older mod without `/heightmap`,
+  or an empty survey fall back to feet-level placement with the bounding box cleared.
 - Undo is not implemented yet; `/build cancel` drops what is still queued.
 
 ---

@@ -1,6 +1,7 @@
 package dev.craftpilot.copilot;
 
 import com.google.gson.JsonArray;
+import com.google.gson.JsonNull;
 import com.google.gson.JsonObject;
 import com.mojang.brigadier.exceptions.CommandSyntaxException;
 import net.minecraft.block.Block;
@@ -11,6 +12,7 @@ import net.minecraft.server.world.ServerWorld;
 import net.minecraft.state.property.Property;
 import net.minecraft.util.Identifier;
 import net.minecraft.util.math.BlockPos;
+import net.minecraft.world.Heightmap;
 
 import java.util.ArrayList;
 import java.util.Collection;
@@ -84,6 +86,62 @@ public final class WorldOps {
         out.add("palette", pal);
         out.add("blocks", blocks);
         out.addProperty("count", count);
+        return out;
+    }
+
+    /**
+     * Surface heightmap of an inclusive x/z rectangle:
+     * {@code {min:[x0,z0], max:[x1,z1], palette:[...], heights:[...], tops:[...]}}. {@code heights[i]} is
+     * the y of the top motion-blocking non-leaf block of column i and {@code tops[i]} the palette index of
+     * that block; both arrays are row-major (z outer, x inner). A column with nothing in it (the void)
+     * reports {@code null} for both. Water counts as ground (its surface is reported). Must run on the
+     * server thread.
+     */
+    public static JsonObject heightmap(ServerWorld world, int x0, int z0, int x1, int z1) {
+        int minX = Math.min(x0, x1), maxX = Math.max(x0, x1);
+        int minZ = Math.min(z0, z1), maxZ = Math.max(z0, z1);
+        List<String> palette = new ArrayList<>();
+        Map<BlockState, Integer> index = new HashMap<>();
+        JsonArray heights = new JsonArray();
+        JsonArray tops = new JsonArray();
+        BlockPos.Mutable pos = new BlockPos.Mutable();
+        int bottom = world.getBottomY();
+        for (int z = minZ; z <= maxZ; z++) {
+            for (int x = minX; x <= maxX; x++) {
+                int top = world.getTopY(Heightmap.Type.MOTION_BLOCKING_NO_LEAVES, x, z) - 1;
+                if (top < bottom) {
+                    heights.add(JsonNull.INSTANCE);
+                    tops.add(JsonNull.INSTANCE);
+                    continue;
+                }
+                pos.set(x, top, z);
+                BlockState state = world.getBlockState(pos);
+                Integer idx = index.get(state);
+                if (idx == null) {
+                    idx = palette.size();
+                    palette.add(stringify(state));
+                    index.put(state, idx);
+                }
+                heights.add(top);
+                tops.add(idx);
+            }
+        }
+        JsonArray pal = new JsonArray();
+        for (String p : palette) {
+            pal.add(p);
+        }
+        JsonArray min = new JsonArray();
+        min.add(minX);
+        min.add(minZ);
+        JsonArray max = new JsonArray();
+        max.add(maxX);
+        max.add(maxZ);
+        JsonObject out = new JsonObject();
+        out.add("min", min);
+        out.add("max", max);
+        out.add("palette", pal);
+        out.add("heights", heights);
+        out.add("tops", tops);
         return out;
     }
 

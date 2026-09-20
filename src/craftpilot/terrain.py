@@ -1,32 +1,30 @@
 """Site placement on real terrain: where the schematic goes, and what the ground around it needs.
 
 The engine renders a building on a flat grid whose row y=0 (the foundation ring) sits on the ground.
-On a superflat world the mod can paste that row at the player's feet. On real terrain it cannot:
-half the house ends up inside the hill and the other half floats. This module is the fix, and it
-runs in the service because the `.litematic` is the only contract with the mod (PLAN.md §3):
+On a superflat world that row can go at the player's feet. On real terrain it cannot: half the house
+ends up inside the hill and the other half floats. This module is the fix:
 
-1. The mod samples a surface heightmap around the player (`TerrainSample`) and sends it with the
-   `/build` request together with the player's position and yaw.
-2. `place()` puts the schematic 2 blocks in front of the player, front (door side) facing them,
-   and picks the **ground level from the terrain under the building** (a little below the median
-   surface height: sunk a block into the slope reads better than perched on it). Tall builds are sunk
-   further to fit under the height limit.
-3. `terraform()` computes world-space **edits** the mod applies besides pasting the schematic:
-   * cut — air for terrain inside the building's base columns above ground,
-   * fill — a foundation down to the terrain (a solid plinth on gentle sites, perimeter wall +
-     pillar grid where the drop is large), in the building's own foundation block,
-   * grading — the apron around the base is ramped one block per column from the platform to the
-     real terrain and re-topped with each column's own surface block,
+1. **Survey.** The placer asks the mod for a surface heightmap over the footprint and an apron around
+   it (`survey`, `POST /heightmap`: the y of the top motion-blocking non-leaf block per column, so
+   water surfaces count as ground and trees do not, plus that block's state). Without a mod the same
+   data can be handed in as a `TerrainSample` (see `place`).
+2. **Ground level** (`plan_site`) comes from the terrain under the building's base columns — a
+   little below the median surface height, because sunk a block into the slope reads better than
+   perched on it — instead of the player's feet. Tall builds are sunk further to stay under the
+   height limit, or refused.
+3. **Terraform** (`terraform`) turns the survey into world-space edits placed with the building:
+   * cut — air for terrain inside the base columns above ground,
+   * fill — a foundation down to the terrain in the building's own foundation block: a solid plinth
+     on gentle sites, a perimeter wall + pillar grid where the drop is large,
+   * grading — the apron around the base ramped one block per column from the platform to the real
+     terrain and re-topped with each column's own surface block,
    * steps — the engine's door steps continued down to the graded ground.
 
-The mod's job stays simple: apply `edits` (bottom-up), then paste the schematic's non-air blocks at
-`origin`. Nothing in `edits` overlaps a schematic block, so the order is only cosmetic. Without a
-`TerrainSample` the placement falls back to the player's feet and `edits` is empty.
+Edits never overlap a building block. Undo (the mod's snapshot) covers them like any other block.
 """
 
 from __future__ import annotations
 
-import math
 from collections import Counter
 from dataclasses import dataclass, field
 from typing import Any
@@ -37,15 +35,15 @@ from pydantic import BaseModel, Field
 from craftpilot.blocks.state import BlockRef
 from craftpilot.grid.enums import DIR_NAME, DIR_VEC, OPPOSITE, Role
 from craftpilot.grid.semantic import SemanticGrid
+from craftpilot.place.anchor import facing_from_yaw, plan_origin, trimmed_bbox
 
 Column = tuple[int, int]
 Heights = dict[Column, tuple[int, str]]  # world (x, z) -> (y of the top solid block, its state)
 Edit = tuple[int, int, int, str]
 
 AIR = "minecraft:air"
-MAX_BUILD_Y = 319  # highest block y (build limit 320; unchanged in 26.2)
+MAX_BUILD_Y = 319  # highest block y (build limit 320)
 MIN_BUILD_Y = -64
-GAP = 2  # air blocks between the player and the nearest building block
 GROUND_PERCENTILE = 0.4
 FLAT_RANGE = 1  # terrain range up to this: only the trivial cut/fill
 PLINTH_MAX_RANGE = 5  # up to this: solid fill under the whole base
@@ -75,7 +73,7 @@ _STAIRS = {
     "minecraft:prismarine": "minecraft:prismarine_stairs",
     "minecraft:purpur_block": "minecraft:purpur_stairs",
 }
-_FACING_VEC = {"north": (0, -1), "east": (1, 0), "south": (0, 1), "west": (-1, 0)}
+__all__ = ["PlacementRequest", "Site", "TerrainSample", "facing_from_yaw", "place", "plan_site", "survey", "terraform"]
 
 
 # ------------------------------------------------------------------------------------- request
@@ -166,12 +164,6 @@ class Site:
         }
 
 
-def facing_from_yaw(yaw: float) -> str:
-    """The building faces the player: opposite of where the player looks. Yaw 0 = south, 90 = west."""
-    look = ["south", "west", "north", "east"][int(((yaw % 360) + 45) // 90) % 4]
-    return {"south": "north", "west": "east", "north": "south", "east": "west"}[look]
-
-
 def column_mask(grid: SemanticGrid) -> np.ndarray:
     """(W, D) bool: columns holding at least one block."""
     return np.asarray((grid.block >= 0).any(axis=1))
@@ -183,27 +175,31 @@ def base_mask(grid: SemanticGrid) -> np.ndarray:
     return m if m.any() else column_mask(grid)
 
 
-def choose_origin_xz(pos: tuple[float, float, float], facing: str, grid: SemanticGrid, gap: int = GAP) -> tuple[int, int]:
-    """World (x, z) of grid column (0, 0) so the building stands `gap` air blocks in front of the
-    player, centred laterally, with its front (the `facing` side) toward them."""
-    cols = column_mask(grid)
-    xs, zs = np.nonzero(cols)
-    cx0, cx1 = (int(xs.min()), int(xs.max())) if xs.size else (0, grid.W - 1)
-    cz0, cz1 = (int(zs.min()), int(zs.max())) if zs.size else (0, grid.D - 1)
-    bx, bz = math.floor(pos[0]), math.floor(pos[2])
-    if facing == "north":  # door faces north, the player is north: building at larger z
-        oz = bz + gap + 1 - cz0
-        ox = round(pos[0] - (cx0 + cx1 + 1) / 2)
-    elif facing == "south":
-        oz = bz - gap - 1 - cz1
-        ox = round(pos[0] - (cx0 + cx1 + 1) / 2)
-    elif facing == "east":
-        ox = bx - gap - 1 - cx1
-        oz = round(pos[2] - (cz0 + cz1 + 1) / 2)
-    else:  # west
-        ox = bx + gap + 1 - cx0
-        oz = round(pos[2] - (cz0 + cz1 + 1) / 2)
-    return ox, oz
+def base_columns(grid: SemanticGrid, origin_xz: tuple[int, int]) -> set[Column]:
+    """World columns of the base (`base_mask`) for a grid whose column (0, 0) is at `origin_xz`."""
+    ox, oz = origin_xz
+    return {(ox + int(x), oz + int(z)) for x, z in zip(*np.nonzero(base_mask(grid)))}
+
+
+def footprint_of(grid: SemanticGrid, origin_xz: tuple[int, int]) -> tuple[int, int, int, int]:
+    """Inclusive world (x0, z0, x1, z1) of every column holding a block."""
+    x0, _y0, z0, x1, _y1, z1 = trimmed_bbox(grid)
+    return origin_xz[0] + x0, origin_xz[1] + z0, origin_xz[0] + x1, origin_xz[1] + z1
+
+
+def survey(bridge: Any, footprint: tuple[int, int, int, int], margin: int = MAX_MARGIN) -> Heights | None:
+    """Heightmap over `footprint` plus `margin` from a bridge with a `heightmap` method. None when the
+    bridge cannot survey (no such method, an older mod answering 404, an empty world) — the caller
+    then places at the player's feet as before."""
+    fn = getattr(bridge, "heightmap", None)
+    if not callable(fn):
+        return None
+    x0, z0, x1, z1 = footprint
+    try:
+        heights = dict(fn((x0 - margin, z0 - margin), (x1 + margin, z1 + margin)))
+    except Exception:  # noqa: BLE001 - a survey must never fail a build
+        return None
+    return heights or None
 
 
 def grid_height(grid: SemanticGrid) -> int:
@@ -235,8 +231,8 @@ def choose_ground(heights: Heights, base: set[Column], feet_y: int, build_height
 
 
 def plan_site(grid: SemanticGrid, heights: Heights, origin_xz: tuple[int, int], feet_y: int) -> Site:
-    ox, oz = origin_xz
-    base = {(ox + int(x), oz + int(z)) for x, z in zip(*np.nonzero(base_mask(grid)))}
+    """Ground level, strategy and apron width for `grid` standing at `origin_xz` on `heights`."""
+    base = base_columns(grid, origin_xz)
     ground, note = choose_ground(heights, base, feet_y, grid_height(grid))
     hs = [heights[c][0] for c in base if c in heights]
     lowest, highest = (min(hs), max(hs)) if hs else (ground - 1, ground - 1)
@@ -491,27 +487,18 @@ def _door_steps(grid: SemanticGrid, site: Site, origin: tuple[int, int, int], su
 
 
 def place(grid: SemanticGrid, req: PlacementRequest, facing: str | None = None, known: set[str] | None = None) -> dict[str, Any]:
-    """Site the rendered (already rotated) grid for a player: schematic origin, footprint, terrain edits.
-
-    `facing` is the way the building's front faces (default: derived from the yaw, the same rule the
-    CLI/service use to rotate the grid). Raises ValueError when the build cannot fit on the site.
-    """
+    """Site the rendered (already rotated) grid for a player without a mod: schematic origin,
+    footprint, terrain edits. The same rule as the placer (`place.anchor.plan_origin`: 2 blocks in
+    front of the player, centred, front toward them). Raises ValueError when the build cannot fit."""
     facing = facing or facing_from_yaw(req.yaw)
-    ox, oz = choose_origin_xz(req.pos, facing, grid)
-    feet_y = math.floor(req.pos[1])
-    base = base_mask(grid)
-    xs, zs = np.nonzero(base)
-    footprint = [ox + int(xs.min()), oz + int(zs.min()), ox + int(xs.max()), oz + int(zs.max())] if xs.size else [ox, oz, ox + grid.W - 1, oz + grid.D - 1]
+    ox, feet_y, oz = plan_origin({"pos": list(req.pos), "yaw": req.yaw}, trimmed_bbox(grid))
+    footprint = list(footprint_of(grid, (ox, oz)))
+    size = [grid.W, grid_height(grid), grid.D]
     if req.terrain is None:
-        return {
-            "origin": [ox, feet_y, oz], "facing": facing, "footprint": footprint,
-            "schematic_size": [grid.W, grid_height(grid), grid.D], "site": None, "edits": [],
-        }
+        return {"origin": [ox, feet_y, oz], "facing": facing, "footprint": footprint, "schematic_size": size, "site": None, "edits": []}
     site = plan_site(grid, req.terrain.to_heights(), (ox, oz), feet_y)
-    origin = (ox, site.ground, oz)
-    edits = terraform(grid, site, origin, known)
+    edits = terraform(grid, site, (ox, site.ground, oz), known)
     return {
-        "origin": [ox, site.ground, oz], "facing": facing, "footprint": footprint,
-        "schematic_size": [grid.W, grid_height(grid), grid.D], "site": site.as_dict(),
-        "edits": [[x, y, z, st] for (x, y, z, st) in edits],
+        "origin": [ox, site.ground, oz], "facing": facing, "footprint": footprint, "schematic_size": size,
+        "site": site.as_dict(), "edits": [[x, y, z, st] for (x, y, z, st) in edits],
     }

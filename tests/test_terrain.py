@@ -13,9 +13,10 @@ from craftpilot.blocks.catalog import known_blocks
 from craftpilot.blocks.state import BlockRef
 from craftpilot.config import SETTINGS
 from craftpilot.engine.pipeline import generate
-from craftpilot.grid.enums import Role
 from craftpilot.grid.ops import quarter_turns_for_facing, rotate_cw
 from craftpilot.grid.semantic import SemanticGrid
+from craftpilot.place.bridge import FakeBridge
+from craftpilot.place.placer import PlaceContext, PlaceOptions, place_grid
 from craftpilot.program.exemplars import load_one
 from craftpilot.terrain import PlacementRequest, TerrainSample, place
 
@@ -70,28 +71,16 @@ def test_facing_from_yaw_faces_the_player():
     assert terrain.facing_from_yaw(-90) == "west"
 
 
-@pytest.mark.parametrize("facing", ["north", "south", "east", "west"])
-def test_origin_puts_the_front_two_blocks_from_the_player(cottage, facing):
+@pytest.mark.parametrize("facing,yaw", [("north", 0.0), ("south", 180.0), ("east", 90.0), ("west", 270.0)])
+def test_place_uses_the_placer_anchor_rule(facing, yaw):
     ex = load_one(SETTINGS.exemplars_dir, "cottage")
     grid = generate(ex.program, ex.program.bounds, 7)
     rotate_cw(grid, quarter_turns_for_facing(facing))
-    ox, oz = terrain.choose_origin_xz(PLAYER, facing, grid)
-    cols = terrain.column_mask(grid)
-    xs, zs = np.nonzero(cols)
-    wx0, wx1, wz0, wz1 = ox + xs.min(), ox + xs.max(), oz + zs.min(), oz + zs.max()
-    px, pz = 0, 0
-    if facing == "north":
-        assert wz0 == pz + 3 and wx0 <= px <= wx1
-    elif facing == "south":
-        assert wz1 == pz - 3 and wx0 <= px <= wx1
-    elif facing == "east":
-        assert wx1 == px - 3 and wz0 <= pz <= wz1
-    else:
-        assert wx0 == px + 3 and wz0 <= pz <= wz1
-    # the door is on the side nearest the player (behind the foundation ring and the step column)
-    dx, _, dz = grid.door
-    assert {"north": 0 < dz + oz - wz0 <= 3, "south": 0 < wz1 - (dz + oz) <= 3,
-            "east": 0 < wx1 - (dx + ox) <= 3, "west": 0 < dx + ox - wx0 <= 3}[facing]
+    p = place(grid, PlacementRequest(pos=PLAYER, yaw=yaw))
+    assert p["facing"] == facing
+    x0, z0, x1, z1 = p["footprint"]
+    near = {"north": z0 == 3, "south": z1 == -3, "east": x1 == -3, "west": x0 == 3}[facing]  # 2 air blocks from the player
+    assert near and (x0 <= 0 <= x1 if facing in ("north", "south") else z0 <= 0 <= z1)
 
 
 def test_choose_ground_is_a_little_below_the_median_and_sinks_tall_builds():
@@ -202,25 +191,69 @@ def test_water_and_unknown_columns_are_left_alone(cottage):
     assert not any(z > 9 for _, _, z, _ in p2["edits"])
 
 
-def test_build_endpoint_returns_placement(monkeypatch, tmp_path):
-    from craftpilot import serve
+def _grid(facing: str):
+    ex = load_one(SETTINGS.exemplars_dir, "cottage")
+    grid = generate(ex.program, ex.program.bounds, 7)
+    rotate_cw(grid, quarter_turns_for_facing(facing))
+    return grid
 
-    monkeypatch.setattr(SETTINGS, "schematics_dir", tmp_path)
+
+def test_placer_seats_the_build_on_the_surveyed_ground():
+    bridge = FakeBridge(pos=PLAYER, yaw=0.0, terrain=slope)  # looking south, the ground rises away
+    ctx = PlaceContext(bridge=bridge, player=bridge.player(), opts=PlaceOptions())
+    res = place_grid(_grid("north"), ctx, "t")
+    assert res["site"] is not None and res["site"]["strategy"] == "fill"
+    ground = res["origin"][1]
+    assert ground == res["site"]["ground"] and 66 <= ground <= 69
+    assert any(w.startswith("Site:") for w in res["warnings"])
+    sent = [b for blocks, _ in bridge.calls[0]["chunks"] for b in blocks]
+    ys = [b[1] for b in sent]
+    assert min(ys) < ground  # the foundation goes below the plinth row
+    assert sent == sorted(sent, key=lambda b: b[1]) or all(a[1] <= c[1] for a, c in pairwise(sent))  # bottom up
+    fills = [b for b in sent if b[3] == "minecraft:cobblestone" and b[1] < ground]
+    stairs = [b for b in sent if "_stairs[" in b[3] and b[1] < ground]
+    grass = [b for b in sent if b[3] == GRASS]
+    assert fills and stairs and grass
+    # air inside the base only: the apron is graded, not flattened into a crater
+    x0, z0, x1, z1 = terrain.footprint_of(_grid("north"), (res["origin"][0], res["origin"][2]))
+    air_cols = {(b[0], b[2]) for b in sent if b[3] == AIR}
+    assert air_cols and all(x0 <= x <= x1 and z0 <= z <= z1 for x, z in air_cols)
+
+
+def test_placer_without_a_survey_places_at_the_feet():
+    bridge = FakeBridge(pos=PLAYER, yaw=0.0)  # empty fake world: nothing to survey
+    ctx = PlaceContext(bridge=bridge, player=bridge.player(), opts=PlaceOptions())
+    res = place_grid(_grid("north"), ctx, "t")
+    assert res["site"] is None and res["origin"][1] == 64
+    off = FakeBridge(pos=PLAYER, yaw=0.0, terrain=slope)
+    ctx = PlaceContext(bridge=off, player=off.player(), opts=PlaceOptions(terrain=False))
+    res = place_grid(_grid("north"), ctx, "t")
+    assert res["site"] is None and res["origin"][1] == 64
+
+
+def test_placer_sink_applies_on_top_of_the_site_ground():
+    bridge = FakeBridge(pos=PLAYER, yaw=0.0, terrain=slope)
+    ctx = PlaceContext(bridge=bridge, player=bridge.player(), opts=PlaceOptions(sink=1))
+    res = place_grid(_grid("north"), ctx, "t")
+    ref = FakeBridge(pos=PLAYER, yaw=0.0, terrain=slope)
+    res0 = place_grid(_grid("north"), PlaceContext(bridge=ref, player=ref.player(), opts=PlaceOptions()), "t")
+    assert res["origin"][1] == res0["origin"][1] - 1
+
+
+def test_serve_build_places_on_terrain(monkeypatch):
+
+    from craftpilot import serve
+    from craftpilot.place import bridge as bridge_mod
+
+    live = FakeBridge(pos=PLAYER, yaw=0.0, terrain=slope)
+    monkeypatch.setattr(bridge_mod, "HttpBridge", lambda *a, **k: live)
     client = TestClient(serve.app)
-    body = {"text": "a cozy cottage", "player": "t", "origin": [0.5, 64.0, 0.5], "yaw": 0.0, "use_llm": False, "seed": 7,
-            "terrain": sample(slope).model_dump()}
-    r = client.post("/build", json=body)
+    r = client.post("/build", json={"text": "a cozy cottage", "use_llm": False, "place": True, "seed": 7})
     assert r.status_code == 200, r.text
     data = r.json()
-    pl = data["placement"]
-    assert pl["facing"] == "north" and pl["site"]["strategy"] == "fill" and pl["edits"]
+    assert data["placement"]["site"]["strategy"] == "fill" and data["placement"]["origin"][1] > 64
     assert any(n.startswith("Site:") for n in data["notes"])
-    # edits and regenerate reuse the same site
-    r2 = client.post("/regenerate", json={"player": "t", "seed": 8})
-    assert r2.status_code == 200 and r2.json()["placement"]["origin"][:1] == pl["origin"][:1]
-    # without terrain: feet level, no edits
-    r3 = client.post("/build", json={"text": "a cozy cottage", "player": "u", "origin": [0, 64, 0], "yaw": 180.0, "use_llm": False, "seed": 7})
-    assert r3.status_code == 200 and r3.json()["placement"]["edits"] == [] and r3.json()["placement"]["facing"] == "south"
+    assert "placing at" in data["summary"]
 
 
 def test_edits_use_only_known_blocks(cottage):
@@ -228,4 +261,3 @@ def test_edits_use_only_known_blocks(cottage):
     p = place(cottage, PlacementRequest(pos=PLAYER, yaw=0.0, terrain=sample(slope)), known=known)
     ids = {st.split("[", 1)[0] for *_, st in p["edits"]}
     assert ids and ids <= known | {AIR}
-    assert Role.STEP is not None  # the engine's own steps are skipped, ours continue past the ring

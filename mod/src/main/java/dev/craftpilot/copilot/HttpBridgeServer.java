@@ -41,6 +41,7 @@ import java.util.concurrent.Executors;
 public final class HttpBridgeServer {
     private static final Gson GSON = new Gson();
     private static final long MAX_SCAN_BLOCKS = 2_000_000L;
+    private static final long MAX_HEIGHTMAP_COLUMNS = 1_000_000L;
     private static final int DEFAULT_FLAGS = Block.NOTIFY_ALL; // 3: notify neighbours + clients
 
     private final HttpServer server;
@@ -57,6 +58,7 @@ public final class HttpBridgeServer {
         server.createContext("/health", wrap(this::health));
         server.createContext("/player", wrap(this::player));
         server.createContext("/scan", wrap(this::scan));
+        server.createContext("/heightmap", wrap(this::heightmap));
         server.createContext("/setblocks/status", wrap(this::setblocksStatus));
         server.createContext("/setblocks/cancel", wrap(this::setblocksCancel));
         server.createContext("/setblocks", wrap(this::setblocks));
@@ -172,6 +174,14 @@ public final class HttpBridgeServer {
         return p != null ? p.getWorld().getRegistryKey() : World.OVERWORLD;
     }
 
+    private static int[] vec2i(JsonObject body, String key) {
+        if (!body.has(key) || !body.get(key).isJsonArray() || body.getAsJsonArray(key).size() != 2) {
+            throw new HttpError(400, "'" + key + "' must be [x, z]");
+        }
+        JsonArray a = body.getAsJsonArray(key);
+        return new int[] {(int) Math.floor(a.get(0).getAsDouble()), (int) Math.floor(a.get(1).getAsDouble())};
+    }
+
     private static int[] vec3i(JsonObject body, String key) {
         if (!body.has(key) || !body.get(key).isJsonArray() || body.getAsJsonArray(key).size() != 3) {
             throw new HttpError(400, "'" + key + "' must be [x, y, z]");
@@ -274,6 +284,24 @@ public final class HttpBridgeServer {
         o.add("looking_at", looking);
         o.addProperty("dimension", p.getWorld().getRegistryKey().getValue().toString());
         return o;
+    }
+
+    private JsonElement heightmap(HttpExchange ex, JsonObject body) {
+        MinecraftServer server = requireServer();
+        int[] lo = vec2i(body, "min");
+        int[] hi = vec2i(body, "max");
+        long area = (long) (Math.abs(hi[0] - lo[0]) + 1) * (Math.abs(hi[1] - lo[1]) + 1);
+        if (area > MAX_HEIGHTMAP_COLUMNS) {
+            throw new HttpError(400, "heightmap area " + area + " exceeds the " + MAX_HEIGHTMAP_COLUMNS + " column cap");
+        }
+        RegistryKey<World> dim = playerDimension();
+        return server.submit(() -> {
+            ServerWorld world = server.getWorld(dim);
+            if (world == null) {
+                world = server.getOverworld();
+            }
+            return WorldOps.heightmap(world, lo[0], lo[1], hi[0], hi[1]);
+        }).join();
     }
 
     private JsonElement scan(HttpExchange ex, JsonObject body) {

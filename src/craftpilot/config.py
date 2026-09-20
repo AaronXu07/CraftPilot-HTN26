@@ -35,6 +35,7 @@ class Settings:
     place_chunk_max: int
     place_seconds: float
     place_delay_ms: int
+    place_terrain: bool
 
     @property
     def llm_configured(self) -> bool:
@@ -84,6 +85,8 @@ def load_settings() -> Settings:
         place_chunk_max=int(os.environ.get("CRAFTPILOT_PLACE_CHUNK_MAX", "6000")),
         place_seconds=float(os.environ.get("CRAFTPILOT_PLACE_SECONDS", "6")),
         place_delay_ms=int(os.environ.get("CRAFTPILOT_PLACE_DELAY_MS", "60")),
+        # Seat builds on the terrain (mod /heightmap survey, foundation, graded apron). Off = player's feet.
+        place_terrain=os.environ.get("CRAFTPILOT_PLACE_TERRAIN", "1").lower() not in ("0", "false", "no", "off"),
     )
 
 

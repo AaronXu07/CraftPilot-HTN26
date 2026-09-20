@@ -1,4 +1,9 @@
-"""Turn a rendered grid into world blocks and stream them to the mod, bottom up, one layer at a time."""
+"""Turn a rendered grid into world blocks and stream them to the mod, bottom up, one layer at a time.
+
+With a bridge that can survey the ground (`heightmap`), the build is seated on the terrain instead of
+at the player's feet, and the foundation / cut / graded apron / door steps from `craftpilot.terrain`
+are streamed with it.
+"""
 
 from __future__ import annotations
 
@@ -7,6 +12,7 @@ from typing import Any, Protocol
 
 import numpy as np
 
+from craftpilot import terrain
 from craftpilot.config import SETTINGS
 from craftpilot.grid.semantic import SemanticGrid
 from craftpilot.place.anchor import plan_origin, trimmed_bbox
@@ -47,6 +53,7 @@ class PlaceOptions:
     flags: int = FORCE_FLAGS
     postprocess: bool = False
     clear: bool = True  # also set air in the empty cells of the bounding box (clears terrain and trees)
+    terrain: bool = SETTINGS.place_terrain  # survey the ground and seat the build on it (needs the mod's /heightmap)
 
 
 @dataclass
@@ -56,8 +63,11 @@ class PlaceContext:
     opts: PlaceOptions
 
 
-def grid_to_blocks(grid: SemanticGrid, origin: tuple[int, int, int], clear: bool = True) -> list[Block]:
-    """World-space (x, y, z, state) for every filled cell, plus air for empty cells inside the bbox if ``clear``."""
+def grid_to_blocks(grid: SemanticGrid, origin: tuple[int, int, int], clear: bool = True,
+                   columns: np.ndarray | None = None) -> list[Block]:
+    """World-space (x, y, z, state) for every filled cell, plus air for empty cells inside the bbox if ``clear``
+    (only in the (W, D) ``columns`` mask when one is given: on a surveyed site the ground outside the
+    building's base is graded, not flattened)."""
     ox, oy, oz = origin
     states = [ref.state_string() for ref in grid.palette]
     x0, y0, z0, x1, y1, z1 = trimmed_bbox(grid)
@@ -66,7 +76,10 @@ def grid_to_blocks(grid: SemanticGrid, origin: tuple[int, int, int], clear: bool
     for x, y, z in zip(*np.nonzero(sub >= 0)):
         out.append((int(x) + x0 + ox, int(y) + y0 + oy, int(z) + z0 + oz, states[int(sub[x, y, z])]))
     if clear:
-        for x, y, z in zip(*np.nonzero(sub < 0)):
+        empty = sub < 0
+        if columns is not None:
+            empty &= columns[x0:x1 + 1, z0:z1 + 1][:, None, :]
+        for x, y, z in zip(*np.nonzero(empty)):
             out.append((int(x) + x0 + ox, int(y) + y0 + oy, int(z) + z0 + oz, AIR))
     return out
 
@@ -125,13 +138,41 @@ def show_outline(bridge: Bridge, lo: tuple[int, int, int], hi: tuple[int, int, i
     return []
 
 
+def site_blocks(grid: SemanticGrid, ctx: PlaceContext, origin: tuple[int, int, int]
+                ) -> tuple[tuple[int, int, int], list[Block], terrain.Site | None]:
+    """Survey the ground under ``origin`` and, when the mod can see it, re-seat the build on the terrain:
+    returns the final origin, the blocks to place (building, cut air in its base columns, terrain
+    edits) and the site. Without a survey the blocks are the plain ``clear`` placement at ``origin``.
+    Raises ValueError when the build cannot fit on the site (height limit)."""
+    opts = ctx.opts
+    ox, oy, oz = origin
+    heights = terrain.survey(ctx.bridge, terrain.footprint_of(grid, (ox, oz))) if opts.terrain else None
+    if not heights:
+        return origin, grid_to_blocks(grid, origin, clear=opts.clear), None
+    site = terrain.plan_site(grid, heights, (ox, oz), feet_y=oy)
+    site.ground -= int(opts.sink)
+    origin = (ox, site.ground, oz)
+    edits = terrain.terraform(grid, site, origin, known=_known_blocks())
+    blocks = grid_to_blocks(grid, origin, clear=opts.clear, columns=terrain.base_mask(grid))
+    seen = {(x, y, z) for x, y, z, _ in blocks}
+    blocks += [e for e in edits if (e[0], e[1], e[2]) not in seen]
+    return origin, blocks, site
+
+
+def _known_blocks() -> set[str] | None:
+    from craftpilot.blocks.catalog import known_blocks
+
+    return known_blocks()
+
+
 def place_grid(grid: SemanticGrid, ctx: PlaceContext, label: str = "") -> dict[str, Any]:
-    """Anchor the (already rotated) grid in front of the player and queue it on the mod. Returns immediately."""
+    """Anchor the (already rotated) grid in front of the player, seat it on the terrain when the mod can
+    survey the ground, and queue it on the mod. Returns immediately."""
     opts = ctx.opts
     # Anchor the full bounds box, not the trimmed one: it is what the outline and the mod's hologram
     # were anchored with, so the blocks land exactly inside the preview.
     origin = plan_origin(ctx.player, (0, 0, 0, grid.W - 1, grid.H - 1, grid.D - 1), gap=opts.gap, sink=opts.sink)
-    blocks = grid_to_blocks(grid, origin, clear=opts.clear)
+    origin, blocks, site = site_blocks(grid, ctx, origin)
     chunk_blocks = chunk_size_for(len(blocks), opts)
     chunks = layer_chunks(blocks, chunk_blocks)
     ox, oy, oz = origin
@@ -144,10 +185,13 @@ def place_grid(grid: SemanticGrid, ctx: PlaceContext, label: str = "") -> dict[s
     if invalid:
         samples = ", ".join(resp.get("invalid_samples", [])[:3])
         warnings.append(f"{invalid} block states were rejected by the game (version mismatch?): {samples}")
+    if site is not None:
+        warnings.append("Site: " + site.summary())
     return {
         "label": label,
         "origin": [ox, oy, oz],
         "world_bbox": [[x0 + ox, y0 + oy, z0 + oz], [x1 + ox, y1 + oy, z1 + oz]],
+        "site": site.as_dict() if site is not None else None,
         "blocks": len(blocks) - air,
         "air": air,
         "chunks": len(chunks),
