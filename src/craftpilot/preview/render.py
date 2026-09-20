@@ -48,20 +48,26 @@ _DYES = {
 
 
 def block_color(block_id: str) -> tuple[int, int, int]:
-    """Flat RGB for a block id: the curated table, dyed variants, or a stable hash for anything unknown."""
+    """Flat RGB for a block id: the curated table, the catalog's measured texture colour, dyed variants, or a
+    stable hash for anything unknown."""
     return _color(block_id)
+
+
+def _measured(name: str) -> tuple[int, int, int] | None:
+    """Mean texture colour from data/blocks_<version>.json (main's catalog), when the data file has it."""
+    from craftpilot.blocks.catalog import block_rgb
+
+    return block_rgb(name if ":" in name else "minecraft:" + name)
 
 
 def _color(block_id: str) -> tuple[int, int, int]:
     name = block_id.split(":")[-1]
+    # The hand table wins where the texture average misleads (glass, lanterns, campfires, cherry leaves).
     if name in _COLORS:
         return _COLORS[name]
-    from craftpilot.objects.voxelize import (
-        PALETTE,  # the statue palette carries measured colours for more full blocks
-    )
-
-    if name in PALETTE:
-        return PALETTE[name]
+    measured = _measured(name)
+    if measured is not None:
+        return measured
     for dye, rgb in _DYES.items():
         if name.startswith(dye + "_") and name.endswith(("concrete", "terracotta", "wool", "stained_glass",
                                                           "stained_glass_pane")):
@@ -77,14 +83,13 @@ def _color(block_id: str) -> tuple[int, int, int]:
         if name.endswith(suffix):
             base = name[: -len(suffix)]
             break
-    if base in PALETTE:  # e.g. polished_tuff_stairs, deepslate_tile_slab
-        return PALETTE[base]
-    for alt in (base + "s", base.replace("brick", "bricks"), base.replace("tile", "tiles")):
-        if alt in PALETTE:
-            return PALETTE[alt]
-    for candidate in (base, base + "_planks", base + "_block", base + "s", base.replace("brick", "bricks")):
+    for candidate in (base, base + "_planks", base + "_block", base + "s", base.replace("brick", "bricks"),
+                      base.replace("tile", "tiles")):
         if candidate in _COLORS:
             return _COLORS[candidate]
+        measured = _measured(candidate)
+        if measured is not None:
+            return measured
     h = hashlib.md5(name.encode()).digest()
     return (90 + h[0] % 120, 90 + h[1] % 120, 90 + h[2] % 120)
 

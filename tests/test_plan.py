@@ -116,3 +116,15 @@ def test_ghost_from_plan_and_from_edit(monkeypatch):
     r = client.post("/edit", json={"text": "taller", "player": "h", "ghost": True})
     assert r.status_code == 200 and r.json()["ghost"]["blocks"] and "placement" not in r.json()
     assert client.post("/regenerate", json={"player": "nobody", "ghost": True}).status_code == 404
+
+
+def test_preview_colours_do_not_load_the_objects_toolchain():
+    """block_color (the hologram and PNG previews) reads main's catalog colours; it must never import trimesh."""
+    import subprocess
+    import sys
+
+    code = ("import sys; from craftpilot.preview.render import block_color; "
+            "assert block_color('minecraft:deepslate_tile_slab') != block_color('minecraft:oak_planks'); "
+            "assert 'trimesh' not in sys.modules, 'trimesh imported by preview'; print('ok')")
+    out = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True, check=True)
+    assert out.stdout.strip() == "ok"
