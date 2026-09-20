@@ -50,6 +50,7 @@ Fabric's `LevelExtractionEvents.END_EXTRACTION`.
 | Command | Does |
 | --- | --- |
 | `/build <text>` | A box follows you; walk or turn to aim it, press **G** to lock. The service composes and sends back a **hologram** of the actual building, shown where you locked. **G** builds it there (streamed in bottom-up, replacing the hologram row by row); **H** lets it follow you again first. Keys are rebindable under Controls > CraftPilot. |
+| `/build object <text>` / `/build building <text>` | Same flow, but force the service's path: `object` = the image-to-3D sculpting path (statues, creatures, vehicles, named landmarks), `building` = the procedural building generator. Plain `/build <text>` lets the service's router decide and says which it chose. |
 | `/build plan <text>` | Compose only and print the plan in chat (size, parts, floors, roofs, materials, attachments, what could not be expressed). Nothing is built yet. |
 | `/build edit <text>` | With a plan pending: refine it ("make it three floors") and reprint it. Otherwise: patch the last program and show the edited hologram (G / H as above). |
 | `/build go` | Show the pending plan as a hologram at your position; G builds it, H moves it. |

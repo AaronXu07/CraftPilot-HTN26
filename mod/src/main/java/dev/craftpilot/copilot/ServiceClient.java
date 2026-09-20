@@ -21,7 +21,10 @@ import java.util.concurrent.Executors;
  * a while, hence the generous timeout.
  */
 public final class ServiceClient {
+    // HTTP/1.1 only: the default HTTP_2 client sends an `Upgrade: h2c` header on plain-http requests, which
+    // uvicorn's httptools parser answers by dropping the body (422 / 500) and h11 by logging a warning.
     private static final HttpClient HTTP = HttpClient.newBuilder()
+            .version(HttpClient.Version.HTTP_1_1)
             .connectTimeout(Duration.ofSeconds(5))
             .build();
     private static final ExecutorService POOL = Executors.newCachedThreadPool(r -> {

@@ -23,7 +23,7 @@ import org.slf4j.LoggerFactory;
  */
 public class CopilotClientMod implements ClientModInitializer {
     public static final String MOD_ID = "copilot";
-    public static final String MOD_VERSION = "0.2.0";
+    public static final String MOD_VERSION = "0.3.0";
     public static final Logger LOGGER = LoggerFactory.getLogger(MOD_ID);
 
     /** Where the mod listens (the service talks to this). */
@@ -74,13 +74,21 @@ public class CopilotClientMod implements ClientModInitializer {
                                         .executes(ctx -> edit(ctx, StringArgumentType.getString(ctx, "text")))))
                         .then(ClientCommands.literal("preview")
                                 .then(ClientCommands.argument("text", StringArgumentType.greedyString())
-                                        .executes(ctx -> build(ctx, StringArgumentType.getString(ctx, "text"), false))))
+                                        .executes(ctx -> build(ctx, StringArgumentType.getString(ctx, "text"), false, "auto"))))
+                        // Manual overrides of the service's building-vs-object router.
+                        .then(ClientCommands.literal("object")
+                                .then(ClientCommands.argument("text", StringArgumentType.greedyString())
+                                        .executes(ctx -> build(ctx, StringArgumentType.getString(ctx, "text"), true, "object"))))
+                        .then(ClientCommands.literal("building")
+                                .then(ClientCommands.argument("text", StringArgumentType.greedyString())
+                                        .executes(ctx -> build(ctx, StringArgumentType.getString(ctx, "text"), true, "building"))))
                         .then(ClientCommands.argument("text", StringArgumentType.greedyString())
-                                .executes(ctx -> build(ctx, StringArgumentType.getString(ctx, "text"), true)))));
+                                .executes(ctx -> build(ctx, StringArgumentType.getString(ctx, "text"), true, "auto")))));
     }
 
     private static int usage(CommandContext<FabricClientCommandSource> ctx) {
-        ctx.getSource().sendFeedback(Component.literal("§6[craftpilot]§r /build <what to build>  |  /build plan <text>"
+        ctx.getSource().sendFeedback(Component.literal("§6[craftpilot]§r /build <what to build>  |  /build object <text>"
+                + "  |  /build building <text>  |  /build plan <text>"
                 + "  |  /build go  |  /build again [seed]  |  /build edit <change>  |  /build preview <text>"
                 + "  |  /build cancel  |  /build status   (aim, press [" + PendingBuild.keyName()
                 + "]; when the preview shows, [" + PendingBuild.keyName() + "] builds it, [H] moves it)"));
@@ -89,12 +97,15 @@ public class CopilotClientMod implements ClientModInitializer {
 
     /**
      * {@code /build <text>}: aim the wireframe, lock, the service composes and answers with a hologram
-     * held at that spot; lock again (or move first) and the service builds it there.
+     * held at that spot; lock again (or move first) and the service builds it there. {@code kind} is
+     * "auto" (the service routes the text to its building generator or its image-to-3D object path),
+     * or "object" / "building" to force one ({@code /build object ...}, {@code /build building ...}).
      */
-    private static int build(CommandContext<FabricClientCommandSource> ctx, String text, boolean place) {
+    private static int build(CommandContext<FabricClientCommandSource> ctx, String text, boolean place, String kind) {
         JsonObject body = base(ctx);
         body.addProperty("text", text);
         body.addProperty("place", place);
+        body.addProperty("kind", kind);
         if (!place) {
             ctx.getSource().sendFeedback(Component.literal("§6[craftpilot]§7 composing \"" + text + "\"..."));
             ServiceClient.postAsync("/build", body);

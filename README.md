@@ -65,6 +65,9 @@ blocks directly in the world you have open, bottom up, one layer per game tick. 
 
    ```
    /build a cozy two storey cottage with a stone chimney   # aim the box, G; a hologram appears, G builds it (H moves it)
+   /build a statue of a dragon                              # the router sends objects, landmarks and vehicles to the image-to-3D path
+   /build the eiffel tower                                  # ... proper nouns too (chat says which path was chosen)
+   /build object a small cottage                            # force the object path; /build building <text> forces the generator
    /build plan a timber church with a bell tower           # see the plan in chat first ...
    /build edit make it three floors                        # ... refine it ...
    /build go                                               # ... then aim and press G to build it
