@@ -57,6 +57,10 @@ public final class BuildOutline {
     // deliberately not moved by /outline updates: the service's "placing" box is trimmed to the
     // blocks, while the hologram (and the real build's origin) use the full bounds box.
     private static double ghostX, ghostY, ghostZ;
+    // Pinned to a marked base area (see Selection): never re-anchored from a pose, rotated by the
+    // service's quarter turns rather than by where the player looks.
+    private static boolean fixed = false;
+    private static int fixedTurns = 0;
 
     private BuildOutline() {
     }
@@ -85,9 +89,34 @@ public final class BuildOutline {
         anchor(pose, aimW, aimH, aimD, Phase.REVIEW);
     }
 
-    /** From REVIEW back to following the player, keeping the box size. */
+    /**
+     * Hold a hologram still on a marked base area: {@code w x h x d} is the box as it stands in the
+     * world (already turned), {@code turns} how the south-facing cloud is rotated into it.
+     */
+    public static void showFixed(int ox, int oy, int oz, int w, int h, int d, int turns) {
+        synchronized (BuildOutline.class) {
+            aimW = w > 0 ? w : GUESS_W;
+            aimH = h > 0 ? h : GUESS_H;
+            aimD = d > 0 ? d : GUESS_D;
+            doneAt = -1;
+            placedTopY = Integer.MIN_VALUE;
+            fixed = true;
+            fixedTurns = turns & 3;
+            aimPose = null;
+            ghostX = ox;
+            ghostY = oy;
+            ghostZ = oz;
+        }
+        set(ox, oy, oz, ox + aimW - 1, oy + aimH - 1, oz + aimD - 1, Phase.REVIEW);
+    }
+
+    public static synchronized boolean isFixed() {
+        return active && fixed;
+    }
+
+    /** From REVIEW back to following the player, keeping the box size. A pinned box stays put. */
     public static synchronized void resumeAiming() {
-        if (active && phase == Phase.REVIEW) {
+        if (active && phase == Phase.REVIEW && !fixed) {
             phase = Phase.AIMING;
         }
     }
@@ -169,6 +198,7 @@ public final class BuildOutline {
         synchronized (BuildOutline.class) {
             aimPose = pose;
             aimLook = look;
+            fixed = false;
             ghostX = ox;
             ghostY = oy;
             ghostZ = oz;
@@ -230,6 +260,7 @@ public final class BuildOutline {
         active = false;
         doneAt = -1;
         placedTopY = Integer.MIN_VALUE;
+        fixed = false;
         GhostRender.clear();
     }
 
@@ -284,16 +315,19 @@ public final class BuildOutline {
         int top;
         int look;
         double gx, gy, gz;
+        boolean pinned;
+        int pinnedTurns;
+        boolean on;
         synchronized (BuildOutline.class) {
-            if (!active) {
-                return;
-            }
+            on = active;
             x0 = minX; y0 = minY; z0 = minZ; x1 = maxX; y1 = maxY; z1 = maxZ;
             p = phase;
             t = ticks;
             top = placedTopY;
             look = aimLook;
             gx = ghostX; gy = ghostY; gz = ghostZ;
+            pinned = fixed;
+            pinnedTurns = fixedTurns;
         }
         Minecraft client = Minecraft.getInstance();
         if (client.level == null) {
@@ -301,6 +335,10 @@ public final class BuildOutline {
         }
         float partial = context.deltaTracker().getGameTimeDeltaPartialTick(false);
         double time = t + partial;
+        Selection.emit(time);   // the marked base area is drawn whether or not a build is in flight
+        if (!on) {
+            return;
+        }
         float r, g, b, base;
         switch (p) {
             case AIMING -> { r = 0.4f; g = 0.9f; b = 1.0f; base = 0.6f; }
@@ -315,7 +353,7 @@ public final class BuildOutline {
         // The building faces the player, so it is turned by the look direction: looking south means
         // the building faces north (2 turns from the engine's south), and so on.
         if (GhostRender.isPresent() && p != Phase.DONE) {
-            int turns = switch (look) { case 0 -> 2; case 1 -> 3; case 2 -> 0; default -> 1; };
+            int turns = pinned ? pinnedTurns : switch (look) { case 0 -> 2; case 1 -> 3; case 2 -> 0; default -> 1; };
             float hideBelow = top == Integer.MIN_VALUE ? Float.NEGATIVE_INFINITY : (float) (top - gy + 1);
             GhostRender.emit(gx, gy, gz, turns, hideBelow, p == Phase.AIMING || p == Phase.REVIEW);
         }

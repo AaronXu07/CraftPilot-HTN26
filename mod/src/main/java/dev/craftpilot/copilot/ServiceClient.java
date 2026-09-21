@@ -95,8 +95,25 @@ public final class ServiceClient {
         if (json.has("seed")) {
             commit.add("seed", json.get("seed"));
         }
-        PendingBuild.armGhost("/regenerate", commit, ghost.get("width").getAsInt(), ghost.get("height").getAsInt(),
-                ghost.get("depth").getAsInt(), voxels);
+        if (request.has("area")) {
+            commit.add("area", request.get("area"));
+        }
+        int w = ghost.get("width").getAsInt();
+        int h = ghost.get("height").getAsInt();
+        int d = ghost.get("depth").getAsInt();
+        if (ghost.has("anchor") && ghost.get("anchor").isJsonObject()) {
+            // Pinned to a marked base area: the service says where the turned box starts and how it is turned.
+            JsonObject anchor = ghost.getAsJsonObject("anchor");
+            JsonArray origin = anchor.getAsJsonArray("origin");
+            PendingBuild.armGhostFixed("/regenerate", commit, w, h, d, voxels, origin.get(0).getAsInt(),
+                    origin.get(1).getAsInt(), origin.get(2).getAsInt(), anchor.get("turns").getAsInt());
+            return;
+        }
+        if (request.has("area")) {
+            CopilotClientMod.chat("§cthe service ignored the marked base area (it is running code that predates it): "
+                    + "restart it with `uv run craftpilot serve`, then /build again");
+        }
+        PendingBuild.armGhost("/regenerate", commit, w, h, d, voxels);
     }
 
     /** Chat lines for a service result: summary, plan lines, notes, then placement warnings. */

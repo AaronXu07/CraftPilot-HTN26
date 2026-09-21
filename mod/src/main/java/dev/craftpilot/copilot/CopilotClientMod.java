@@ -10,7 +10,10 @@ import net.fabricmc.fabric.api.client.command.v2.ClientCommandRegistrationCallba
 import net.fabricmc.fabric.api.client.command.v2.FabricClientCommandSource;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientLifecycleEvents;
 import net.minecraft.client.Minecraft;
+import net.minecraft.core.BlockPos;
 import net.minecraft.network.chat.Component;
+import net.minecraft.world.phys.BlockHitResult;
+import net.minecraft.world.phys.HitResult;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -23,7 +26,7 @@ import org.slf4j.LoggerFactory;
  */
 public class CopilotClientMod implements ClientModInitializer {
     public static final String MOD_ID = "copilot";
-    public static final String MOD_VERSION = "0.3.0";
+    public static final String MOD_VERSION = "0.4.0";
     public static final Logger LOGGER = LoggerFactory.getLogger(MOD_ID);
 
     /** Where the mod listens (the service talks to this). */
@@ -40,6 +43,7 @@ public class CopilotClientMod implements ClientModInitializer {
         CameraOrbit.register();
         BuildOutline.register();
         PendingBuild.register();
+        Selection.register();
 
         try {
             bridge = new HttpBridgeServer(BRIDGE_HOST, BRIDGE_PORT);
@@ -62,6 +66,13 @@ public class CopilotClientMod implements ClientModInitializer {
                         .then(ClientCommands.literal("status").executes(ctx -> status(ctx)))
                         .then(ClientCommands.literal("cancel").executes(ctx -> cancel(ctx)))
                         .then(ClientCommands.literal("go").executes(ctx -> go(ctx)))
+                        // Base area: two corners set with the wand or these commands (the block under the crosshair).
+                        .then(ClientCommands.literal("pos1").executes(ctx -> pos(ctx, 1)))
+                        .then(ClientCommands.literal("pos2").executes(ctx -> pos(ctx, 2)))
+                        .then(ClientCommands.literal("sel")
+                                .executes(ctx -> sel(ctx))
+                                .then(ClientCommands.literal("clear").executes(ctx -> selClear(ctx))))
+                        .then(ClientCommands.literal("wand").executes(ctx -> wand(ctx)))
                         .then(ClientCommands.literal("plan")
                                 .then(ClientCommands.argument("text", StringArgumentType.greedyString())
                                         .executes(ctx -> plan(ctx, StringArgumentType.getString(ctx, "text")))))
@@ -90,8 +101,42 @@ public class CopilotClientMod implements ClientModInitializer {
         ctx.getSource().sendFeedback(Component.literal("§6[craftpilot]§r /build <what to build>  |  /build object <text>"
                 + "  |  /build building <text>  |  /build plan <text>"
                 + "  |  /build go  |  /build again [seed]  |  /build edit <change>  |  /build preview <text>"
+                + "  |  /build pos1 | pos2 | sel | sel clear | wand"
                 + "  |  /build cancel  |  /build status   (aim, press [" + PendingBuild.keyName()
-                + "]; when the preview shows, [" + PendingBuild.keyName() + "] builds it, [H] moves it)"));
+                + "]; when the preview shows, [" + PendingBuild.keyName() + "] builds it, [H] moves it; "
+                + "with a base area marked the building is sized to it and shown there)"));
+        return 1;
+    }
+
+    /** {@code /build pos1} / {@code /build pos2}: mark a corner at the block under the crosshair (else under the feet). */
+    private static int pos(CommandContext<FabricClientCommandSource> ctx, int which) {
+        Minecraft client = Minecraft.getInstance();
+        var player = ctx.getSource().getPlayer();
+        BlockPos target;
+        HitResult hit = client.hitResult;
+        if (hit instanceof BlockHitResult bhr && hit.getType() == HitResult.Type.BLOCK) {
+            target = bhr.getBlockPos();
+        } else {
+            target = player.blockPosition().below();
+        }
+        Selection.set(which, target);
+        return 1;
+    }
+
+    private static int sel(CommandContext<FabricClientCommandSource> ctx) {
+        ctx.getSource().sendFeedback(Component.literal("§6[craftpilot]§r " + Selection.describe()));
+        return 1;
+    }
+
+    private static int selClear(CommandContext<FabricClientCommandSource> ctx) {
+        Selection.clear();
+        ctx.getSource().sendFeedback(Component.literal("§6[craftpilot]§r base area cleared; /build aims in front of you again"));
+        return 1;
+    }
+
+    private static int wand(CommandContext<FabricClientCommandSource> ctx) {
+        ctx.getSource().sendFeedback(Component.literal("§6[craftpilot]§r wand: hold " + Selection.WAND_ID
+                + " - left click a block for corner 1, right click for corner 2 (-Dcraftpilot.wand=<item id> changes it)"));
         return 1;
     }
 
@@ -204,6 +249,9 @@ public class CopilotClientMod implements ClientModInitializer {
         pos.add(player.getY());
         pos.add(player.getZ());
         body.add("pos", pos);
+        if (Selection.isComplete()) {
+            body.add("area", Selection.toJson());   // plans, edits and previews all size to the marked base area
+        }
         return body;
     }
 

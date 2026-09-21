@@ -4,7 +4,10 @@
 > mod hosts an HTTP server inside the game and Python pushes world-space blocks to it (`/setblocks`),
 > so the mod never parses a `.litematic`; `/build` in chat calls the service, which places the result
 > in front of the player layer by layer. An animated wireframe of the build box shows while a build is in
-> flight (placeholder at once, exact box from the service, scan line tracking placed rows). Wand selection
+> flight (placeholder at once, exact box from the service, scan line tracking placed rows). Base area
+> selection (2026-09-20): two corners from a wand (wooden axe) or `/build pos1|pos2`; the building is sized
+> to the footprint, the model picks the height, the front faces the player's side, the hologram is pinned
+> on the area (`ghost.anchor`), `craftpilot build --place` honours the in-game selection too. Wand selection
 > and undo are deferred.
 > Engine: layout with side and stacked attachment, massing with taper, jetty and thick walls, all twelve
 > roof types, all sixteen attachment kinds, the silhouette budget, facade grammar with six window
@@ -44,7 +47,7 @@ Scope for now: buildings of any kind. No terrain generation, roads, or settlemen
 |---|---|---|
 | Minecraft | Java Edition **1.21.1** in-game (mod); catalogs shipped for 1.21.1 and 26.2 | The block catalog is generated from the game jar and selected by `CRAFTPILOT_MC_VERSION`, so a version bump is `scripts/gen_catalog.py` plus the mod's `gradle.properties`. |
 | World | Singleplayer, integrated server | All in-game integration goes through a Fabric mod. |
-| Mod | Fabric mod (`mod/`), Gradle + Fabric Loom, client side | Hosts the HTTP bridge on 7777 (`/player`, `/setblocks`, `/scan`, `/say`); `/build` chat command calls the service; `/outline` animates the in-progress box. Wand, undo and auto-launch deferred. |
+| Mod | Fabric mod (`mod/`), Gradle + Fabric Loom, client side | Hosts the HTTP bridge on 7777 (`/player`, `/setblocks`, `/scan`, `/say`); `/build` chat command calls the service; `/outline` animates the in-progress box; wand / `/build pos1|pos2` base-area selection. Undo and auto-launch deferred. |
 | Language | Python 3.12+, `uv` | `pyproject.toml`, hatchling, ruff, pytest. numpy, scipy, pydantic, FastAPI. |
 | Schematic | litemapy 0.11.x | Confirm the data version it writes matches 26.2. |
 | LLM | Azure OpenAI, GPT-5.4 line, Responses API, structured outputs | Deployment names come from env. `gpt-5.4` composes the build program; `gpt-5.4-mini` handles follow-up edits. See section 6. |

@@ -91,6 +91,9 @@ blocks directly in the world you have open, bottom up, one layer per game tick. 
    /build edit make the roof red
    /build preview <text>     # schematic only
    /build cancel             # abandon the pending build or stop a placement that is still streaming in
+   /build pos1, /build pos2  # mark a base area (or: hold a wooden axe, left click = corner 1, right click = corner 2);
+                             #   /build <text> then sizes the building to that footprint and shows it pinned there
+   /build sel | sel clear    # show or clear the marked base area
    ```
 
    or from the terminal (no service needed):

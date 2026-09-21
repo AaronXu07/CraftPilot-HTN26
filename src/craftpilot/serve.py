@@ -18,7 +18,14 @@ from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 
 from craftpilot.config import SETTINGS
-from craftpilot.place.anchor import facing_from_yaw
+from craftpilot.place.anchor import (
+    Area,
+    area_footprint,
+    area_origin,
+    facing_from_area,
+    facing_from_yaw,
+    normalise_area,
+)
 from craftpilot.program.model import Bounds, BuildProgram
 from craftpilot.route import Route
 
@@ -46,6 +53,8 @@ class Pending:
     brief: ObjectBrief | None = None          # object: the plan (editable without drawing)
     result: ObjectResult | None = None        # object: the cached draw, grid facing south; None = not drawn yet
     stale: bool = False                       # object: the brief changed after the cached draw
+    area: Area | None = None                  # building: the base area marked with two points, if any
+    facing: str | None = None                 # building: the front chosen for that area (kept so the build is the preview)
 
 
 _pending: dict[str, Pending] = {}
@@ -78,6 +87,9 @@ class PlaceFields(BaseModel):
     yaw: float | None = None
     # Return the generated build as a voxel cloud for the mod's hologram instead of placing it.
     ghost: bool = False
+    # Two marked blocks [[x, y, z], [x, y, z]]: the build's base area. Its width and depth come from the
+    # area, the height from the model, and it lands on the marked blocks facing the side the player is on.
+    area: list[list[int]] | None = None
 
 
 class BuildRequest(PlaceFields):
@@ -98,6 +110,9 @@ class PlanRequest(BaseModel):
     use_llm: bool | None = None
     kind: KindArg = "auto"
     height: int | None = None
+    area: list[list[int]] | None = None
+    pos: list[float] | None = None
+    yaw: float | None = None
 
 
 class EditRequest(PlaceFields):
@@ -114,6 +129,22 @@ class RegenerateRequest(PlaceFields):
 
 def _yaw(req: PlaceFields, fallback: float) -> float:
     return fallback if req.yaw is None else req.yaw
+
+
+def _area_of(points: list[list[int]] | None) -> Area | None:
+    if points is None:
+        return None
+    try:
+        return normalise_area(points)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+def _gen_bounds(program: BuildProgram, area: Area, facing: str) -> Bounds:
+    """The box to generate in for a marked area: its footprint (in the engine's south-facing frame) and
+    the height the program asked for."""
+    w, d = area_footprint(area, facing)
+    return Bounds(width=w, height=program.bounds.height, depth=d)
 
 
 class SaveExemplarRequest(BaseModel):
@@ -136,7 +167,7 @@ def health() -> dict:
             "mod_url": SETTINGS.mod_url, "mod": mod, "objects": flow.unavailable_reason() or "ok"}
 
 
-def _place_context(req: PlaceFields):
+def _place_context(req: PlaceFields, area: Area | None = None):
     from craftpilot.place.bridge import BridgeError, HttpBridge
     from craftpilot.place.placer import PlaceContext, PlaceOptions
 
@@ -154,7 +185,7 @@ def _place_context(req: PlaceFields):
         opts.gap = req.gap
     if req.sink is not None:
         opts.sink = req.sink
-    return PlaceContext(bridge=bridge, player=player, opts=opts)
+    return PlaceContext(bridge=bridge, player=player, opts=opts, area=area)
 
 
 def _summary(result: dict, label: str) -> str:
@@ -199,12 +230,14 @@ def _route(text: str, kind: str, use_llm: bool | None, bounds: Bounds | None) ->
     return route, text
 
 
-def _compose(text: str, use_llm: bool | None, bounds: Bounds | None) -> tuple[BuildProgram, str, list[str]]:
+def _compose(text: str, use_llm: bool | None, bounds: Bounds | None,
+             footprint: tuple[int, int] | None = None) -> tuple[BuildProgram, str, list[str]]:
     """compose() with the request's use_llm (None = try the model; compose says why when it cannot) and a loud
     first note when the offline fallback answered, so the player sees it in chat instead of a silent lookalike."""
     from craftpilot.llm.compose import compose
 
-    program, source, notes = compose(text, use_llm=True if use_llm is None else use_llm, bounds_hint=bounds)
+    program, source, notes = compose(text, use_llm=True if use_llm is None else use_llm, bounds_hint=bounds,
+                                     footprint_hint=footprint)
     if source == "fallback" and use_llm is not False:
         notes = [FALLBACK_WARNING] + notes
     return program, source, notes
@@ -219,16 +252,24 @@ def _with_route(payload: dict, route: Route) -> dict:
 # ------------------------------------------------------------------------------------------------ buildings
 
 def _run(player: str, program: BuildProgram, bounds: Bounds | None, seed: int | None, preview: bool,
-         text: str, notes: list[str], source: str, yaw: float, req: PlaceFields, route: dict | None = None) -> dict:
+         text: str, notes: list[str], source: str, yaw: float, req: PlaceFields, route: dict | None = None,
+         area: Area | None = None, facing: str | None = None) -> dict:
     from craftpilot.cli import run_build
 
     seed = seed if seed is not None else int(time.time()) % 1_000_000
-    place_ctx = _place_context(req) if req.place else None
+    place_ctx = _place_context(req, area) if req.place else None
     if place_ctx is not None:
         yaw = float(place_ctx.player.get("yaw", yaw))
+    if area is not None:
+        # The front was fixed when the area was previewed (or is fixed now, from where the player stands),
+        # and the box is the area's footprint at the program's height.
+        facing = facing or facing_from_area(area, req.pos or (place_ctx.player.get("pos") if place_ctx else None), yaw)
+        bounds = _gen_bounds(program, area, facing)
+        program.bounds = bounds
+    else:
+        facing = facing_from_yaw(yaw)
     try:
-        result = run_build(program, bounds, seed, None, preview, player, text, notes, facing_from_yaw(yaw),
-                           place_ctx)
+        result = run_build(program, bounds, seed, None, preview, player, text, notes, facing, place_ctx)
     except HTTPException:
         raise
     except Exception as exc:
@@ -236,34 +277,50 @@ def _run(player: str, program: BuildProgram, bounds: Bounds | None, seed: int | 
     result["kind"] = "building"
     result["source"] = source
     result["summary"] = _summary(result, program.label)
-    _remember(player, kind="building", text=text, yaw=yaw, program=program, route=route or {})
+    _remember(player, kind="building", text=text, yaw=yaw, program=program, route=route or {}, area=area, facing=facing)
     return result
 
 
 def _ghost_result(player: str, program: BuildProgram, text: str, seed: int | None, source: str,
-                  notes: list[str], bounds: Bounds | None, route: dict | None = None) -> dict:
+                  notes: list[str], bounds: Bounds | None, route: dict | None = None,
+                  area: Area | None = None, facing: str | None = None) -> dict:
     """Generate (facing south, unrotated) and return the blocks as a flat [x, y, z, rgb, ...] cloud.
 
     Nothing is placed. The mod shows the cloud, rotates it with the player, and commits with
-    /regenerate {seed}: generation is deterministic, so the build is the ghost, block for block."""
+    /regenerate {seed}: generation is deterministic, so the build is the ghost, block for block.
+    With a marked ``area`` the cloud comes with an ``anchor`` (world origin and quarter turns) and the
+    mod shows it fixed on the area instead of following the player."""
     from craftpilot.engine.pipeline import generate
+    from craftpilot.grid.ops import quarter_turns_for_facing
     from craftpilot.preview.ghost import ghost_cloud
     from craftpilot.program.describe import describe
     from craftpilot.program.validate import clamp_bounds, repair
 
     program, r_notes = repair(program, SETTINGS.safety_limit)
+    if area is not None:
+        facing = facing or "south"
+        bounds = _gen_bounds(program, area, facing)
     b, err = clamp_bounds(bounds or program.bounds, SETTINGS.safety_limit)
     if err:
         raise HTTPException(status_code=400, detail=err)
+    if area is not None:
+        program.bounds = b   # the commit regenerates from the program, so it must carry the same box
     seed = seed if seed is not None else int(time.time()) % 1_000_000
     t0 = time.time()
     grid = generate(program, b, seed)
     flat, height, n = ghost_cloud(grid)
-    _remember(player, kind="building", text=text, program=program, route=route or {})
+    _remember(player, kind="building", text=text, program=program, route=route or {}, area=area, facing=facing)
     lines = describe(program, b)
+    ghost: dict[str, Any] = {"width": grid.W, "height": height, "depth": grid.D, "blocks": flat, "area_used": area is not None}
+    if area is not None:
+        turns = quarter_turns_for_facing(facing)
+        ww, dd = (grid.D, grid.W) if turns % 2 else (grid.W, grid.D)
+        ox, oy, oz = area_origin(area, ww, dd, sink=SETTINGS.place_sink)
+        ghost["anchor"] = {"origin": [ox, oy, oz], "turns": turns, "facing": facing,
+                           "area": [list(area[:3]), list(area[3:])]}
     return {
         "kind": "building",
-        "ghost": {"width": grid.W, "height": height, "depth": grid.D, "blocks": flat},
+        "ghost": ghost,
         "seed": seed,
         "bounds": {"width": b.width, "height": b.height, "depth": b.depth},
         "blocks": n,
@@ -276,17 +333,21 @@ def _ghost_result(player: str, program: BuildProgram, text: str, seed: int | Non
 
 
 def _plan_result(player: str, program: BuildProgram, text: str, source: str, notes: list[str],
-                 bounds: Bounds | None, route: dict | None = None) -> dict:
+                 bounds: Bounds | None, route: dict | None = None, area: Area | None = None,
+                 facing: str | None = None) -> dict:
     """Store the program as the player's pending plan and describe it; nothing is generated or placed."""
     from craftpilot.program.describe import describe
     from craftpilot.program.validate import clamp_bounds, repair
 
     program, r_notes = repair(program, SETTINGS.safety_limit)
+    if area is not None:
+        facing = facing or "south"
+        bounds = _gen_bounds(program, area, facing)
     b, err = clamp_bounds(bounds or program.bounds, SETTINGS.safety_limit)
     if err:
         raise HTTPException(status_code=400, detail=err)
     program.bounds = b
-    _remember(player, kind="building", text=text, program=program, route=route or {})
+    _remember(player, kind="building", text=text, program=program, route=route or {}, area=area, facing=facing)
     lines = describe(program, b)
     return {
         "kind": "building",
@@ -424,8 +485,12 @@ def plan(req: PlanRequest) -> dict:
     if route.kind == "object":
         return _with_route(_object_plan(req.player, text, _use_llm(req.use_llm), req.height, route.to_dict(), []),
                            route)
-    program, source, notes = _compose(text, req.use_llm, req.bounds)
-    return _with_route(_plan_result(req.player, program, text, source, notes, req.bounds, route.to_dict()), route)
+    area = _area_of(req.area)
+    facing = facing_from_area(area, req.pos, req.yaw or 0.0) if area is not None else None
+    program, source, notes = _compose(text, req.use_llm, req.bounds,
+                                      area_footprint(area, facing) if area is not None else None)
+    return _with_route(_plan_result(req.player, program, text, source, notes, req.bounds, route.to_dict(),
+                                    area, facing), route)
 
 
 @app.post("/build")
@@ -443,12 +508,15 @@ def build(req: BuildRequest) -> dict:
             out["ghost_summary"] = payload["summary"]
             return _with_route(out, route)
         return _with_route(_object_preview(req.player, text, req, route.to_dict(), use_llm, []), route)
-    program, source, notes = _compose(text, req.use_llm, req.bounds)
+    area = _area_of(req.area)
+    facing = facing_from_area(area, req.pos, _yaw(req, 0.0)) if area is not None else None
+    program, source, notes = _compose(text, req.use_llm, req.bounds,
+                                      area_footprint(area, facing) if area is not None else None)
     if req.ghost:
         return _with_route(_ghost_result(req.player, program, text, req.seed, source, notes, req.bounds,
-                                         route.to_dict()), route)
+                                         route.to_dict(), area, facing), route)
     return _with_route(_run(req.player, program, req.bounds, req.seed, req.preview, text, notes, source,
-                            _yaw(req, 0.0), req, route.to_dict()), route)
+                            _yaw(req, 0.0), req, route.to_dict(), area, facing), route)
 
 
 @app.post("/edit")
@@ -472,10 +540,11 @@ def edit(req: EditRequest) -> dict:
     assert p.program is not None
     program, source, notes = llm_edit(p.program, req.text)
     if req.plan:
-        return _plan_result(req.player, program, text, source, notes, None, p.route)
+        return _plan_result(req.player, program, text, source, notes, None, p.route, p.area, p.facing)
     if req.ghost:
-        return _ghost_result(req.player, program, text, req.seed, source, notes, None, p.route)
-    return _run(req.player, program, None, req.seed, False, text, notes, source, _yaw(req, p.yaw), req, p.route)
+        return _ghost_result(req.player, program, text, req.seed, source, notes, None, p.route, p.area, p.facing)
+    return _run(req.player, program, None, req.seed, False, text, notes, source, _yaw(req, p.yaw), req, p.route,
+                p.area, p.facing)
 
 
 @app.post("/regenerate")
@@ -494,9 +563,9 @@ def regenerate(req: RegenerateRequest) -> dict:
         return _object_commit(req.player, p, req, notes)
     assert p.program is not None
     if req.ghost:
-        return _ghost_result(req.player, p.program, p.text, req.seed, "previous", [], None, p.route)
+        return _ghost_result(req.player, p.program, p.text, req.seed, "previous", [], None, p.route, p.area, p.facing)
     return _run(req.player, p.program, None, req.seed, False, p.text, [], "previous", _yaw(req, p.yaw), req,
-                p.route)
+                p.route, p.area, p.facing)
 
 
 @app.post("/cancel")

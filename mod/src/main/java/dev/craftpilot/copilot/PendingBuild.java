@@ -44,8 +44,27 @@ public final class PendingBuild {
         ClientTickEvents.END_CLIENT_TICK.register(PendingBuild::onTick);
     }
 
-    /** Arm {@code body} for {@code path}; the outline starts following the player at {@code w x h x d}. */
+    /**
+     * Arm {@code body} for {@code path}; the outline starts following the player at {@code w x h x d}.
+     * With a base area marked ({@link Selection}) there is nothing to aim: the request goes out at once
+     * and the hologram comes back pinned on the area.
+     */
     public static void arm(String requestPath, JsonObject requestBody, String what, int w, int h, int d) {
+        if (Selection.isComplete()) {
+            synchronized (PendingBuild.class) {
+                path = null;
+                body = null;
+                label = null;
+                lockedPose = null;
+            }
+            GhostRender.clear();
+            BuildOutline.clear();
+            requestBody.add("area", Selection.toJson());
+            CopilotClientMod.chat("§6[craftpilot]§7 composing " + what + " for the marked base area ("
+                    + Selection.describeSize() + ")...");
+            ServiceClient.postAsync(requestPath, requestBody);
+            return;
+        }
         synchronized (PendingBuild.class) {
             path = requestPath;
             body = requestBody;
@@ -84,6 +103,26 @@ public final class PendingBuild {
                 + keyName(moveKey) + "]§7 move it, or /build cancel");
     }
 
+    /**
+     * The service sent a hologram pinned to a marked base area: show it exactly there ({@code ox, oy, oz}
+     * is the turned box's min corner, {@code turns} the quarter turns applied to the south-facing cloud)
+     * and wait for the lock key to build it. {@code w x h x d} is the cloud before turning.
+     */
+    public static void armGhostFixed(String requestPath, JsonObject requestBody, int w, int h, int d, int[] voxels,
+                                     int ox, int oy, int oz, int turns) {
+        synchronized (PendingBuild.class) {
+            path = requestPath;
+            body = requestBody;
+            label = "it";
+            lockedPose = null;
+        }
+        GhostRender.set(w, h, d, voxels);
+        boolean swap = (turns & 1) == 1;
+        BuildOutline.showFixed(ox, oy, oz, swap ? d : w, h, swap ? w : d, turns);
+        CopilotClientMod.chat("§6[craftpilot]§7 preview ready on the marked area: §f[" + keyName(lockKey)
+                + "]§7 build it, or /build cancel");
+    }
+
     /** Freeze the box, add its pose to the body, and send it. No-op unless something is armed. */
     public static void lock() {
         String p;
@@ -117,8 +156,13 @@ public final class PendingBuild {
         ServiceClient.postAsync(p, b);
     }
 
-    /** Let the hologram follow the player again. */
+    /** Let the hologram follow the player again (a hologram pinned to a marked area stays put). */
     public static void move() {
+        if (BuildOutline.isFixed()) {
+            CopilotClientMod.chat("§6[craftpilot]§7 the preview is pinned to the marked base area; /build sel clear "
+                    + "and /build again to aim it by hand");
+            return;
+        }
         if (BuildOutline.isReviewing()) {
             BuildOutline.resumeAiming();
         }
@@ -186,7 +230,9 @@ public final class PendingBuild {
         if (player == null || ticks % HINT_EVERY != 0) {
             return;
         }
-        if (BuildOutline.isReviewing()) {
+        if (BuildOutline.isFixed()) {
+            player.sendOverlayMessage(Component.literal("§f[" + keyName(lockKey) + "]§b build on the marked area  -  /build cancel"));
+        } else if (BuildOutline.isReviewing()) {
             player.sendOverlayMessage(Component.literal("§f[" + keyName(lockKey) + "]§b build here  -  §f[" + keyName(moveKey)
                     + "]§b move  -  /build cancel"));
         } else if (BuildOutline.isAiming()) {

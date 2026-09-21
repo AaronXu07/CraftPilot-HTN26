@@ -283,6 +283,7 @@ public final class HttpBridgeServer {
         }
         o.add("looking_at", looking);
         o.addProperty("dimension", p.level().dimension().identifier().toString());
+        o.add("selection", Selection.toJson());   // the wand's base area, [[x,y,z],[x,y,z]] or null
         return o;
     }
 

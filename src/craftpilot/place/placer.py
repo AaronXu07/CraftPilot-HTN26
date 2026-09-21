@@ -16,7 +16,7 @@ import numpy as np
 from craftpilot import terrain
 from craftpilot.config import SETTINGS
 from craftpilot.grid.semantic import SemanticGrid
-from craftpilot.place.anchor import plan_origin, trimmed_bbox
+from craftpilot.place.anchor import Area, area_origin, plan_origin, trimmed_bbox
 from craftpilot.place.bridge import FORCE_FLAGS, Block, BridgeError, Chunk
 
 AIR = "minecraft:air"
@@ -66,6 +66,16 @@ class PlaceContext:
     bridge: Bridge
     player: dict
     opts: PlaceOptions
+    area: Area | None = None   # a base area marked with two points: the build lands on it instead of in front of the player
+
+
+def build_origin(grid: SemanticGrid, ctx: PlaceContext) -> tuple[int, int, int]:
+    """Where the (already rotated) grid's cell (0, 0, 0) goes: on the marked area when there is one,
+    else in front of the player. Uses the full bounds box, not the trimmed one, because that is what
+    the outline and the mod's hologram were anchored with."""
+    if ctx.area is not None:
+        return area_origin(ctx.area, grid.W, grid.D, sink=ctx.opts.sink)
+    return plan_origin(ctx.player, (0, 0, 0, grid.W - 1, grid.H - 1, grid.D - 1), gap=ctx.opts.gap, sink=ctx.opts.sink)
 
 
 def grid_to_blocks(grid: SemanticGrid, origin: tuple[int, int, int], clear: bool = True,
@@ -176,9 +186,7 @@ def place_grid(grid: SemanticGrid, ctx: PlaceContext, label: str = "", undo_path
     survey the ground, and queue it on the mod. Returns immediately. With ``undo_path`` the positions
     written are recorded there (see place/undo.py) so the build can be removed again."""
     opts = ctx.opts
-    # Anchor the full bounds box, not the trimmed one: it is what the outline and the mod's hologram
-    # were anchored with, so the blocks land exactly inside the preview.
-    origin = plan_origin(ctx.player, (0, 0, 0, grid.W - 1, grid.H - 1, grid.D - 1), gap=opts.gap, sink=opts.sink)
+    origin = build_origin(grid, ctx)
     origin, blocks, site = site_blocks(grid, ctx, origin)
     chunk_blocks = chunk_size_for(len(blocks), opts)
     chunks = layer_chunks(blocks, chunk_blocks)

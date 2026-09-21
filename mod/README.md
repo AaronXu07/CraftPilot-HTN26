@@ -58,6 +58,9 @@ Fabric's `LevelExtractionEvents.END_EXTRACTION`.
 | `/build preview <text>` | Generate and write the `.litematic` only. |
 | `/build cancel` | Drop the pending build or plan and everything still queued for placement. |
 | `/build status` | Queue counters and the configured URLs. |
+| `/build pos1`, `/build pos2` | Mark the two corners of a **base area** at the block under the crosshair (or under your feet). The wand does the same: hold a wooden axe (`-Dcraftpilot.wand=<item id>` picks another item), left click a block for corner 1, right click for corner 2. While both corners are set, `/build <text>`, `/build plan`, `/build go`, `/build again` and `/build edit` skip the aiming step: the service sizes the building to the area's footprint (width and depth from the corners, height chosen by the model), faces it toward the side you stand on, and shows the hologram pinned on the area. **G** builds it there; **H** does nothing while pinned. The area stays marked until cleared. |
+| `/build sel`, `/build sel clear` | Show or clear the marked base area. |
+| `/build wand` | Say which item is the wand. |
 
 The service URL can be overridden with the JVM property `-Dcraftpilot.service=http://host:port`.
 
@@ -69,7 +72,7 @@ All coordinates are absolute world coordinates; block states use command syntax
 | Endpoint | Request | Response |
 | --- | --- | --- |
 | `GET /health` | – | `{ok, mod_version, mc_version, world_loaded, player, pending_chunks}` |
-| `GET /player` | – | `{name, pos:[x,y,z], yaw, pitch, facing, looking_at, dimension}` |
+| `GET /player` | – | `{name, pos:[x,y,z], yaw, pitch, facing, looking_at, dimension, selection}` (`selection` is the wand's base area `[[x,y,z],[x,y,z]]` or null; `craftpilot build --place` lands on it when set) |
 | `POST /setblocks` | `{chunks:[{blocks:[[x,y,z,"state"],...], delay_ms}], flags?, postprocess?}` or `{blocks:[...]}` | `{queued, chunks, invalid, invalid_samples?}` (async) |
 | `GET /setblocks/status` | – | `{pending_chunks, pending_blocks, placed_total, skipped_total, postprocessed}` |
 | `POST /setblocks/cancel` | – | `{ok, cleared_chunks}` |
@@ -88,7 +91,9 @@ The hologram (`GhostRender`) is not a bridge endpoint: the service's `/build`, `
 accept `ghost: true` and answer with `{ghost: {width, height, depth, blocks: [x, y, z, rgb, ...]}, seed}`
 instead of placing. The mod draws the cloud as translucent coloured cubes (outer faces only), rotated to
 face the player with the engine's own quarter-turn rule, and commits with `/regenerate {seed, place}` so
-the build is the preview block for block.
+the build is the preview block for block. A request carrying `area: [[x,y,z],[x,y,z]]` (the marked base
+area) gets `ghost.anchor: {origin, turns, facing, area}` back and the mod shows the cloud pinned there
+(`BuildOutline.showFixed`) instead of following the player.
 
 `/setblocks` semantics:
 

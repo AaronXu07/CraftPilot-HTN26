@@ -96,14 +96,17 @@ def _outline_bounds(place_ctx: PlaceContext, bounds: Bounds, facing: str) -> lis
 
     The engine builds facing south and is rotated afterwards, so an east or west facing swaps
     width and depth. The trimmed box replaces this one when the blocks are queued."""
-    from craftpilot.place.anchor import plan_origin
+    from craftpilot.place.anchor import area_origin, plan_origin
     from craftpilot.place.placer import show_outline
 
     w, h, d = bounds.width, bounds.height, bounds.depth
     if facing in ("east", "west"):
         w, d = d, w
     bbox = (0, 0, 0, w - 1, h - 1, d - 1)
-    ox, oy, oz = plan_origin(place_ctx.player, bbox, gap=place_ctx.opts.gap, sink=place_ctx.opts.sink)
+    if place_ctx.area is not None:
+        ox, oy, oz = area_origin(place_ctx.area, w, d, sink=place_ctx.opts.sink)
+    else:
+        ox, oy, oz = plan_origin(place_ctx.player, bbox, gap=place_ctx.opts.gap, sink=place_ctx.opts.sink)
     return show_outline(place_ctx.bridge, (ox, oy, oz), (ox + w - 1, oy + h - 1, oz + d - 1), "generating")
 
 
@@ -207,7 +210,13 @@ def _place_context(gap: int | None, sink: int | None, clear: bool, delay_ms: int
         opts.chunk_blocks = chunk
     if flags is not None:
         opts.flags = flags
-    return PlaceContext(bridge=bridge, player=player, opts=opts)
+    # A base area marked in game with the wand (two corners) takes precedence over "in front of the player".
+    area = None
+    if player.get("selection"):
+        from craftpilot.place.anchor import normalise_area
+
+        area = normalise_area(player["selection"])
+    return PlaceContext(bridge=bridge, player=player, opts=opts, area=area)
 
 
 @app.command()
@@ -288,10 +297,16 @@ def render(
 
 
 @app.command()
-def serve(port: int = typer.Option(None, "--port")) -> None:
-    """Run the local HTTP service used by the Fabric mod."""
+def serve(port: int = typer.Option(None, "--port"),
+          reload: bool = typer.Option(False, "--reload", help="Restart on source changes (development)")) -> None:
+    """Run the local HTTP service used by the Fabric mod. The code is loaded once at start: after
+    editing the service, restart it (or run with --reload)."""
     import uvicorn
 
+    if reload:
+        uvicorn.run("craftpilot.serve:app", host="127.0.0.1", port=port or SETTINGS.service_port,
+                    log_level="info", reload=True, reload_dirs=[str(Path(__file__).parent)])
+        return
     from craftpilot.serve import app as fastapi_app
 
     uvicorn.run(fastapi_app, host="127.0.0.1", port=port or SETTINGS.service_port, log_level="info")

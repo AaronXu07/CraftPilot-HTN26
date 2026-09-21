@@ -31,16 +31,24 @@ def _few_shot(exemplars: list[Exemplar]) -> list[dict[str, str]]:
     return msgs
 
 
-def _user_message(text: str, bounds_hint: Bounds | None) -> str:
+def _user_message(text: str, bounds_hint: Bounds | None, footprint_hint: tuple[int, int] | None = None) -> str:
     if bounds_hint is not None:
         return (f"{text}\n\nThe player selected a bounding box of {bounds_hint.width} wide, "
                 f"{bounds_hint.height} tall, {bounds_hint.depth} deep. Set bounds to exactly that and size the parts for it.")
+    if footprint_hint is not None:
+        w, d = footprint_hint
+        return (f"{text}\n\nThe player marked the base area on the ground: {w} wide along the front and {d} deep. "
+                f"Set bounds.width to {w} and bounds.depth to {d} exactly, size the parts to fill that footprint, "
+                f"and choose whatever height suits the building.")
     return text
 
 
 def compose(text: str, use_llm: bool = True, bounds_hint: Bounds | None = None,
-            k: int = 4) -> tuple[BuildProgram, str, list[str]]:
-    """Returns (program, source, notes). source is 'llm', 'llm-cache', or 'fallback'."""
+            k: int = 4, footprint_hint: tuple[int, int] | None = None) -> tuple[BuildProgram, str, list[str]]:
+    """Returns (program, source, notes). source is 'llm', 'llm-cache', or 'fallback'.
+
+    ``bounds_hint`` fixes the whole box; ``footprint_hint`` (width, depth) fixes the base area and leaves
+    the height to the model (or the exemplar's own height in the fallback)."""
     exemplars = load_all(SETTINGS.exemplars_dir)
     notes: list[str] = []
     if use_llm and SETTINGS.llm_configured:
@@ -48,7 +56,7 @@ def compose(text: str, use_llm: bool = True, bounds_hint: Bounds | None = None,
             from craftpilot.llm.azure import DeploymentUnavailable, structured_call
 
             shots = retrieve(exemplars, text, k)
-            messages = _few_shot(shots) + [{"role": "user", "content": _user_message(text, bounds_hint)}]
+            messages = _few_shot(shots) + [{"role": "user", "content": _user_message(text, bounds_hint, footprint_hint)}]
             deployments = [SETTINGS.compose_deployment]
             if SETTINGS.edit_deployment and SETTINGS.edit_deployment != SETTINGS.compose_deployment:
                 deployments.append(SETTINGS.edit_deployment)
@@ -78,6 +86,8 @@ def compose(text: str, use_llm: bool = True, bounds_hint: Bounds | None = None,
     program, fb_notes = fallback_program(text, exemplars)
     if bounds_hint is not None:
         program.bounds = bounds_hint
+    elif footprint_hint is not None:
+        program.bounds = Bounds(width=footprint_hint[0], height=program.bounds.height, depth=footprint_hint[1])
     return program, "fallback", notes + fb_notes
 
 
