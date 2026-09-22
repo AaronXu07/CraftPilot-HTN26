@@ -5,6 +5,7 @@ from __future__ import annotations
 import numpy as np
 
 from craftpilot.blocks.circles import perimeter
+from craftpilot.engine.attic import usable_mask
 from craftpilot.grid.enums import DIR_VEC, HORIZONTAL, BShape, Dir, Role
 from craftpilot.grid.semantic import LayoutPart, SemanticGrid
 from craftpilot.program.model import BuildProgram
@@ -12,6 +13,8 @@ from craftpilot.program.model import BuildProgram
 
 def _interior_cells(grid: SemanticGrid, part: LayoutPart, y: int) -> np.ndarray:
     m = np.zeros((grid.W, grid.D), dtype=bool)
+    if not (0 <= y < grid.H):
+        return m
     xs, zs = np.nonzero(part.mask)
     for x, z in zip(xs, zs):
         if grid.role[x, y, z] == Role.INTERIOR and grid.part_id[x, y, z] == part.index:
@@ -27,7 +30,7 @@ def _try_stairs(grid: SemanticGrid, part: LayoutPart, k: int, x0: int, z0: int, 
     for head room; a player standing on step y needs y+1 and y+2 clear.
     """
     fy = part.floor_block_y(k)
-    fh = part.floor_heights[k]
+    fh = part.level_height(k)
     fy_next = part.floor_block_y(k + 1)
     steps = fh
     cells = [(x0 + dx * i, z0 + dz * i) for i in range(steps + 1)]   # last one is the landing
@@ -108,7 +111,7 @@ def _try_spiral(grid: SemanticGrid, part: LayoutPart, k: int, x0: int, z0: int, 
     upper floor; landing inside it would sit three blocks over the first step.
     """
     fy = part.floor_block_y(k)
-    fh = part.floor_heights[k]
+    fh = part.level_height(k)
     fy_next = part.floor_block_y(k + 1)
     cells = [(x0 + dx, z0 + dz) for dx, dz in ring]
     if fh > len(ring) and len(ring) == 8:
@@ -172,40 +175,61 @@ def _try_spiral(grid: SemanticGrid, part: LayoutPart, k: int, x0: int, z0: int, 
 
 
 def _stairs(grid: SemanticGrid, part: LayoutPart) -> int:
-    """Straight run where the room is long enough, a spiral where it is tight, a ladder otherwise."""
+    """Straight run where the room is long enough, a spiral where it is tight, a ladder otherwise.
+
+    Runs into an attic land where the roof leaves head room, so their candidates are ordered by how
+    central the landing is instead of hugging the room's edge."""
     placed = 0
-    for k in range(len(part.floor_heights) - 1):
+    for k in range(len(part.levels) - 1):
         fy = part.floor_block_y(k)
-        fh = part.floor_heights[k]
+        fh = part.level_height(k)
         inner = _interior_cells(grid, part, fy + 1)
         if not inner.any():
             continue
         xs, zs = np.nonzero(inner)
         w, d = int(xs.max() - xs.min() + 1), int(zs.max() - zs.min() + 1)
         done = False
+        landing_ok = usable_mask(grid, part, part.floor_block_y(k + 1)) if part.is_attic_level(k + 1) else None
+        if landing_ok is not None and landing_ok.any():
+            lx, lz = np.nonzero(landing_ok)
+            target = (float(lx.mean()), float(lz.mean()))
+        else:
+            target = (float(xs.mean()), float(zs.mean()))
         # A straight run needs fh steps, a landing, and a cell to approach from, along one axis.
         if max(w, d) >= fh + 3 and min(w, d) >= 3:
             candidates = []
-            if w >= fh + 3:
-                for z in range(int(zs.min()), int(zs.min()) + 3):
-                    row = sorted(int(x) for x in xs[zs == z])
-                    for x in row[1:4]:
-                        candidates.append((x, z, 1, 0))
-            if d >= fh + 3:
-                for x in range(int(xs.min()), int(xs.min()) + 3):
-                    col = sorted(int(z) for z in zs[xs == x])
-                    for z in col[1:4]:
-                        candidates.append((x, z, 0, 1))
+            if landing_ok is None:
+                if w >= fh + 3:
+                    for z in range(int(zs.min()), int(zs.min()) + 3):
+                        row = sorted(int(x) for x in xs[zs == z])
+                        for x in row[1:4]:
+                            candidates.append((x, z, 1, 0))
+                if d >= fh + 3:
+                    for x in range(int(xs.min()), int(xs.min()) + 3):
+                        col = sorted(int(z) for z in zs[xs == x])
+                        for z in col[1:4]:
+                            candidates.append((x, z, 0, 1))
+            else:
+                for x, z in zip(xs, zs):
+                    for dx, dz in ((1, 0), (-1, 0), (0, 1), (0, -1)):
+                        ex, ez = int(x) + dx * fh, int(z) + dz * fh
+                        if grid.in_bounds(ex, 0, ez) and landing_ok[ex, ez]:
+                            candidates.append((int(x), int(z), dx, dz))
+                candidates.sort(key=lambda c: abs(c[0] + c[2] * fh - target[0]) + abs(c[1] + c[3] * fh - target[1]))
             for (x, z, dx, dz) in candidates:
                 if _try_stairs(grid, part, k, x, z, dx, dz):
                     placed += 1
                     done = True
                     break
         if not done and w >= 3 and d >= 3:
-            # 3x3 spiral around a post, in each corner of the room and at its centre.
+            # 3x3 spiral around a post, in each corner of the room and at its centre; under a roof,
+            # centred on the head room first.
             spots = [(int(xs.min()), int(zs.min())), (int(xs.max()) - 2, int(zs.min())),
                      (int(xs.min()), int(zs.max()) - 2), (int(xs.max()) - 2, int(zs.max()) - 2),
                      (int((xs.min() + xs.max()) // 2) - 1, int((zs.min() + zs.max()) // 2) - 1)]
+            if landing_ok is not None:
+                spots = [(int(round(target[0])) - 1 + ox, int(round(target[1])) - 1 + oz)
+                         for ox in (0, -1, 1, -2, 2) for oz in (0, -1, 1, -2, 2)] + spots
             for (x, z) in spots:
                 if _try_spiral(grid, part, k, x, z, _RING3, (1, 1)):
                     placed += 1
@@ -239,6 +263,9 @@ def _ladder(grid: SemanticGrid, part: LayoutPart, k: int, inner: np.ndarray) -> 
                 continue
             if any(grid.role[x, y, z] != Role.INTERIOR for y in range(fy + 1, fy_next)) \
                     or grid.role[x, fy_next, z] not in (Role.FLOOR, Role.INTERIOR):
+                continue
+            # Head room where the ladder arrives.
+            if any(not grid.in_bounds(x, y, z) or grid.role[x, y, z] != Role.INTERIOR for y in (fy_next + 1, fy_next + 2)):
                 continue
             facing = {Dir.NORTH: Dir.SOUTH, Dir.SOUTH: Dir.NORTH, Dir.EAST: Dir.WEST, Dir.WEST: Dir.EAST}[d]
             for y in range(fy + 1, fy_next + 1):
@@ -298,9 +325,9 @@ def _doorways(grid: SemanticGrid) -> int:
 
 def _partitions(grid: SemanticGrid, part: LayoutPart) -> int:
     count = 0
-    for k in range(len(part.floor_heights)):
+    for k in range(len(part.levels)):
         fy = part.floor_block_y(k)
-        ceiling = min(fy + part.floor_heights[k], part.top_y + 1)
+        ceiling = part.level_ceiling(k)
         inner = _interior_cells(grid, part, fy + 1)
         if not inner.any():
             continue
@@ -392,7 +419,7 @@ def _connect(grid: SemanticGrid, max_carves: int = 12) -> tuple[int, list[str]]:
         seen = reachable(grid)
         best = None
         for part in grid.parts:
-            for k in range(len(part.floor_heights)):
+            for k in range(len(part.levels)):
                 y = part.floor_block_y(k) + 1
                 cells = [(int(x), int(z)) for x, z in zip(*np.nonzero(part.mask))
                          if _walkable(grid, int(x), y, int(z)) and grid.part_id[x, y, z] == part.index]
@@ -428,7 +455,7 @@ def interior(grid: SemanticGrid, program: BuildProgram) -> None:
     rules = program.interior
     info: dict[str, int] = {}
     if rules.stairs:
-        info["stairs"] = sum(_stairs(grid, p) for p in grid.parts if len(p.floor_heights) >= 2)
+        info["stairs"] = sum(_stairs(grid, p) for p in grid.parts if len(p.levels) >= 2)
     if rules.doorways:
         info["doorways"] = _doorways(grid)
     if rules.partitions:

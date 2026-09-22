@@ -217,14 +217,18 @@ def _dormer_walk(grid: SemanticGrid, part: LayoutPart, fx: int, fz: int, vx: int
     return depth_cells, False
 
 
-def _place_dormer(grid: SemanticGrid, part: LayoutPart, side: int, cx: int, cz: int) -> bool:
-    """cx, cz is the wall cell on `side` under the dormer's centre column."""
+def _place_dormer(grid: SemanticGrid, part: LayoutPart, side: int, cx: int, cz: int, floor_y: int | None = None) -> bool:
+    """cx, cz is the wall cell on `side` under the dormer's centre column.
+
+    With `floor_y` (an attic floor row) the dormer is a walk-in bay of that storey: its floor is the
+    attic floor, or one step above it, and its front wall starts on the roof surface or replaces the
+    surface's top block, so the window sits above the roof and the room behind it is the attic."""
     vx, vz, ax, az = _axis_dirs(side)
     ridge_y = int(math.ceil(float(part.roof_surface[part.roof_mask].max()))) - 1
     # Candidate front columns: from the wall line up the slope, as long as the front sits above the eave.
     fronts = []
     x, z = cx, cz
-    for _ in range(4):
+    for _ in range(4 if floor_y is None else 8):
         if not grid.in_bounds(x, 0, z) or not part.roof_mask[x, z]:
             break
         t = _roof_top_y(grid, x, z)
@@ -235,20 +239,33 @@ def _place_dormer(grid: SemanticGrid, part: LayoutPart, side: int, cx: int, cz: 
         return False
     chosen = None
     for (fx, fz, yb) in fronts:
-        for wall_h in (3, 2):
-            y_w0, y_w1 = yb + 1, yb + wall_h
-            y_r = y_w1 + 1
-            if y_r > ridge_y:
-                continue
-            depth_cells, reached = _dormer_walk(grid, part, fx, fz, vx, vz, y_r)
-            if reached and len(depth_cells) >= 2:
-                chosen = (fx, fz, yb, y_w0, y_w1, y_r, depth_cells)
+        if floor_y is None:
+            floors = [yb]
+        else:
+            floors = [yd for yd in (floor_y, floor_y + 1) if yd <= yb]
+        for yd in floors:
+            # The front wall reaches from the floor to two window rows above the roof surface; on a
+            # steep roof the lower rows are buried in the roof. Beyond six rows it would be a tower.
+            gap = yb - yd
+            for wall_h in (max(3, gap + 2), max(2, gap + 1)):
+                if wall_h > 6:
+                    continue
+                y_w0, y_w1 = yd + 1, yd + wall_h
+                y_r = y_w1 + 1
+                if y_r > ridge_y:
+                    continue
+                depth_cells, reached = _dormer_walk(grid, part, fx, fz, vx, vz, y_r)
+                if reached and len(depth_cells) >= 2:
+                    chosen = (fx, fz, yb, y_w0, y_w1, y_r, depth_cells)
+                    break
+            if chosen:
                 break
         if chosen:
             break
     if chosen is None:
         return False
     fx, fz, yb, y_w0, y_w1, y_r, depth_cells = chosen
+    wb = max(y_w0 + 1, yb + 1)                  # lowest window row: above the roof surface
     # Occlusion check across the dormer footprint.
     if is_reserved(grid, fx - 2 * ax - vx * 1, y_w0, fz - 2 * az - vz * 1, fx + 2 * ax + vx * 1, y_r + 1, fz + 2 * az + vz * 1):
         return False
@@ -262,11 +279,13 @@ def _place_dormer(grid: SemanticGrid, part: LayoutPart, side: int, cx: int, cz: 
         for y in range(y_w0, y_w1 + 1):
             put(wx, wz, y, Role.WALL, BShape.FULL, side, Flag.PERIMETER)
         if d == 0:
-            for y in range(y_w0 + 1, y_w1 + 1):
-                put(wx, wz, y, Role.WINDOW, BShape.PANE, side, Flag.NO_TEXTURE | Flag.PERIMETER)
+            # Into the wall just placed, so not through put().
+            for y in range(wb, y_w1 + 1):
+                if grid.in_bounds(wx, y, wz):
+                    grid.set(wx, y, wz, Role.WINDOW, BShape.PANE, side, part.index, 1.0, Flag.NO_TEXTURE | Flag.PERIMETER)
             sx, sz = wx + vx, wz + vz
-            if grid.in_bounds(sx, y_w0, sz) and grid.role[sx, y_w0, sz] == Role.EMPTY:
-                grid.set(sx, y_w0, sz, Role.SILL, BShape.STAIR_UPSIDE, OPPOSITE[side], part.index, 0.0)
+            if grid.in_bounds(sx, wb - 1, sz) and grid.role[sx, wb - 1, sz] == Role.EMPTY:
+                grid.set(sx, wb - 1, sz, Role.SILL, BShape.STAIR_UPSIDE, OPPOSITE[side], part.index, 0.0)
     put(fx, fz, y_r, Role.WALL, BShape.FULL, side, Flag.PERIMETER)
     # Side walls, and the interior: the main roof inside the dormer is carved away above the
     # dormer floor so the room is a bump-out of the attic, with a flat floor at the front's roof level.
@@ -278,8 +297,8 @@ def _place_dormer(grid: SemanticGrid, part: LayoutPart, side: int, cx: int, cz: 
             wx, wz = dx + d * ax, dz + d * az
             tw = _roof_top_y(grid, wx, wz)
             base = (tw if tw is not None else t) + 1
+            nrm = (Dir.EAST if d > 0 else Dir.WEST) if ax else (Dir.SOUTH if d > 0 else Dir.NORTH)
             for y in range(base, y_w1 + 1):
-                nrm = (Dir.EAST if d > 0 else Dir.WEST) if ax else (Dir.SOUTH if d > 0 else Dir.NORTH)
                 put(wx, wz, y, Role.WALL, BShape.FULL, nrm, Flag.PERIMETER)
             # Wall below the eave inside the footprint where the roof was, down to the floor.
             for y in range(y_w0, base):
@@ -322,35 +341,42 @@ def dormer(grid: SemanticGrid, program: BuildProgram, req: AttachmentRequest) ->
     sides = _slope_sides(part)
     if not sides:
         return 0
-    placed = 0
     total_wanted = req.count if req.count is not None else None
-    for side in sides:
-        cells = _face_cells(part, side, len(part.floor_masks) - 1)
-        if len(cells) < 7:
-            continue
-        n_side = total_wanted if total_wanted is not None else max(1, min(3, (len(cells) - 3) // 6))
-        if total_wanted is not None:
-            n_side = max(0, total_wanted - placed)
-            if n_side == 0:
-                break
-            n_side = min(n_side, max(1, (len(cells) - 3) // 6))
-        # On hip and mansard roofs the corner regions slope sideways, so keep to the middle band.
-        margin = 5 if part.spec.roof.type in (RoofType.hip, RoofType.mansard) else 2
-        if len(cells) - 2 * margin < 3:
-            margin = 2
-        idxs = spread(n_side, margin, len(cells) - 1 - margin, grid.rng, req.spacing == "regular", 5)
-        for i in idxs:
-            for shift in (0, -1, 1, -2, 2, -3, 3):
-                j = i + shift
-                if not (2 <= j <= len(cells) - 3):
-                    continue
-                cx, cz = cells[j]
-                if _place_dormer(grid, part, side, cx, cz):
-                    placed += 1
+
+    def at_level(floor_y: int | None, stagger: int) -> int:
+        placed = 0
+        for side in sides:
+            cells = _face_cells(part, side, len(part.floor_masks) - 1)
+            if len(cells) < 7:
+                continue
+            n_side = total_wanted if total_wanted is not None else max(1, min(3, (len(cells) - 3) // 6))
+            if total_wanted is not None:
+                n_side = max(0, total_wanted - placed)
+                if n_side == 0:
                     break
-        if total_wanted is None and placed >= 4:
-            break
-    return placed
+                n_side = min(n_side, max(1, (len(cells) - 3) // 6))
+            # On hip and mansard roofs the corner regions slope sideways, so keep to the middle band.
+            margin = 5 if part.spec.roof.type in (RoofType.hip, RoofType.mansard) else 2
+            if len(cells) - 2 * margin < 3:
+                margin = 2
+            idxs = spread(n_side, margin + stagger, len(cells) - 1 - margin, grid.rng, req.spacing == "regular", 5)
+            for i in idxs:
+                for shift in (0, -1, 1, -2, 2, -3, 3):
+                    j = i + shift
+                    if not (2 <= j <= len(cells) - 3):
+                        continue
+                    cx, cz = cells[j]
+                    if _place_dormer(grid, part, side, cx, cz, floor_y):
+                        placed += 1
+                        break
+            if total_wanted is None and placed >= 4:
+                break
+        return placed
+
+    # One row of dormers per attic storey, each a walk-in bay of its floor; a roof without an attic
+    # gets decorative ones on the slope. Upper rows are staggered so they do not stack.
+    levels = part.attic_floor_ys() or [None]
+    return sum(at_level(fy, 3 * (j % 2)) for j, fy in enumerate(levels))
 
 
 # ---------------------------------------------------------------- balcony (roof level, before facade)

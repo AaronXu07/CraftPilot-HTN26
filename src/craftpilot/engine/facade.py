@@ -574,21 +574,28 @@ def _gable_windows(grid: SemanticGrid, part: LayoutPart, rules: FacadeRules, acc
             continue
         style = rules.window if rules.window not in (WindowStyle.wall, WindowStyle.slit, WindowStyle.stair_slit) else WindowStyle.plain
         wh = 3 if style == WindowStyle.tall else max(1, min(rules.window_height, 2))
-        wb = part.eave_y + 1
-        if len(run) >= 9 and hc >= 4:
-            for o in (-2, 2):
-                idx = len(run) // 2 + o
-                if 0 <= idx < len(run) and put_window([run[idx]], wb, wh, style):
+        # One row of windows per attic storey, a sill's height above its floor; an open roof space
+        # gets a single row just above the eave.
+        bottoms = [y + 2 for y in part.attic_floor_ys()] or [part.eave_y + 1]
+        top_wb = bottoms[0]
+        for wb in bottoms:
+            n_here = 0
+            if len(run) >= 9 and hc >= 4:
+                for o in (-2, 2):
+                    idx = len(run) // 2 + o
+                    if 0 <= idx < len(run) and put_window([run[idx]], wb, wh, style):
+                        n_here += 1
+            if n_here == 0 and put_window([centre], wb, wh, style):
+                n_here += 1
+            if n_here:
+                top_wb = wb
+            placed += n_here
+        if len(run) >= 9 and hc >= 7:
+            # Near the peak; step down until the cell outside is clear of the rake overhang's fill.
+            for wb_top in range(part.eave_y + hc - 3, part.eave_y + hc - 6, -1):
+                if wb_top > top_wb + wh and put_window([centre], wb_top, 1, WindowStyle.round):
                     placed += 1
-            if hc >= 7:
-                # Near the peak; step down until the cell outside is clear of the rake overhang's fill.
-                for wb_top in range(part.eave_y + hc - 3, part.eave_y + hc - 6, -1):
-                    if wb_top > wb + wh and put_window([centre], wb_top, 1, WindowStyle.round):
-                        placed += 1
-                        break
-        else:
-            if put_window([centre], wb, wh, style):
-                placed += 1
+                    break
     return placed
 
 

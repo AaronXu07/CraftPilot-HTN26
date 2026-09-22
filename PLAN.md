@@ -202,6 +202,7 @@ class PartSpec(BaseModel):
     odd_dims: bool = True
     roof: RoofSpec
     attach: Attach | None = None   # None marks the root; exactly one root
+    attic: bool = True         # roof space becomes storeys (floor, stairs, gable windows, walk-in dormers) when tall enough
     role_hint: str = ""        # "nave", "keep", "wing" — for the LLM's own bookkeeping
 ```
 

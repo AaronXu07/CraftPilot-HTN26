@@ -158,6 +158,8 @@ class PartSpec(BaseModel):
     odd_dims: bool = Field(default=True, description="Force odd width/depth so there is a center block")
     roof: RoofSpec
     attach: Attach | None = Field(default=None, description="None marks the root part; exactly one root")
+    attic: bool = Field(default=True, description="Use the roof space as storeys when the roof is tall enough: floors, stairs, "
+                                                  "gable windows and walk-in dormers. false leaves it open to the rafters (vaulted halls, naves, barns)")
     role_hint: str = Field(default="", description="Free text, e.g. nave, keep, wing")
 
 

@@ -6,6 +6,7 @@ import numpy as np
 
 from craftpilot.engine import attachments  # noqa: F401  (registers kinds)
 from craftpilot.engine.attachments.base import auto_budget, run_level
+from craftpilot.engine.attic import attic
 from craftpilot.engine.depth import depth
 from craftpilot.engine.detail import detail
 from craftpilot.engine.facade import facade
@@ -31,6 +32,7 @@ def generate(program: BuildProgram, bounds: Bounds, seed: int) -> SemanticGrid:
     run_level(grid, program, "mass")
     massing(grid, program)
     roof(grid, program)
+    attic(grid, program)
     run_level(grid, program, "roof")
     facade(grid, program)
     run_level(grid, program, "facade")

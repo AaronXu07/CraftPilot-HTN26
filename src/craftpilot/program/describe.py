@@ -37,6 +37,8 @@ def _part_line(p: PartSpec, root: PartSpec) -> str:
         bits.append(f"tapering {p.taper:.0%}/floor")
     if p.wall_thickness > 1:
         bits.append("thick walls")
+    if not p.attic:
+        bits.append("open to the roof")
     roof = p.roof.type.value + (" roof" if p.roof.type.value != "none" else "")
     if p.roof.type.value in ("gable", "hip", "shed", "gambrel", "mansard") and p.roof.pitch != 1.0:
         roof += f" pitch {p.roof.pitch:g}"

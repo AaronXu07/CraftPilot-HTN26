@@ -13,6 +13,7 @@ program:
       floors: 1
       floor_height: 6
       roof: {type: hip, pitch: 1.0, overhang: 2, profile: concave, curl: 2.0, edge_width: 1, edge_lines: hips}
+      attic: false
   facade:
     bay_width: {min: 3, max: 3}
     window: plain

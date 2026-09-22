@@ -34,6 +34,8 @@ class LayoutPart:
     # Filled by roof.
     roof_surface: np.ndarray | None = None   # (W, D) float, -inf outside
     roof_mask: np.ndarray | None = None      # (W, D) bool, dilated footprint
+    # Filled by attic: storeys inside the roof, the first with its floor row at eave_y.
+    attic_heights: list[int] = field(default_factory=list)
 
     @property
     def width(self) -> int:
@@ -59,8 +61,38 @@ class LayoutPart:
     def wall_height(self) -> int:
         return self.top_y - self.base_y + 1
 
+    @property
+    def levels(self) -> list[int]:
+        """Every storey a player can stand on: the wall storeys, then the attic storeys."""
+        return self.floor_heights + self.attic_heights
+
     def floor_block_y(self, k: int) -> int:
-        return self.base_y + sum(self.floor_heights[:k]) - 1
+        """Row of the floor block under level k. Level len(floor_heights) is the first attic storey,
+        whose floor row is eave_y, so the top wall storey keeps its ceiling where the facade puts it."""
+        n = len(self.floor_heights)
+        if k < n:
+            return self.base_y + sum(self.floor_heights[:k]) - 1
+        return self.eave_y + sum(self.attic_heights[:k - n])
+
+    def level_height(self, k: int) -> int:
+        """Rows from level k's floor row to the next floor row. The top wall storey is one taller than
+        its nominal height when an attic sits on it, because the attic floor is at eave_y."""
+        if k + 1 < len(self.levels):
+            return self.floor_block_y(k + 1) - self.floor_block_y(k)
+        return self.levels[k]
+
+    def level_ceiling(self, k: int) -> int:
+        """First row above level k's air: the next floor row, or eave_y for the top wall storey."""
+        fy = self.floor_block_y(k)
+        if k < len(self.floor_heights):
+            return min(fy + self.floor_heights[k], self.top_y + 1)
+        return fy + self.attic_heights[k - len(self.floor_heights)]
+
+    def is_attic_level(self, k: int) -> bool:
+        return k >= len(self.floor_heights)
+
+    def attic_floor_ys(self) -> list[int]:
+        return [self.floor_block_y(len(self.floor_heights) + j) for j in range(len(self.attic_heights))]
 
 
 @dataclass

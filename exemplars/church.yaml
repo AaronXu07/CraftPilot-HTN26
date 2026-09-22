@@ -14,6 +14,7 @@ program:
       floors: 2
       floor_height: 5
       roof: {type: gable, pitch: 2.0, overhang: 1, ridge_axis: x}
+      attic: false
     - name: tower
       shape: rect
       size: {width: 0.24, depth: 0.5}

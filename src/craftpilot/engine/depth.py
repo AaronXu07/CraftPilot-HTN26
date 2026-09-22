@@ -89,7 +89,7 @@ def _stacked_overhang_support(grid: SemanticGrid, corbels: bool) -> int:
         if not over.any():
             continue
         fy = part.floor_block_y(0)
-        if fy - 1 < 0:
+        if fy - 1 < 0 or part.base_y >= grid.H:
             continue
         if corbels:
             for x, z in zip(*np.nonzero(over & perimeter(part.mask))):
@@ -113,18 +113,23 @@ def _interior_lighting(grid: SemanticGrid) -> int:
     """Hanging lanterns under ceilings so interiors do not spawn mobs."""
     count = 0
     for part in grid.parts:
-        for k in range(len(part.floor_heights)):
+        for k in range(len(part.levels)):
             fy = part.floor_block_y(k)
-            fh = part.floor_heights[k]
-            ceiling = min(fy + fh, part.top_y + 1)
-            y = ceiling - 1
-            m = part.floor_masks[k]
+            ceiling = part.level_ceiling(k)
+            attic = part.is_attic_level(k)
+            m = part.floor_masks[min(k, len(part.floor_masks) - 1)]
             xs, zs = np.nonzero(m)
             if xs.size == 0:
                 continue
             for x in range(int(xs.min()) + 2, int(xs.max()), 5):
                 for z in range(int(zs.min()) + 2, int(zs.max()), 5):
-                    if grid.role[x, y, z] == Role.INTERIOR and grid.in_bounds(x, y + 1, z) \
+                    y = ceiling - 1
+                    if attic:
+                        # Hang from whatever is overhead: the roof underside or the next attic floor.
+                        y = fy + 3
+                        while grid.in_bounds(x, y + 1, z) and grid.role[x, y + 1, z] == Role.INTERIOR:
+                            y += 1
+                    if grid.in_bounds(x, y, z) and grid.role[x, y, z] == Role.INTERIOR and grid.in_bounds(x, y + 1, z) \
                             and grid.role[x, y + 1, z] not in (Role.EMPTY, Role.INTERIOR):
                         grid.set(x, y, z, Role.LIGHT, BShape.LANTERN, Dir.UP, part.index, 0.0)
                         count += 1

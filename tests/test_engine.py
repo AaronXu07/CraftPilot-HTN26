@@ -302,3 +302,69 @@ def test_interior_staircases_are_walkable():
         prog, _ = repair(ex.program, SAFETY)
         grid = generate(prog, prog.bounds, 2)
         assert _staircases_walkable(grid) == [], ex.name
+
+
+def _attic_grid(pitch: float, height: int, **kw):
+    prog, _ = repair(simple_program(RoofType.gable, **kw), SAFETY)
+    prog.parts[0].roof.pitch = pitch
+    prog.bounds.height = height
+    prog.attachments = [AttachmentRequest(kind=AttachmentKind.dormer, count=2)]
+    return generate(prog, prog.bounds, 1)
+
+
+@pytest.mark.parametrize("pitch,height,want", [(0.5, 20, 0), (1.0, 20, 1), (2.0, 30, 2)])
+def test_attic_storeys_follow_the_roof_height(pitch, height, want):
+    grid = _attic_grid(pitch, height)
+    part = grid.parts[0]
+    assert len(part.attic_heights) == want
+    if want:
+        # The first attic floor is at the eave and closes the top storey's ceiling (bar the stair opening).
+        assert part.attic_floor_ys()[0] == part.eave_y
+        inner = [(int(x), int(z)) for x, z in zip(*np.nonzero(part.floor_masks[-1]))
+                 if grid.role[x, part.top_y, z] == Role.INTERIOR]
+        floored = sum(grid.role[x, part.eave_y, z] == Role.FLOOR for x, z in inner)
+        assert floored >= 0.8 * len(inner)
+
+
+def test_attic_off_leaves_the_roof_open():
+    grid = _attic_grid(1.0, 20, attic=False)
+    part = grid.parts[0]
+    assert part.attic_heights == []
+    assert not ((grid.role[:, part.eave_y, :] == Role.FLOOR) & part.mask).any()
+
+
+def test_attic_is_reachable_with_windows_and_walk_in_dormers():
+    from craftpilot.engine.attic import usable_mask
+    from craftpilot.engine.interior import reachable
+    grid = _attic_grid(1.0, 20)
+    part = grid.parts[0]
+    fy = part.attic_floor_ys()[0]
+    seen = reachable(grid)
+    usable = usable_mask(grid, part, fy)
+    assert usable.sum() >= 12
+    assert all(seen[x, fy + 1, z] for x, z in zip(*np.nonzero(usable)))
+    assert _staircases_walkable(grid) == []
+    assert grid.report["gable_windows"] >= 1
+    dormers = grid.report.get("dormers", [])
+    assert len(dormers) == 2
+    for d in dormers:
+        assert d["y_w0"] - 1 in (fy, fy + 1)               # seated on the attic floor, or one step up
+        for (x, z) in d["depth"][1:]:                       # the bay behind the window is walkable attic
+            assert seen[x, d["y_w0"], z], (x, z)
+        fx, fz = d["front"]
+        assert (grid.role[fx, d["y_w0"] + 1:d["y_w1"] + 1, fz] == Role.WINDOW).sum() >= 1
+
+
+def test_exemplar_attics_are_reachable():
+    from craftpilot.engine.attic import usable_mask
+    from craftpilot.engine.interior import reachable
+    from craftpilot.program.exemplars import load_all
+    from pathlib import Path
+    for ex in load_all(Path(__file__).resolve().parents[1] / "exemplars"):
+        prog, _ = repair(ex.program, SAFETY)
+        grid = generate(prog, prog.bounds, 2)
+        seen = reachable(grid)
+        for part in grid.parts:
+            for fy in part.attic_floor_ys():
+                usable = usable_mask(grid, part, fy)
+                assert any(seen[x, fy + 1, z] for x, z in zip(*np.nonzero(usable))), (ex.name, part.spec.name, fy)
