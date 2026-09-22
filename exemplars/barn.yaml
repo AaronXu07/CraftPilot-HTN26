@@ -27,6 +27,7 @@ program:
     shutters: 0.0
     sills: false
     framing: bays
+    beams: true
     symmetry: true
     max_flat_run: 6
   depth:

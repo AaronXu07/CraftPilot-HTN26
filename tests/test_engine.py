@@ -368,3 +368,110 @@ def test_exemplar_attics_are_reachable():
             for fy in part.attic_floor_ys():
                 usable = usable_mask(grid, part, fy)
                 assert any(seen[x, fy + 1, z] for x, z in zip(*np.nonzero(usable))), (ex.name, part.spec.name, fy)
+
+
+def _framed_grid(framing: str, braces: float = 0.0, bay: int = 5):
+    from craftpilot.program.model import Framing
+    prog, _ = repair(simple_program(RoofType.gable, floors=3), SAFETY)
+    prog.facade.framing = Framing(framing)
+    prog.facade.braces = braces
+    prog.facade.bay_width.min = prog.facade.bay_width.max = bay
+    prog.bounds.height = 24
+    return generate(prog, prog.bounds, 2)
+
+
+def _front_face(grid):
+    from craftpilot.engine.attachments.kinds import _face_cells
+    part = grid.parts[0]
+    return part, _face_cells(part, grid.front, 0)
+
+
+@pytest.mark.parametrize("framing", ["bays", "tudor"])
+def test_posts_run_unbroken_from_base_to_eave(framing):
+    grid = _framed_grid(framing)
+    part, cells = _front_face(grid)
+    posts = [(x, z) for (x, z) in cells if grid.role[x, part.base_y + 1, z] == Role.FRAME]
+    assert len(posts) >= 3                       # two corners and at least one bay boundary
+    for (x, z) in posts:
+        column = [int(grid.role[x, y, z]) for y in range(part.base_y, part.top_y + 1)]
+        assert all(r == Role.FRAME for r in column), (x, z, column)
+
+
+def test_tudor_beams_on_every_floor_line_and_under_the_eave():
+    grid = _framed_grid("tudor")
+    part, cells = _front_face(grid)
+    for y in [part.floor_block_y(k) for k in range(1, len(part.floor_heights))] + [part.top_y]:
+        roles = {int(grid.role[x, y, z]) for (x, z) in cells}
+        assert Role.BEAM in roles and Role.WALL not in roles, y
+
+
+def test_braces_are_rare_blank_and_built_from_stairs_and_slabs():
+    from craftpilot.grid.enums import DIR_VEC
+    grid = _framed_grid("tudor", braces=1.0)
+    panels = grid.report.get("braced_panels", [])
+    assert len(panels) == 2                                   # a mirrored pair, nothing more
+    part, cells = _front_face(grid)
+    idx = {c: i for i, c in enumerate(cells)}
+    n = len(cells)
+    shapes = []
+    for p in panels:
+        assert p["y0"] > part.base_y                          # never the ground floor
+        vx, _, vz = DIR_VEC[p["side"]]
+        for (x, z) in p["cells"]:
+            for y in range(p["y0"], p["y0"] + p["h"]):
+                assert grid.role[x, y, z] in (Role.WALL, Role.FRAME)          # no window in a braced panel
+                if grid.role[x + vx, y, z + vz] == Role.FRAME:
+                    shapes.append(int(grid.shape[x + vx, y, z + vz]))
+    assert BShape.STAIR in shapes and BShape.SLAB_TOP in shapes
+    assert shapes.count(BShape.FULL) <= len(panels)           # at most the crossing of each X
+    cols = sorted(idx[c] for p in panels for c in p["cells"])
+    assert cols == sorted(n - 1 - i for i in cols)            # the pair mirrors across the face
+
+
+def _wall_plane_posts(grid, part, side, k):
+    from craftpilot.engine.attachments.kinds import _face_cells
+    y = part.floor_block_y(k) + 1
+    return [(x, z) for (x, z) in _face_cells(part, side, k) if grid.role[x, y, z] == Role.FRAME]
+
+
+def test_posts_never_stand_side_by_side_and_align_across_storeys():
+    from craftpilot.program.exemplars import load_all
+    from pathlib import Path
+    for ex in load_all(Path(__file__).resolve().parents[1] / "exemplars"):
+        prog, _ = repair(ex.program, SAFETY)
+        if prog.facade.framing.value == "none":
+            continue
+        grid = generate(prog, prog.bounds, 2)
+        for part in grid.parts:
+            if part.spec.shape.value != "rect":
+                continue
+            for side in (Dir.NORTH, Dir.SOUTH, Dir.EAST, Dir.WEST):
+                per_storey = []
+                for k in range(len(part.floor_heights)):
+                    posts = _wall_plane_posts(grid, part, side, k)
+                    along = [p[0] if side in (Dir.NORTH, Dir.SOUTH) else p[1] for p in posts]
+                    assert all(b - a >= 2 for a, b in zip(along, along[1:])), (ex.name, part.spec.name, Dir(side).name, k, along)
+                    if not part.jetty and part.spec.taper == 0:
+                        per_storey.append(set(along))
+                # Every storey's posts are a subset of the union: nothing shifts sideways between floors.
+                if per_storey:
+                    union = set().union(*per_storey)
+                    for k, s in enumerate(per_storey):
+                        assert s <= union
+                    # Two full storeys with the same mask share the same bay boundaries.
+                    if len(per_storey) >= 2 and per_storey[0] and per_storey[-1]:
+                        assert per_storey[0] == per_storey[-1] or per_storey[0] <= per_storey[-1] or per_storey[-1] <= per_storey[0], \
+                            (ex.name, part.spec.name, Dir(side).name, per_storey)
+
+
+def test_beams_option_adds_floor_beams_to_corner_framing():
+    from craftpilot.program.model import Framing
+    prog, _ = repair(simple_program(RoofType.gable, floors=3), SAFETY)
+    prog.facade.framing = Framing.corners
+    prog.facade.beams = True
+    prog.bounds.height = 24
+    grid = generate(prog, prog.bounds, 2)
+    part, cells = _front_face(grid)
+    for y in [part.floor_block_y(k) for k in range(1, len(part.floor_heights))] + [part.top_y]:
+        roles = [int(grid.role[x, y, z]) for (x, z) in cells]
+        assert roles.count(Role.BEAM) >= len(cells) - 2, (y, roles)

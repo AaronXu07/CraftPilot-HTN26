@@ -1,0 +1,76 @@
+description: >
+  A half-timbered Tudor house. White plaster panels in a dark oak timber frame: posts at every
+  bay running from the stone footing to the eave, beams along each floor line, and diagonal
+  braces in most panels. The first floor jetties out over the ground floor on corbels, a steep
+  dark tiled gable roof with two dormers, and one brick chimney on a gable end.
+tags: [tudor, half-timbered, timber, timbered, fachwerk, medieval, english, german, house, inn, tavern, town, village, cottage]
+program:
+  label: tudor house
+  bounds: {width: 21, height: 24, depth: 15}
+  parts:
+    - name: main
+      shape: rect
+      size: {width: 1.0, depth: 1.0}
+      floors: 2
+      floor_height: 4
+      roof: {type: gable, pitch: 1.5, overhang: 1, ridge_axis: x, edge_width: 1, edge_lines: ridge}
+  facade:
+    bay_width: {min: 4, max: 5}
+    window: plain
+    window_width: 1
+    window_height: 2
+    shutters: 0.0
+    sills: true
+    framing: tudor
+    braces: 0.75
+    symmetry: true
+    max_flat_run: 5
+    window_trim: none
+    entrance: door
+  depth:
+    frame_protrude: 1
+    window_inset: 1
+    eave_trim: true
+    foundation_rise: 1
+    foundation_outset: 1
+    corbels: true
+    detail: 0.2
+    foliage: 0.15
+    string_courses: false
+    quoins: false
+  attachments:
+    - {kind: chimney, count: 1}
+    - {kind: dormer, count: 2, spacing: regular}
+    - {kind: jetty, params: {depth: 1}}
+  interior: {stairs: true, doorways: true, partitions: false, lighting: true}
+  material_reasoning: >
+    Lime-plastered wattle panels stand in as white terracotta, the oak frame as dark oak logs,
+    the tiled roof as deepslate tiles with deepslate brick edges, the stone footing as cobblestone
+    weathering into stone bricks.
+  palette:
+    primary:
+      families: [{family: white_terracotta, weight: 1.0}]
+      texture_rate: 0.1
+      weathering: 0.0
+    framing:
+      families: [{family: dark_oak, weight: 1.0}]
+    roof:
+      families: [{family: deepslate_tiles, weight: 1.0}]
+      texture_rate: 0.2
+      weathering: 0.2
+    roof_edge:
+      families: [{family: deepslate_bricks, weight: 1.0}]
+    foundation:
+      families: [{family: cobblestone, weight: 0.6}, {family: stone_bricks, weight: 0.4}]
+      gradient: vertical
+      weathering: 0.7
+      texture_rate: 0.3
+    secondary:
+      families: [{family: stone_bricks, weight: 1.0}]
+      weathering: 0.4
+    trim:
+      families: [{family: dark_oak, weight: 1.0}]
+    accent:
+      families: [{family: spruce, weight: 1.0}]
+    glass:
+      families: [{family: glass, weight: 1.0}]

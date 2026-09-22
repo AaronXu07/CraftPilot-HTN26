@@ -61,7 +61,8 @@ def describe(program: BuildProgram, bounds: Bounds | None = None) -> list[str]:
         lines.append(_part_line(p, root))
     f = program.facade
     facade = [f"{f.window.value} windows {f.window_width}x{f.window_height}",
-              f"{f.framing.value} framing" if f.framing.value != "none" else "no framing",
+              (f"{f.framing.value} framing" + (" with floor beams" if f.beams and f.framing.value != "tudor" else "")
+               + (f", braces {f.braces:.0%}" if f.braces > 0 else "")) if f.framing.value != "none" else "no framing",
               f"{f.entrance} entrance"]
     if f.shutters:
         facade.append("shutters")

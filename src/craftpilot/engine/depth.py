@@ -39,6 +39,76 @@ def _protrude_frames(grid: SemanticGrid, steps: int) -> int:
     return count
 
 
+def _diagonal_cells(w: int, h: int, rising: int) -> list[tuple[int, int, int, int]]:
+    """One diagonal across a w x h panel as (column, row, shape, ascent) with row 0 at the bottom.
+    `rising` +1 climbs toward higher columns, -1 toward lower. Stairs carry the line, facing the way
+    it climbs; a top slab fills the half-step where the line rises less than a block per column, and
+    sits under each stair of a 45 degree run so the timber reads as one piece."""
+    out: list[tuple[int, int, int, int]] = []
+    if w < 2 or h < 2:
+        return out
+    prev: tuple[int, int] | None = None    # (row, was_stair) of the previous column
+    for i in range(w):
+        c = i if rising > 0 else w - 1 - i
+        f = i * (h - 1) / (w - 1)
+        r = int(f)
+        frac = f - r
+        if frac < 0.5:
+            if prev is not None and prev[1] and r == prev[0] + 1:
+                out.append((c, r - 1, BShape.SLAB_TOP, 0))
+            out.append((c, r, BShape.STAIR, rising))
+            prev = (r, True)
+        else:
+            out.append((c, r, BShape.SLAB_TOP, 0))
+            prev = (r, False)
+    return out
+
+
+def _x_brace(w: int, h: int) -> list[tuple[int, int, int, int]]:
+    """Two diagonals crossing; where they share a cell the crossing becomes a full block."""
+    cells: dict[tuple[int, int], tuple[int, int]] = {}
+    for c, r, shape, asc in _diagonal_cells(w, h, +1) + _diagonal_cells(w, h, -1):
+        if (c, r) in cells and cells[(c, r)] != (shape, asc):
+            cells[(c, r)] = (BShape.FULL, 0)
+        else:
+            cells[(c, r)] = (shape, asc)
+    return [(c, r, shape, asc) for (c, r), (shape, asc) in cells.items()]
+
+
+def _braces(grid: SemanticGrid, steps: int) -> int:
+    """Diagonal timber in the panels the facade left blank, standing proud with the posts: stairs
+    and slabs of the framing family one block in front of the wall. Flush framing gets no braces,
+    since a stair set into the wall would leave a hole."""
+    panels = grid.report.get("braced_panels", [])
+    if not panels:
+        return 0
+    if steps < 1:
+        grid.note("Braces skipped: framing is flush (depth.frame_protrude is 0).")
+        return 0
+    count = 0
+    for p in panels:
+        side = int(p["side"])
+        vx, _, vz = DIR_VEC[side]
+        cells = p["cells"]
+        along_x = side in (Dir.NORTH, Dir.SOUTH)
+        w, h, y0 = len(cells), int(p["h"]), int(p["y0"])
+        for c, r, shape, asc in _x_brace(w, h):
+            x, z = cells[c]
+            ox, oz, y = x + vx * steps, z + vz * steps, y0 + r
+            if not grid.in_bounds(ox, y, oz) or grid.role[ox, y, oz] != Role.EMPTY:
+                continue
+            if asc > 0:
+                normal = Dir.EAST if along_x else Dir.SOUTH
+            elif asc < 0:
+                normal = Dir.WEST if along_x else Dir.NORTH
+            else:
+                normal = side
+            grid.set(ox, y, oz, Role.FRAME, shape, normal, int(p["part"]), grid.h_norm[x, y, z],
+                     Flag.PROTRUDE | Flag.FIXED_SHAPE | Flag.NO_TEXTURE)
+            count += 1
+    return count
+
+
 def _inset_windows(grid: SemanticGrid) -> int:
     moves = []
     for x, y, z in zip(*np.nonzero(grid.role == Role.WINDOW)):
@@ -143,6 +213,7 @@ def depth(grid: SemanticGrid, program: BuildProgram) -> None:
         info["insets"] = _inset_windows(grid)
     if rules.frame_protrude > 0:
         info["protrusions"] = _protrude_frames(grid, min(2, rules.frame_protrude))
+    info["braces"] = _braces(grid, min(2, rules.frame_protrude))
     if rules.floor_lips:
         info["lips"] = _floor_lips(grid)
     info["supports"] = _stacked_overhang_support(grid, rules.corbels)

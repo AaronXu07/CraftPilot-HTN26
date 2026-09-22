@@ -171,6 +171,11 @@ class FacadeRules(BaseModel):
     shutters: float = Field(default=0.0, description="Probability a window gets trapdoor shutters")
     sills: bool = True
     framing: Framing = Framing.corners
+    beams: bool = Field(default=False, description="A horizontal timber along every upper floor line and a plate under the eave, "
+                                                   "with any framing style (tudor always has them)")
+    braces: float = Field(default=0.0, description="0..1 chance of diagonal timber braces on an upper storey: at most two blank "
+                                                   "panels per building, an X of stairs and slabs in front of the wall (Tudor, fachwerk). "
+                                                   "Needs framing bays or tudor and frame_protrude 1")
     symmetry: bool = True
     max_flat_run: int = Field(default=7, description="Longest wall run without a break")
     ground_floor_taller: int = Field(default=0, description="Extra blocks of height on the ground floor")

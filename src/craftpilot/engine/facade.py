@@ -363,25 +363,46 @@ def _door(grid: SemanticGrid, x: int, z: int, side: int, y: int, part: LayoutPar
             grid.set(ox, y + 1, oz, Role.LIGHT, BShape.LANTERN, Dir.NONE, part.index, 0.0)
 
 
-def _process_run(grid: SemanticGrid, run: list[tuple[int, int]], side: int, part: LayoutPart, k: int,
-                 rules: FacadeRules, is_front: bool, want_door: bool, accent: bool = False,
+def _process_run(grid: SemanticGrid, ref: list[tuple[int, int]], eligible: set[tuple[int, int]], side: int,
+                 part: LayoutPart, k: int, rules: FacadeRules, is_front: bool, want_door: bool, accent: bool = False,
                  entrance: str = "door", outset: int = 1) -> bool:
-    """Returns True if a door was placed."""
+    """One face of one storey. `ref` is the whole face run, corners included, and it fixes the bay
+    layout, so posts and windows line up from storey to storey; `eligible` is the subset of its cells
+    that can take a window on this storey (open air outside, no wing or balcony in the way). Posts
+    stand only at true corners of the footprint and at bay boundaries inside the eligible cells, so
+    a junction with another part gets that part's corner post and nothing else. Returns True if a
+    door was placed."""
     fy = part.floor_block_y(k)
     fh = part.floor_heights[k]
     y_base = fy + 1
     ceiling = min(fy + fh, part.top_y + 1)
     if ceiling - y_base < 2:
         return False
-    n = len(run)
+    n = len(ref)
     framed = rules.framing != Framing.none and n >= 5
-    inner = run[1:-1] if framed else run
+    inner = ref[1:-1] if framed else ref
     L = len(inner)
     if L < 1:
         return False
+    # Posts run through the floor row, and up to the last wall row on the top storey, so they read
+    # as one timber from base to eave.
+    post_y0 = fy if fy >= part.base_y else y_base
+    top_storey = k == len(part.floor_heights) - 1
+    post_y1 = part.top_y if top_storey else ceiling - 1
+    ax, az = (1, 0) if side in (Dir.NORTH, Dir.SOUTH) else (0, 1)
+    m = part.floor_masks[k]
+
+    def true_corner(cell: tuple[int, int], d: int) -> bool:
+        x, z = cell[0] + ax * d, cell[1] + az * d
+        return not (0 <= x < grid.W and 0 <= z < grid.D and m[x, z])
+
+    posts: list[int] = []
     if framed:
-        for (x, z) in (run[0], run[-1]):
-            _set_frame_column(grid, x, z, fy if fy >= part.base_y else y_base, ceiling - 1, part, side)
+        for idx, d in ((0, -1), (n - 1, 1)):
+            if true_corner(ref[idx], d):
+                x, z = ref[idx]
+                _set_frame_column(grid, x, z, post_y0, post_y1, part, side)
+                posts.append(idx)
     bw, count, leftover = _choose_bays(L, rules)
     start = leftover // 2
     door_placed = False
@@ -390,7 +411,7 @@ def _process_run(grid: SemanticGrid, run: list[tuple[int, int]], side: int, part
     for i in range(count):
         s = start + i * (bw + 1)
         bay = inner[s:s + bw]
-        free = not any(grid.reserved[x, y_base:ceiling, z].any() for (x, z) in bay)
+        free = all(c in eligible for c in bay) and not any(grid.reserved[x, y_base:ceiling, z].any() for (x, z) in bay)
         bays.append((i, s, bay, free))
     # The door takes the free bay nearest the middle of the face.
     door_bay = None
@@ -398,11 +419,20 @@ def _process_run(grid: SemanticGrid, run: list[tuple[int, int]], side: int, part
         free_bays = [b for b in bays if b[3]]
         if free_bays:
             door_bay = min(free_bays, key=lambda b: abs(b[0] - (count - 1) / 2))[0]
+    braced = _choose_braced_bays(grid, rules, bays, count, door_bay, bw, ceiling - y_base, sep_frames,
+                                 upper=k > 0 or len(part.floor_heights) == 1)
     for (i, s, bay, free) in bays:
-        if i > 0 and sep_frames and rules.framing != Framing.none:
+        if i > 0 and sep_frames and rules.framing != Framing.none and inner[s - 1] in eligible:
             px, pz = inner[s - 1]
-            _set_frame_column(grid, px, pz, y_base, ceiling - 1, part, side)
+            _set_frame_column(grid, px, pz, post_y0, post_y1, part, side)
+            posts.append(s)
         if not free:
+            continue
+        if i in braced:
+            # A braced panel stays blank: no window, and no anchor for awnings or balconies.
+            grid.report.setdefault("braced_panels", []).append(
+                {"part": part.index, "side": int(side), "cells": [(int(x), int(z)) for (x, z) in bay],
+                 "y0": int(y_base), "h": int(ceiling - y_base)})
             continue
         center = bay[len(bay) // 2]
         grid.anchors.append(Anchor(AnchorType.wall_bay, center[0], y_base, center[1], side, part.index, bw))
@@ -439,19 +469,48 @@ def _process_run(grid: SemanticGrid, run: list[tuple[int, int]], side: int, part
             if wh < 1:
                 continue
         _window(grid, cells, side, wb, wh, part, style, rules, ceiling, accent)
-    # Pilasters on a blank run longer than the flat-run limit.
+    # Pilasters on a blank run longer than the flat-run limit, never beside an end post.
     if count == 0 and rules.framing != Framing.none and n > rules.max_flat_run:
         step = max(3, rules.max_flat_run)
-        for j in range(step, n - 1, step):
-            px, pz = run[j]
-            _set_frame_column(grid, px, pz, y_base, ceiling - 1, part, side)
-    # Tudor beams along the floor row.
-    if rules.framing == Framing.tudor and fy >= part.base_y:
+        for j in range(step, n - 2, step):
+            if ref[j] in eligible:
+                px, pz = ref[j]
+                _set_frame_column(grid, px, pz, post_y0, post_y1, part, side)
+    # Beams along the floor row, and a plate under the eave on the top storey.
+    if rules.framing == Framing.tudor or rules.beams:
         along = Dir.EAST if side in (Dir.NORTH, Dir.SOUTH) else Dir.SOUTH
-        for (x, z) in run:
-            if grid.role[x, fy, z] == Role.WALL:
-                grid.set(x, fy, z, Role.BEAM, BShape.LOG, along, part.index, grid.h_norm[x, fy, z], Flag.PERIMETER)
+        rows = ([fy] if fy >= part.base_y else []) + ([part.top_y] if top_storey else [])
+        for y in rows:
+            for (x, z) in ref:
+                if grid.role[x, y, z] == Role.WALL and grid.part_id[x, y, z] == part.index:
+                    grid.set(x, y, z, Role.BEAM, BShape.LOG, along, part.index, grid.h_norm[x, y, z], Flag.PERIMETER)
     return door_placed
+
+
+BRACE_BUDGET = 2     # braced panels per building: an accent, not a pattern
+
+
+def _choose_braced_bays(grid: SemanticGrid, rules: FacadeRules, bays: list, count: int, door_bay: int | None,
+                        bw: int, h: int, sep_frames: bool, upper: bool) -> set[int]:
+    """Which bays of this run get diagonal braces instead of a window. Only framed bays on an upper
+    storey qualify, at most BRACE_BUDGET per building; with symmetry the outermost free pair, or the
+    middle bay when only one is left; otherwise one bay at random. `rules.braces` is the chance that
+    a qualifying run takes its turn."""
+    if rules.braces <= 0 or not sep_frames or rules.framing not in (Framing.bays, Framing.tudor) \
+            or bw < 3 or h < 3 or not upper:
+        return set()
+    budget = BRACE_BUDGET - len(grid.report.get("braced_panels", []))
+    cands = [i for (i, _s, _bay, free) in bays if free and i != door_bay]
+    if budget <= 0 or not cands or grid.rng.random() >= rules.braces:
+        return set()
+    if rules.symmetry:
+        pairs = [(i, count - 1 - i) for i in cands if count - 1 - i in cands and i < count - 1 - i]
+        if pairs and budget >= 2:
+            return set(pairs[0])
+        if count % 2 == 1 and count // 2 in cands:
+            return {count // 2}
+        return set()
+    return {int(grid.rng.choice(cands))}
 
 
 def _round_part(grid: SemanticGrid, part: LayoutPart, k: int, rules: FacadeRules, is_root: bool,
@@ -647,12 +706,14 @@ def facade(grid: SemanticGrid, program: BuildProgram) -> None:
             rows = range(fy + 1, min(fy + part.floor_heights[k], part.top_y + 1))
             # Sides in an order that puts the front first so the door lands there.
             for side in (grid.front, OPPOSITE[grid.front], Dir.EAST, Dir.WEST):
-                for run in _face_runs(m, side, grid, part, rows):
-                    if len(run) < 3:
+                open_cells = {c for run in _face_runs(m, side, grid, part, rows) for c in run}
+                for ref in _face_runs(m, side):
+                    if len(ref) < 3:
                         continue
+                    eligible = {c for c in ref if c in open_cells}
                     is_front = side == grid.front and is_root
-                    if _process_run(grid, run, side, part, k, rules, is_front, want_door=not door_done, accent=accent,
-                                    entrance=entrance, outset=outset):
+                    if _process_run(grid, ref, eligible, side, part, k, rules, is_front, want_door=not door_done,
+                                    accent=accent, entrance=entrance, outset=outset):
                         door_done = True
     gable = sum(_gable_windows(grid, p, rules, accent) for p in grid.parts)
     grid.report["gable_windows"] = gable

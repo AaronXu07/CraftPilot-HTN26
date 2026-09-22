@@ -146,6 +146,7 @@ def repair(program: BuildProgram, safety_limit: tuple[int, int, int]) -> tuple[B
     f.window_width = int(_clamp(f.window_width, 1, 5))
     f.window_height = int(_clamp(f.window_height, 1, 5))
     f.shutters = _clamp(f.shutters, 0.0, 1.0)
+    f.braces = _clamp(f.braces, 0.0, 1.0)
     f.max_flat_run = int(_clamp(f.max_flat_run, 3, 20))
     f.ground_floor_taller = int(_clamp(f.ground_floor_taller, 0, 4))
     f.window_boxes = _clamp(f.window_boxes, 0.0, 1.0)
